@@ -38,6 +38,7 @@ import httpx
 from PySide6.QtCore import QThread, Signal
 
 from client.config import ClientConfig, get_client_config
+from services.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class NetworkWorker(QThread):
         self._params = None
 
     def run(self) -> None:
-        self.progress.emit("Connecting...", 0)
+        self.progress.emit(t("network.connecting", default="Connecting..."), 0)
         try:
             headers = {}
             if self._config.api_key:
@@ -135,25 +136,25 @@ class NetworkWorker(QThread):
                     result = self._do_upload(client)
                 else:
                     result = self._do_call(client)
-                self.progress.emit("Done", 100)
+                self.progress.emit(t("network.done", default="Done"), 100)
                 self.finished.emit(result)
             finally:
                 client.close()
         except httpx.HTTPStatusError as exc:
-            detail = "Unknown error"
+            detail = t("network.unknown_error", default="Unknown error")
             try:
                 detail = exc.response.json().get("detail", str(exc))
             except Exception:
                 detail = str(exc)
             msg = f"HTTP {exc.response.status_code}: {detail}"
-            self.progress.emit("Failed", 0)
+            self.progress.emit(t("network.failed", default="Failed"), 0)
             self.error.emit(msg)
         except httpx.RequestError as exc:
-            self.progress.emit("Failed", 0)
-            self.error.emit(f"Network error: {exc}")
+            self.progress.emit(t("network.failed", default="Failed"), 0)
+            self.error.emit(f"{t('network.network_error', default='Network error:')} {exc}")
         except Exception as exc:
-            self.progress.emit("Failed", 0)
-            self.error.emit(f"Unexpected error: {exc}")
+            self.progress.emit(t("network.failed", default="Failed"), 0)
+            self.error.emit(f"{t('network.unexpected_error', default='Unexpected error:')} {exc}")
 
     def _do_call(self, client: httpx.Client) -> Dict[str, Any]:
         url = self._path
@@ -167,7 +168,7 @@ class NetworkWorker(QThread):
             resp = client.delete(url)
         else:
             resp = client.request(self._method, url, json=self._json_data)
-        self.progress.emit("Receiving...", 80)
+        self.progress.emit(t("network.receiving", default="Receiving..."), 80)
         resp.raise_for_status()
         return resp.json()
 
@@ -181,7 +182,7 @@ class NetworkWorker(QThread):
 
         with open(file_path, "rb") as fh:
             files = {"file": (file_name, fh)}
-            self.progress.emit(f"Uploading {file_name} ({file_size >> 10} KB)...", 20)
+            self.progress.emit(f"{t('network.uploading', default='Uploading')} {file_name} ({file_size >> 10} KB)...", 20)
             resp = client.post(
                 self._path,
                 files=files,

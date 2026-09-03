@@ -5,7 +5,7 @@ to satisfy Qt's requirement, then mock the RemoteCopilotService for each test.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import QObject
@@ -73,10 +73,24 @@ class TestSendUtterance:
             "plan": None,
             "timeline": [],
         }
-        await controller.send_utterance("Hello")
+        with patch("ui.copilot.controllers.copilot_controller.get_language", return_value="en"):
+            await controller.send_utterance("Hello")
         remote.chat.assert_called_once_with(
             utterance="Hello", language="en", conversation_id="c_existing"
         )
+
+    @pytest.mark.asyncio
+    async def test_language_defaults_to_active_ui_language(self, controller, remote):
+        """No language passed → the app's active UI language is used, so a
+        Romanian user's utterances are routed/extracted as Romanian."""
+        remote.chat.return_value = {
+            "conversation_id": "c1",
+            "plan": None,
+            "timeline": [],
+        }
+        with patch("ui.copilot.controllers.copilot_controller.get_language", return_value="ro"):
+            await controller.send_utterance("Hello")
+        remote.chat.assert_called_once_with(utterance="Hello", language="ro")
 
     @pytest.mark.asyncio
     async def test_updates_conversation_id(self, controller, remote):

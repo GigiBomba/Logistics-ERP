@@ -125,6 +125,9 @@ class SyncPullService:
         self.user_id = user_id
         self.last_delta_count = 0
         self.last_full_refresh_count = 0
+        # Entity types whose pull failed in the most recent pull_all (surfaced
+        # in the engine's sync summary so partial failures stay visible).
+        self.last_failed_entities: list = []
         # Reason for the most recent _upsert_record False (P2 skip vs C2 skip) —
         # lets pull_entity decide whether the cursor may advance.
         self._last_skip_reason: Optional[str] = None
@@ -214,6 +217,7 @@ class SyncPullService:
             self.set_user(user_id)
         self.last_delta_count = 0
         self.last_full_refresh_count = 0
+        self.last_failed_entities = []
         outbox = SyncOutboxService(self.db)
         outbox.set_sync_in_progress(True)
         total = 0
@@ -227,13 +231,24 @@ class SyncPullService:
                     self.last_delta_count += 1
                 else:
                     self.last_full_refresh_count += 1
-                total += self.pull_entity(
-                    entity_type,
-                    skip_local_ids=skip_local_ids,
-                    should_stop=should_stop,
-                    device_id=device_id,
-                    use_cursor=not force_full_sync,
-                )
+                try:
+                    total += self.pull_entity(
+                        entity_type,
+                        skip_local_ids=skip_local_ids,
+                        should_stop=should_stop,
+                        device_id=device_id,
+                        use_cursor=not force_full_sync,
+                    )
+                except Exception as exc:
+                    # One entity's failure must never abort the whole pull —
+                    # log it and continue with the next entity.  The failed
+                    # entity is retried on the next cycle (its cursor was not
+                    # advanced, so nothing is lost).
+                    self.last_failed_entities.append(entity_type)
+                    logger.warning(
+                        "pull: entity %s failed, continuing with next: %s",
+                        entity_type, exc,
+                    )
             # Phase D (tombstones): hard-delete propagation for rows that
             # devices never pulled.  Runs inside the echo-suppression window
             # so the local hard-deletes do not re-capture outbox rows.  Only
@@ -419,14 +434,21 @@ class SyncPullService:
         :meth:`pull_tombstones_standalone`) so the outbox DELETE triggers do
         not re-capture the server-authoritative removal.
         """
-        resp = self.api_client.get(
-            "/api/v1/sync/pull",
-            params={
-                "entity": "tombstone",
-                "limit": 1000,
-                "device_id": device_id,
-            },
-        ) or {}
+        try:
+            resp = self.api_client.get(
+                "/api/v1/sync/pull",
+                params={
+                    "entity": "tombstone",
+                    "limit": 1000,
+                    "device_id": device_id,
+                },
+            ) or {}
+        except Exception as exc:
+            # A tombstone fetch failure must not abort the pull cycle — the
+            # server re-records tombstones until they are consumed, so the
+            # next cycle retries them.
+            logger.warning("pull: tombstone fetch failed: %s", exc)
+            return 0
         records = resp.get("records") or []
         count = 0
         for t in records:

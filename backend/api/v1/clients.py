@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.dependencies import get_client_service
 from backend.schemas.client import (
@@ -24,6 +25,57 @@ router = APIRouter(prefix="/clients", tags=["clients"])
 
 class ClientListResponse(PaginatedResponse[ClientResponse]):
     """Paginated list of clients."""
+
+
+# ── Additive batch dashboard (performance) ──────────────────────────────
+# Purely additive: the existing single-client dashboard endpoint is
+# untouched. The batch endpoint is scoped by ``company_id`` exactly like the
+# existing per-client routes (derived from the authenticated JWT), and rows
+# that belong to another tenant are silently ignored — never leaked.
+
+class ClientDashboardBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: List[int] = Field(default_factory=list, max_length=200)
+
+
+class ClientDashboardBatchItem(BaseModel):
+    id: int
+    revenue: float = 0
+    trip_count: int = 0
+
+
+class ClientDashboardBatchResponse(BaseModel):
+    items: List[ClientDashboardBatchItem] = Field(default_factory=list)
+
+
+@router.post("/dashboard-batch", response_model=ClientDashboardBatchResponse)
+def get_client_dashboard_batch(
+    data: ClientDashboardBatchRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: ClientService = Depends(get_client_service),
+):
+    """Return dashboard revenue/trip_count for a batch of client ids.
+
+    Only rows belonging to the requesting company are returned; ids that are
+    unknown or that belong to another tenant are ignored (no cross-tenant
+    leakage). Request size is capped at 200 ids.
+    """
+    company_id = current_user.get("company_id", 0)
+    items: List[ClientDashboardBatchItem] = []
+    for cid in data.ids[:200]:
+        # Scoped lookup: returns None for ids that are missing or belong to
+        # another company, so we never enrich or leak other tenants' rows.
+        client = service.get_by_id(cid, company_id=company_id)
+        if not client:
+            continue
+        dash = service.get_client_dashboard(cid, company_id=company_id) or {}
+        items.append(ClientDashboardBatchItem(
+            id=cid,
+            revenue=dash.get("total_revenue", dash.get("revenue", 0)) or 0,
+            trip_count=dash.get("total_trips", dash.get("trip_count", 0)) or 0,
+        ))
+    return ClientDashboardBatchResponse(items=items)
 
 
 @router.get("/", response_model=ClientListResponse)

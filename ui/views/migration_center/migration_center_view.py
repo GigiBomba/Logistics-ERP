@@ -13,7 +13,6 @@ import logging
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from services.i18n import register_listener, t, unregister_listener
-from ui.components import Label, PageTitle
 from ui.design_tokens import COLOR_TEXT_SECONDARY, FONT_SIZE_SM, SP
 from ui.widgets.dispatch_tabs import QtDispatchTabs
 
@@ -90,14 +89,18 @@ class QtMigrationCenterView(QWidget):
         header_row = QHBoxLayout()
         header_row.setSpacing(SP["3"])
 
-        self._title = PageTitle(self, t("migration.title", "Migration Center"))
+        # Title rendered at the h2 role (FONT_SIZE_LG) — a clear but
+        # non-dominant page heading rather than the full page-title size.
+        self._title = QLabel(t("migration.title", "Migration Center"), self)
+        self._title.setProperty("fontRole", "h2")
+        self._title.style().unpolish(self._title)
+        self._title.style().polish(self._title)
         header_row.addWidget(self._title)
 
-        self._subtitle = Label(
-            self,
-            t("migration.subtitle", "Import and export your data"),
-            role="secondary",
-        )
+        self._subtitle = QLabel(t("migration.subtitle", "Import and export your data"), self)
+        self._subtitle.setProperty("fontRole", "secondary")
+        self._subtitle.style().unpolish(self._subtitle)
+        self._subtitle.style().polish(self._subtitle)
         header_row.addWidget(self._subtitle)
         header_row.addStretch()
         layout.addLayout(header_row)

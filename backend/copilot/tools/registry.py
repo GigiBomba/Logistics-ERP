@@ -58,6 +58,7 @@ _TOOL_MODULES = (
     "backend.copilot.tools.undo_tools",
     "backend.copilot.tools.freight_tools",
     "backend.copilot.tools.payment_tools",
+    "backend.copilot.tools.whatsapp_tools",
     "backend.copilot.tools.help_tools",
 )
 

@@ -70,7 +70,12 @@ class TestGracefulWorker:
                 time.sleep(0.01)
 
         t = w._spawn("loop", target)
-        time.sleep(0.05)  # let the loop run a few iterations
+        # Wait until the worker loop has actually run a few iterations
+        # (same 5s ceiling, event-driven) instead of blind-sleeping a
+        # fixed 50ms, so the test finishes as soon as the condition holds.
+        deadline = time.monotonic() + 5
+        while len(loop_ran) < 3 and time.monotonic() < deadline:
+            time.sleep(0.001)
         w.request_stop()
         t.join(timeout=5)
         assert not t.is_alive()

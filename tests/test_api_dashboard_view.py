@@ -90,48 +90,62 @@ class TestQtApiDashboardView:
 
     # ── Status refresh ─────────────────────────────────────────────────
 
-    def test_refresh_status_populates_grid(self, api_dashboard):
+    def _wait_refresh_done(self, widget, qtbot):
+        """Wait for any in-flight async refresh to settle."""
+        qtbot.waitUntil(lambda: widget._refreshing is False, timeout=5000)
+
+    def test_refresh_status_populates_grid(self, api_dashboard, qtbot):
         """_refresh_status creates status cards in the grid."""
+        self._wait_refresh_done(api_dashboard, qtbot)
         assert api_dashboard._status_grid.count() >= 1
 
-    def test_refresh_status_with_online_api(self, api_dashboard, mock_api_client):
+    def test_refresh_status_with_online_api(self, api_dashboard, mock_api_client, qtbot):
         """_refresh_status creates multiple cards when API is online."""
         mock_api_client.is_online.return_value = True
         mock_api_client.health_check.return_value = {
             "database": "connected", "version": "1.0.0",
         }
         api_dashboard._refresh_status()
+        self._wait_refresh_done(api_dashboard, qtbot)
         # Should have API Server + Database + API Version cards
         assert api_dashboard._status_grid.count() >= 3
 
-    def test_refresh_status_with_offline_api(self, api_dashboard, mock_api_client):
+    def test_refresh_status_with_offline_api(self, api_dashboard, mock_api_client, qtbot):
         """_refresh_status handles offline API gracefully."""
         mock_api_client.is_online.return_value = False
         api_dashboard._refresh_status()
+        self._wait_refresh_done(api_dashboard, qtbot)
         # Should have just the API Server card
         assert api_dashboard._status_grid.count() >= 1
 
-    def test_refresh_status_with_health_error(self, api_dashboard, mock_api_client):
+    def test_refresh_status_with_health_error(self, api_dashboard, mock_api_client, qtbot):
         """_refresh_status handles health_check exception."""
         mock_api_client.is_online.return_value = True
         mock_api_client.health_check.side_effect = Exception("Connection refused")
         api_dashboard._refresh_status()
+        self._wait_refresh_done(api_dashboard, qtbot)
         # Should have API card + error card
         assert api_dashboard._status_grid.count() >= 2
 
-    def test_refresh_adds_log_entry(self, api_dashboard):
-        """_refresh_status adds a timestamped log entry."""
+    def test_refresh_adds_log_entry(self, api_dashboard, qtbot):
+        """_refresh_status adds a timestamped log entry (async via WorkerPool)."""
         initial_count = api_dashboard._log_layout.count()
         api_dashboard._refresh_status()
-        assert api_dashboard._log_layout.count() >= initial_count + 1
+        qtbot.waitUntil(
+            lambda: api_dashboard._log_layout.count() >= initial_count + 1,
+            timeout=5000,
+        )
 
     # ── Test API button ────────────────────────────────────────────────
 
-    def test_test_api_adds_log(self, api_dashboard, mock_api_client):
-        """_test_api adds a health check log entry."""
+    def test_test_api_adds_log(self, api_dashboard, mock_api_client, qtbot):
+        """_test_api adds a health check log entry (async via WorkerPool)."""
         initial_count = api_dashboard._log_layout.count()
         api_dashboard._test_api()
-        assert api_dashboard._log_layout.count() >= initial_count + 1
+        qtbot.waitUntil(
+            lambda: api_dashboard._log_layout.count() >= initial_count + 1,
+            timeout=5000,
+        )
         mock_api_client.health_check.assert_called()
 
     def test_test_api_handles_exception(self, api_dashboard, mock_api_client):
@@ -162,10 +176,11 @@ class TestQtApiDashboardView:
 
     # ── Wakeup ─────────────────────────────────────────────────────────
 
-    def test_wakeup_triggers_refresh(self, api_dashboard, mock_api_client):
-        """wakeup calls _refresh_status."""
+    def test_wakeup_triggers_refresh(self, api_dashboard, mock_api_client, qtbot):
+        """wakeup schedules a refresh (dispatched asynchronously via WorkerPool)."""
         mock_api_client.is_online.reset_mock()
         api_dashboard.wakeup()
+        qtbot.waitUntil(lambda: mock_api_client.is_online.called, timeout=5000)
         mock_api_client.is_online.assert_called()
 
     # ── Lifecycle ──────────────────────────────────────────────────────
@@ -177,33 +192,24 @@ class TestQtApiDashboardView:
 
     # ── Status refresh edge cases ────────────────────────────────────
 
-    def test_refresh_status_partial_health_data(self, api_dashboard, mock_api_client):
+    def test_refresh_status_partial_health_data(self, api_dashboard, mock_api_client, qtbot):
         """_refresh_status handles health_check returning only 'database' key."""
         mock_api_client.is_online.return_value = True
         mock_api_client.health_check.return_value = {"database": "connected"}
         api_dashboard._refresh_status()
+        self._wait_refresh_done(api_dashboard, qtbot)
         # Should have API Server (0,0) + Database (0,1) + API Version (1,0)
         assert api_dashboard._status_grid.count() == 3
 
-    def test_refresh_status_clears_previous_cards(self, api_dashboard):
-        """_refresh_status removes old cards before adding new ones."""
-        api_dashboard._refresh_status()
-        old_widgets = []
-        for i in range(api_dashboard._status_grid.count()):
-            item = api_dashboard._status_grid.itemAt(i)
-            if item and item.widget():
-                old_widgets.append(item.widget())
+    def test_refresh_status_updates_cards_in_place(self, api_dashboard, qtbot):
+        """_refresh_status updates existing cards in place (no teardown/recreate)."""
+        self._wait_refresh_done(api_dashboard, qtbot)
+        api_card = api_dashboard._status_cards[(0, 0)]
 
         api_dashboard._refresh_status()
-
-        new_widgets = set()
-        for i in range(api_dashboard._status_grid.count()):
-            item = api_dashboard._status_grid.itemAt(i)
-            if item and item.widget():
-                new_widgets.add(item.widget())
-
-        for w in old_widgets:
-            assert w not in new_widgets
+        self._wait_refresh_done(api_dashboard, qtbot)
+        # The API Server card must be reused, not deleted and recreated.
+        assert api_dashboard._status_cards[(0, 0)] is api_card
 
     # ── Log overflow ─────────────────────────────────────────────────
 
@@ -234,14 +240,15 @@ class TestQtApiDashboardView:
 
     # ── Timer lifecycle ──────────────────────────────────────────────
 
-    def test_timer_restarts_after_shutdown_wakeup(self, api_dashboard, mock_api_client):
+    def test_timer_restarts_after_shutdown_wakeup(self, api_dashboard, mock_api_client, qtbot):
         """wakeup after shutdown restarts the refresh cycle."""
         api_dashboard.shutdown()
         assert api_dashboard._refresh_timer.isActive() is False
 
         mock_api_client.is_online.reset_mock()
         api_dashboard.wakeup()
-        # wakeup calls _refresh_status which calls is_online
+        # wakeup schedules _refresh_status which calls is_online (async)
+        qtbot.waitUntil(lambda: mock_api_client.is_online.called, timeout=5000)
         mock_api_client.is_online.assert_called()
 
 

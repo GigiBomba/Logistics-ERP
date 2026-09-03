@@ -59,17 +59,11 @@ from ui.components import (
     SectionTitle,
 )
 from ui.design_tokens import (
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
-    COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
-    RADIUS_SM,
     SP,
 )
 from ui.widgets import (
@@ -92,9 +86,9 @@ _COLUMNS: list[tuple] = [
     ("id",             "driver_manager.col_id",              50,  True),
     ("name",           "driver_manager.col_name",           150,  True),
     ("phone",          "driver_manager.col_phone",          110,  True),
-    ("license",        "driver_manager.col_license",         90,  True),
-    ("license_expiry", "driver_manager.col_license_expiry", 100,  True),
-    ("medical_expiry", "driver_manager.col_medical_expiry", 100,  True),
+    ("license",        "driver_manager.col_license",        110,  True),
+    ("license_expiry", "driver_manager.col_license_expiry", 150,  True),
+    ("medical_expiry", "driver_manager.col_medical_expiry", 150,  True),
     ("hire_date",      "driver_manager.col_hire_date",      100,  True),
     ("salary",         "driver_manager.col_salary",          90,  True),
     ("active",         "driver_manager.col_active",          70,  True),
@@ -498,8 +492,15 @@ class QtDriverManager(BaseView):
             ("driver_manager.kpi_unassigned",  "0"),
         ]
 
+        kpi_defaults = {
+            "driver_manager.kpi_total": "Total Drivers",
+            "driver_manager.kpi_expiring": "Expiring Soon",
+            "driver_manager.kpi_on_trip": "On Trip",
+            "driver_manager.kpi_unassigned": "Unassigned",
+        }
+
         for title_key, initial_value in kpi_configs:
-            card = KPICard(kpi_row, t(title_key), initial_value)
+            card = KPICard(kpi_row, t(title_key, default=kpi_defaults.get(title_key)), initial_value)
             val_lbl = card.findChild(QLabel, "kpi-value")
             if val_lbl is not None:
                 self._kpi_value_labels[title_key] = val_lbl
@@ -540,6 +541,8 @@ class QtDriverManager(BaseView):
         self.table.setColumnCount(extra_col + 1)
         self.table.setHorizontalHeaderItem(extra_col, QTableWidgetItem(""))
         self.table.setColumnWidth(extra_col, 70)
+        # Don't let header sections crush below a readable width.
+        self.table.horizontalHeader().setMinimumSectionSize(60)
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(self._on_row_double_clicked)
         card.layout().addWidget(self.table, 1)
@@ -750,18 +753,7 @@ class QtDriverManager(BaseView):
                     edit_btn.setFixedSize(28, 28)
                     edit_btn.setToolTip(t("driver_manager.edit_driver"))
                     edit_btn.setCursor(Qt.PointingHandCursor)
-                    edit_btn.setStyleSheet(f"""
-                        QPushButton {{
-                            background: transparent; border: none;
-                            color: {COLOR_TEXT_TERTIARY};
-                            font-size: 13px;
-                            border-radius: {RADIUS_SM}px;
-                        }}
-                        QPushButton:hover {{
-                            color: {COLOR_TEXT_PRIMARY};
-                            background: {COLOR_BG_HOVER};
-                        }}
-                    """)
+                    edit_btn.setProperty("variant", "ghost")
                     driver_id = rows[r].get("id") if r < len(rows) else None
                     if driver_id is not None:
                         edit_btn.clicked.connect(
@@ -773,18 +765,7 @@ class QtDriverManager(BaseView):
                     docs_btn.setFixedSize(28, 28)
                     docs_btn.setToolTip(t("driver_manager.documents_button"))
                     docs_btn.setCursor(Qt.PointingHandCursor)
-                    docs_btn.setStyleSheet(f"""
-                        QPushButton {{
-                            background: transparent; border: none;
-                            color: {COLOR_TEXT_TERTIARY};
-                            font-size: 13px;
-                            border-radius: {RADIUS_SM}px;
-                        }}
-                        QPushButton:hover {{
-                            color: {COLOR_TEXT_PRIMARY};
-                            background: {COLOR_BG_HOVER};
-                        }}
-                    """)
+                    docs_btn.setProperty("variant", "ghost")
                     if driver_id is not None:
                         docs_btn.clicked.connect(
                             lambda checked, did=driver_id: self._open_driver_documents_by_id(did)
@@ -796,18 +777,7 @@ class QtDriverManager(BaseView):
                     assign_btn.setFixedSize(28, 28)
                     assign_btn.setToolTip(t("driver_manager.assign_truck", default="Assign Truck"))
                     assign_btn.setCursor(Qt.PointingHandCursor)
-                    assign_btn.setStyleSheet(f"""
-                        QPushButton {{
-                            background: transparent; border: none;
-                            color: {COLOR_TEXT_TERTIARY};
-                            font-size: 13px;
-                            border-radius: {RADIUS_SM}px;
-                        }}
-                        QPushButton:hover {{
-                            color: {COLOR_TEXT_PRIMARY};
-                            background: {COLOR_BG_HOVER};
-                        }}
-                    """)
+                    assign_btn.setProperty("variant", "ghost")
                     if driver_id is not None:
                         assign_btn.clicked.connect(
                             lambda checked, did=driver_id: self._assign_truck(did)
@@ -1018,10 +988,10 @@ class QtDriverManager(BaseView):
         # Build a list of truck display strings
         truck_names = []
         truck_ids = []
-        for t in trucks:
-            label = t.get("plate_number", f"Truck #{t['id']}")
+        for truck in trucks:
+            label = truck.get("plate_number", f"Truck #{truck['id']}")
             truck_names.append(label)
-            truck_ids.append(t["id"])
+            truck_ids.append(truck["id"])
 
         # Pre-select current assignment
         current_plate = self._dta_service.get_truck_plate_for_driver(driver_id)
@@ -1434,16 +1404,6 @@ class QtDriverManager(BaseView):
             return
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background-color: {COLOR_BG_ELEVATED};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-            }}
-            QMenu::item:selected {{
-                background-color: {COLOR_ACCENT_SUBTLE};
-            }}
-        """)
 
         edit_action = QAction(t("driver_manager.edit_driver"), self)
         edit_action.triggered.connect(self._edit_selected)

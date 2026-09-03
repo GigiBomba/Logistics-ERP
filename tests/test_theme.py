@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QApplication
 
 from ui import design_tokens as dt
 from ui.theme_engine import QtTheme
-from ui.styles import Theme
 
 
 class TestThemeTokens:
@@ -98,35 +97,30 @@ class TestQssGeneration:
 
 
 class TestQtStylesCompatibility:
-    """Verify the compatibility shim matches the old Theme API."""
+    """Verify the design-token aliases that replaced the old ui.styles.Theme API."""
 
     def test_constants_match_colors(self):
-        assert Theme.BG == dt.COLOR_BG_BASE
-        assert Theme.SURFACE == dt.COLOR_BG_ELEVATED
-        assert Theme.SURFACE2 == dt.COLOR_BG_OVERLAY
-        assert Theme.INPUT_BG == dt.COLOR_BG_OVERLAY
-        assert Theme.TEXT == dt.COLOR_TEXT_PRIMARY
-        assert Theme.MUTED == dt.COLOR_TEXT_SECONDARY
-        assert Theme.ACCENT == dt.COLOR_ACCENT_PRIMARY
-        # ACCENT_HOVER may differ between Theme constant and COLORS dict
-        # depending on how they're derived; just verify both are non-empty
-        assert Theme.ACCENT_HOVER is not None
+        assert dt.BG_BASE == dt.COLOR_BG_BASE
+        assert dt.BG_SURFACE == dt.COLOR_BG_ELEVATED
+        assert dt.BG_OVERLAY == dt.COLOR_BG_OVERLAY
+        assert dt.TEXT_PRIMARY == dt.COLOR_TEXT_PRIMARY
+        assert dt.TEXT_SECONDARY == dt.COLOR_TEXT_SECONDARY
+        assert dt.ACCENT == dt.COLOR_ACCENT_PRIMARY
+        # ACCENT_HOVER may differ between alias and COLOR dict depending on how
+        # they're derived; just verify both are non-empty
+        assert dt.ACCENT_HOVER is not None
         assert dt.COLOR_ACCENT_HOVER is not None
-        assert Theme.ACCENT_SUCCESS == dt.COLOR_SUCCESS_DEFAULT
-        # BORDER constant may differ from COLORS dict depending on how they're derived
-        assert Theme.BORDER is not None
-        assert dt.COLOR_BORDER_MEDIUM is not None
-        assert Theme.BORDER_FOCUS == dt.COLOR_ACCENT_PRIMARY
-        assert Theme.DANGER == dt.COLOR_ERROR_DEFAULT
-        assert Theme.WARNING == dt.COLOR_WARNING_DEFAULT
-        assert Theme.SUCCESS == dt.COLOR_SUCCESS_DEFAULT
-        assert Theme.CARD_BG == dt.COLOR_BG_ELEVATED
+        assert dt.SUCCESS == dt.COLOR_SUCCESS_DEFAULT
+        assert dt.BORDER_FOCUS == dt.COLOR_ACCENT_PRIMARY
+        assert dt.DANGER == dt.COLOR_ERROR_DEFAULT
+        assert dt.WARNING == dt.COLOR_WARNING_DEFAULT
+        assert dt.SUCCESS == dt.COLOR_SUCCESS_DEFAULT
+        assert dt.BG_SURFACE == dt.COLOR_BG_ELEVATED
 
     def test_font_strings(self):
-        assert "IBM Plex Sans" in Theme.FONT_MAIN
-        assert "IBM Plex Sans" in Theme.FONT_BOLD
-        assert "IBM Plex Sans" in Theme.FONT_TITLE
+        assert dt.FONT_FAMILY == "IBM Plex Sans"
+        assert dt.FONT_MONO == "IBM Plex Mono"
 
     def test_apply_runs(self, qapp):
-        Theme.apply()
-        assert Theme._applied
+        QtTheme.apply(qapp)
+        assert qapp.styleSheet()

@@ -62,6 +62,7 @@ _ALL_TOOL_PERMISSIONS: List[str] = [
     # write domains
     "automail:write",
     "automail:send",
+    "whatsapp:send",
     "clients:write",
     "dispatch:write",
     "documents:write",

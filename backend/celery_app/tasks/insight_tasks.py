@@ -45,7 +45,8 @@ def _get_company_ids(db) -> list[int]:
 
 # ── Individual insight tasks ────────────────────────────────────────────────
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=300)
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
 def maintenance_forecast_job(self) -> dict:
     """Identify trucks needing maintenance in the next 7 days."""
     from backend.db import DatabaseManager
@@ -85,7 +86,8 @@ def maintenance_forecast_job(self) -> dict:
         db.close()
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=300)
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
 def overdue_invoice_job(self) -> dict:
     """Detect invoices past due date.
 
@@ -124,7 +126,8 @@ def overdue_invoice_job(self) -> dict:
         db.close()
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=300)
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
 def fleet_availability_job(self) -> dict:
     """Check fleet availability — vehicles in maintenance, low health scores."""
     from backend.db import DatabaseManager
@@ -163,7 +166,8 @@ def fleet_availability_job(self) -> dict:
         db.close()
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=300)
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
 def fuel_cost_trend_job(self) -> dict:
     """Detect fuel cost trends — sharp increases or decreases."""
     from backend.db import DatabaseManager
@@ -193,7 +197,8 @@ def fuel_cost_trend_job(self) -> dict:
         db.close()
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=300)
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
 def return_load_matcher_job(self) -> dict:
     """Identify return load opportunities (trips with different origin/destination countries).
 
@@ -237,7 +242,8 @@ def return_load_matcher_job(self) -> dict:
         db.close()
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=300)
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
 def driver_hours_forecast_job(self) -> dict:
     """Forecast drivers approaching HOS limits."""
     from backend.db import DatabaseManager
@@ -276,9 +282,102 @@ def driver_hours_forecast_job(self) -> dict:
         db.close()
 
 
+# ── Workflow struggle job (§18, §34.9) ──────────────────────────────────────
+# Data source: the app's struggle signal.  The UI ``StruggleDetector``
+# (``ui/copilot/controllers/struggle_detector.py``) emits
+# ``struggle_detected(workflow_id, tooltip_key)`` and logs
+# "Struggle detected: screen=... workflow=..." client-side.  It is never
+# persisted to a dedicated table — the backend-recorded analogue is the §34.9
+# abandonment signal already computed by the observability panel from
+# ``copilot_audit_log``: a conversation that started a tool execution
+# (``status='running'`` / ``action='tool_execution_start'``) but never reached
+# a terminal status within the window.  This job aggregates that same signal
+# per company and, when a workflow crosses the abandonment threshold, writes a
+# ``copilot_insights`` row for the Review/Approve/Dismiss queue.
+
+STRUGGLE_WINDOW_DAYS = 7          # look back window for abandoned workflows
+STRUGGLE_THRESHOLD = 3            # min abandoned conversations per workflow
+STRUGGLE_HIGH_THRESHOLD = 6       # ≥ this many → severity "high"
+
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=300,
+                 time_limit=900, soft_time_limit=840)
+def workflow_struggle_job(self) -> dict:
+    """Detect workflows with high abandonment and surface a proactive nudge.
+
+    Aggregates the §34.9 abandonment signal from ``copilot_audit_log`` per
+    active company: conversations that started a tool execution in the recent
+    window but never finished it.  A workflow whose abandoned-conversation
+    count crosses ``STRUGGLE_THRESHOLD`` gets a ``workflow_struggle`` insight.
+
+    Tenant-scoped: ``set_company_context`` + a per-pass ``company_id`` filter
+    keep one job pass from ever reading another tenant's audit rows.
+    """
+    from backend.db import DatabaseManager
+    config = BackendSettings()
+    db = DatabaseManager(config.db_path)
+    try:
+        since = (datetime.now() - timedelta(days=STRUGGLE_WINDOW_DAYS)).isoformat()
+        companies = _get_company_ids(db)
+        insights_created = 0
+        errors = 0
+        for company_id in companies:
+            try:
+                set_company_context(company_id)
+                # Abandoned conversations: started (status/action) but with no
+                # terminal row in the window.  Handles both the SQLite
+                # ``status``-column schema and the ``action``-column schema the
+                # observability panel already tolerates.
+                rows = db.conn.execute(
+                    """SELECT tool_name, COUNT(DISTINCT conversation_id) AS abandoned_count
+                       FROM copilot_audit_log t
+                       WHERE company_id = ?
+                         AND created_at >= ?
+                         AND conversation_id IS NOT NULL AND conversation_id != ''
+                         AND (status = 'running' OR action = 'tool_execution_start')
+                         AND NOT EXISTS (
+                             SELECT 1 FROM copilot_audit_log t2
+                             WHERE t2.company_id = ?
+                               AND t2.conversation_id = t.conversation_id
+                               AND t2.created_at >= ?
+                               AND (t2.status IN ('succeeded', 'failed', 'skipped')
+                                    OR t2.action IN ('tool_execution_succeeded',
+                                                     'tool_execution_failed'))
+                         )
+                         AND tool_name IS NOT NULL AND tool_name != ''
+                       GROUP BY tool_name
+                       HAVING COUNT(DISTINCT conversation_id) >= ?""",
+                    (company_id, since, company_id, since, STRUGGLE_THRESHOLD),
+                ).fetchall()
+                for tool_name, abandoned_count in rows:
+                    workflow_id = tool_name  # tool = the workflow the user attempted
+                    _insert_insight(
+                        db,
+                        company_id,
+                        "workflow_struggle",
+                        "high" if abandoned_count >= STRUGGLE_HIGH_THRESHOLD else "medium",
+                        {
+                            "workflow_id": workflow_id,
+                            "tool_name": tool_name,
+                            "abandoned_count": abandoned_count,
+                            "window_days": STRUGGLE_WINDOW_DAYS,
+                        },
+                    )
+                    insights_created += 1
+            except Exception as exc:
+                errors += 1
+                logger.warning("workflow_struggle_job failed for company %s: %s", company_id, exc)
+        logger.info("workflow_struggle_job: %d insights created", insights_created)
+        if errors:
+            logger.warning("workflow_struggle_job: %d company pass(es) failed", errors)
+        return {"insights_created": insights_created}
+    finally:
+        db.close()
+
+
 # ── Consolidation task ──────────────────────────────────────────────────────
 
-@celery_app.task
+@celery_app.task(time_limit=1800, soft_time_limit=1740)
 def generate_all_insights() -> dict:
     """Run all insight generation tasks sequentially."""
     results = {

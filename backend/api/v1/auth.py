@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from backend.config import BackendSettings
+from backend.config import get_settings
 from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user
 from backend.errors import ErrorCode
@@ -168,7 +168,7 @@ def _store_refresh(token_hash: str, payload: Dict[str, Any]) -> None:
     """Store a refresh token (Redis preferred, in-memory fallback)."""
     r = _get_redis()
     if r is not None:
-        settings = BackendSettings()
+        settings = get_settings()
         try:
             r.setex(
                 f"refresh:{token_hash}",
@@ -284,7 +284,7 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     This protects the refresh token from XSS-based theft in the web frontend.
     The desktop client reads the refresh token from the response body instead.
     """
-    settings = BackendSettings()
+    settings = get_settings()
     max_age = settings.refresh_token_expire_days * 86400
     is_secure = _env == "production"
     response.set_cookie(
@@ -321,7 +321,7 @@ def _issue_tokens(
 
     Returns the response dict with both tokens.
     """
-    settings = BackendSettings()
+    settings = get_settings()
     access_token = create_access_token(
         data={"sub": email, "role": role},
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
@@ -394,7 +394,7 @@ async def login_for_access_token(
     If *device_id* is provided, it is stored in the refresh token payload
     so that the refresh flow can verify the device is still active.
     """
-    settings = BackendSettings()
+    settings = get_settings()
     email = form_data.username.strip().lower()
     client_ip = request.client.host if request.client else "unknown"
 

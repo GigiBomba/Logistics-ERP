@@ -43,6 +43,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -150,6 +151,38 @@ def _cleanup_copilot_state():
     cr._company_conversations.clear()
     cr._ws_connections.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breaker():
+    """Reset the global circuit breaker between tests.
+
+    Other test files (e.g. test_chaos) trip it for company_id=1 and never
+    restore it; the executed-plan parity scenarios would otherwise be blocked
+    by a stale tripped breaker ("blocked by circuit breaker (company=1)")
+    when the suite runs in full.  Mirrors test_golden_regression.py.
+    """
+    from backend.copilot.circuit_breaker import get_circuit_breaker
+    get_circuit_breaker()._states.clear()
+
+
+@pytest.fixture(autouse=True)
+def _offline_llm_chat():
+    """Force the keyword (offline-fallback) path for every parity scenario.
+
+    The real chat_with_tools would consult the provider registry, which can
+    pick up real API keys from the environment (env-keyed Google deployments)
+    and attempt live network calls.  The parity contract pins deterministic
+    keyword-planner plans, so every scenario here must stay hermetic — mirror
+    test_golden_regression.py.  Returning a ToolLoopResult with
+    attempted=False and zero tool executions routes ``process_utterance``
+    through the offline keyword path.
+    """
+    from backend.copilot.llm.tool_calling import ToolLoopResult
+
+    with patch("backend.copilot.llm.chat.chat_with_tools", new_callable=AsyncMock) as m:
+        m.return_value = ToolLoopResult(attempted=False, provider_failed=False)
+        yield m
 
 
 # ═══════════════════════════════════════════════════════════════════════════

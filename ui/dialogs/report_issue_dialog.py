@@ -155,7 +155,8 @@ class QtReportIssueDialog(QDialog):
             "Dialog for submitting a support or bug report"
         )
         self.setMinimumSize(480, 420)
-        self.setMaximumSize(560, 520)
+        # DPI-safe (Phase 2): no hard size cap — let the layout sizeHint drive
+        # the dialog size so 125-150% Windows scaling can grow it as needed.
         self.setWindowModality(Qt.ApplicationModal)
         self.setStyleSheet(f"QDialog {{ background-color: {COLOR_BG_BASE}; }}")
 

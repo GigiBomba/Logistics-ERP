@@ -22,6 +22,7 @@ configured key automatically.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -265,6 +266,7 @@ class LocalCopilotService:
         """
         try:
             from backend.copilot.context import resolve_available_tools
+            from backend.copilot.executor import TOOL_TIMEOUT_SECONDS
             from backend.copilot.planner import (
                 _ensure_llm_providers_loaded,
                 _ensure_tools_loaded,
@@ -312,13 +314,43 @@ class LocalCopilotService:
             "user_id": self._user_id,
             "company_id": self._company_id,
         }
-        response = await process_utterance(
-            utterance=utterance,
-            global_ctx=global_ctx,
-            conversation_id=conv_id,
-            services=services,
-            permitted_tools=permitted_tools,
-        )
+
+        # Bound the whole turn so a hung LLM/tool call can never leave the UI
+        # stuck in the "thinking" state.  Prefer the user-configured
+        # ``qwen_timeout_s`` (AI request timeout), falling back to the
+        # executor's tool-level timeout constant — but cap at 60 s so a
+        # misconfigured "300" cannot spin a turn for five minutes.
+        turn_timeout = TOOL_TIMEOUT_SECONDS
+        if self._prefs is not None:
+            try:
+                configured = int(self._prefs.get_setting("qwen_timeout_s", "") or 0)
+                if configured > 0:
+                    turn_timeout = min(configured, 60)
+            except (TypeError, ValueError):
+                pass
+
+        try:
+            response = await asyncio.wait_for(
+                process_utterance(
+                    utterance=utterance,
+                    global_ctx=global_ctx,
+                    conversation_id=conv_id,
+                    services=services,
+                    permitted_tools=permitted_tools,
+                ),
+                timeout=turn_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "LocalCopilotService: process_utterance timed out after %ss — "
+                "returning copilot.error.timeout",
+                turn_timeout,
+            )
+            return {
+                "conversation_id": conv_id,
+                "summary_key": "copilot.error.timeout",
+                "timeline": [],
+            }
 
         if response.plan and response.plan.requires_confirmation:
             _pending_plans[response.plan.plan_id] = response

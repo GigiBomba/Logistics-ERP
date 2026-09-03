@@ -10,6 +10,7 @@ on repeated refreshes, and disappears when a real run is created.
 from __future__ import annotations
 
 
+import contextlib
 import os
 import tempfile
 import unittest
@@ -58,6 +59,8 @@ class TestPlaceholder(unittest.TestCase):
             self.db.close()
         finally:
             os.unlink(self.path)
+        with contextlib.suppress(Exception):
+            self.view.shutdown()
         self.view.deleteLater()
 
     def test_placeholder_appears_when_no_runs(self) -> None:

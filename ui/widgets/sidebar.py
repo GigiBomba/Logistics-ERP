@@ -26,24 +26,13 @@ from PySide6.QtWidgets import (
 from services.i18n import register_listener, t, unregister_listener
 from ui.design_tokens import (
     ACCENT,
-    BG_OVERLAY,
-    BORDER_DEFAULT,
     BTN_HEIGHT_SM,
     COLOR_ACCENT_PRIMARY,
-    COLOR_BG_ELEVATED,
     COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
-    FONT_SIZE_SM,
-    RADIUS_SM,
     SIDEBAR_COLLAPSED,
     SIDEBAR_EXPANDED,
-    SPACE_1,
-    SPACE_2,
+    SP,
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
@@ -53,6 +42,12 @@ logger = logging.getLogger(__name__)
 
 ITEM_H = 36
 ANIM_DURATION = 200
+
+# Monogram app-mark size. KEPT fixed on purpose: the mark is a perfect circle
+# (border-radius 16 = half of 32) and the top section pins it to a 64px band;
+# a pure minimums conversion would let it deform in the header row. Intentional
+# decorative geometry (Phase 2).
+MONOGRAM_SIZE = 32
 
 # ── Icon mapping (qtawesome) ─────────────────────────────────────────
 # Nav items MUST use qtawesome icons — no emoji, no colored squares.
@@ -81,8 +76,7 @@ NAV_ICONS = {
     "driver_manager":     "fa5s.user",
     "clients":            "fa5s.users",
     "documents":          "fa5s.folder-open",
-    "maintenance":        "fa5s.wrench",
-    "maintenance_control": "fa5s.tools",
+"maintenance": "fa5s.wrench",
     "tachograph":         "fa5s.hdd",
     "invoices":           "fa5s.file-invoice-dollar",
     "history":            "fa5s.clipboard-list",
@@ -171,12 +165,12 @@ class Sidebar(QFrame):
         top = QFrame()
         top.setFixedHeight(64)
         top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(12, 0, 12, 0)
-        top_layout.setSpacing(8)
+        top_layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
+        top_layout.setSpacing(SP["2"])
 
         # Monogram circle — click to toggle expand/collapse
         self._monogram = QFrame()
-        self._monogram.setFixedSize(32, 32)
+        self._monogram.setFixedSize(MONOGRAM_SIZE, MONOGRAM_SIZE)
         self._monogram.setAccessibleName("Operion home")
         self._monogram.setStyleSheet(
             f"background: {ACCENT}; border-radius: 16px;"
@@ -187,7 +181,7 @@ class Sidebar(QFrame):
         mono_layout = QHBoxLayout(self._monogram)
         mono_layout.setContentsMargins(0, 0, 0, 0)
         mono_lbl = QLabel("O")
-        mono_lbl.setStyleSheet("color: white; font-weight: 700; font-size: 14px;")
+        mono_lbl.setProperty("role", "nav-monogram-text")
         mono_lbl.setAlignment(Qt.AlignCenter)
         mono_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         mono_layout.addWidget(mono_lbl)
@@ -200,15 +194,11 @@ class Sidebar(QFrame):
         name_layout.setSpacing(0)
 
         name_lbl = QLabel(t("app.name"))
-        name_lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-weight: 600; font-size: 13px;"
-        )
+        name_lbl.setProperty("role", "nav-app-name")
         name_layout.addWidget(name_lbl)
 
         sub_lbl = QLabel(t("app.subtitle"))
-        sub_lbl.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 11px;"
-        )
+        sub_lbl.setProperty("role", "nav-app-subtitle")
         name_layout.addWidget(sub_lbl)
 
         top_layout.addWidget(self._app_name_frame)
@@ -221,7 +211,7 @@ class Sidebar(QFrame):
 
         # Divider
         divider = QFrame()
-        divider.setStyleSheet(f"background: {COLOR_BORDER_SUBTLE}; max-height: 1px; min-height: 1px;")
+        divider.setProperty("role", "nav-divider")
         layout.addWidget(divider)
 
     def _build_scroll_area(self):
@@ -231,10 +221,9 @@ class Sidebar(QFrame):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self._container = QFrame()
-        self._container.setStyleSheet("background: transparent;")
         self._container_layout = QVBoxLayout(self._container)
-        self._container_layout.setContentsMargins(8, 8, 8, 8)
-        self._container_layout.setSpacing(4)
+        self._container_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["2"])
+        self._container_layout.setSpacing(SP["1"])
         self._container_layout.setAlignment(Qt.AlignTop)
 
         # ── Search input (visible only when expanded) ──
@@ -247,23 +236,10 @@ class Sidebar(QFrame):
         )
         self._search_input.setClearButtonEnabled(True)
         self._search_input.setFixedHeight(BTN_HEIGHT_SM)
+        # Compact search field — global QLineEdit[compact="true"] theme rule
+        # covers the SUBTLE border / small radius / tight padding look.
+        self._search_input.setProperty("compact", "true")
         self._search_input.textChanged.connect(self._filter_items)
-        self._search_input.setStyleSheet(f"""
-            QLineEdit {{
-                background: {COLOR_BG_OVERLAY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_SM}px;
-                color: {COLOR_TEXT_PRIMARY};
-                font-size: {FONT_SIZE_SM}px;
-                padding: 0 8px;
-            }}
-            QLineEdit:focus {{
-                border-color: {COLOR_ACCENT_PRIMARY};
-            }}
-            QLineEdit::placeholder {{
-                color: {COLOR_TEXT_TERTIARY};
-            }}
-        """)
         self._search_input.setVisible(self._expanded)
         self._container_layout.addWidget(self._search_input)
 
@@ -274,13 +250,12 @@ class Sidebar(QFrame):
 
     def _build_bottom_section(self):
         bottom = QFrame()
-        bottom.setStyleSheet("background: transparent;")
         bottom_layout = QVBoxLayout(bottom)
-        bottom_layout.setContentsMargins(8, 0, 8, 8)
+        bottom_layout.setContentsMargins(SP["2"], 0, SP["2"], SP["2"])
         bottom_layout.setSpacing(0)
 
         divider = QFrame()
-        divider.setStyleSheet(f"background: {BORDER_DEFAULT}; max-height: 1px; min-height: 1px;")
+        divider.setProperty("role", "nav-divider")
         bottom_layout.addWidget(divider)
 
         # ── Collapse chevron button (visible only when expanded) ──
@@ -289,19 +264,7 @@ class Sidebar(QFrame):
         self._collapse_btn.setToolTip(t("sidebar.collapse", default="Collapse sidebar"))
         self._collapse_btn.setFixedHeight(28)
         self._collapse_btn.setCursor(Qt.PointingHandCursor)
-        self._collapse_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {COLOR_TEXT_TERTIARY};
-                font-size: {FONT_SIZE_SM}px;
-                border-radius: {RADIUS_SM}px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_HOVER};
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-        """)
+        self._collapse_btn.setProperty("role", "nav-toggle")
         self._collapse_btn.clicked.connect(self._toggle_expand)
         self._collapse_btn.setVisible(self._expanded)
         bottom_layout.addWidget(self._collapse_btn)
@@ -322,10 +285,7 @@ class Sidebar(QFrame):
 
         text = t(i18n_key).upper() if i18n_key else name.upper()
         lbl = QLabel(text)
-        lbl.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600; "
-            f"text-transform: uppercase; letter-spacing: 0.8px; padding-left: 8px;"
-        )
+        lbl.setProperty("role", "nav-group-label")
         lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self._container_layout.addWidget(lbl)
         self._group_labels[name] = lbl
@@ -386,16 +346,15 @@ class Sidebar(QFrame):
         frame = QFrame()
         frame.setFixedHeight(ITEM_H)
         frame.setCursor(Qt.PointingHandCursor)
-        frame.setStyleSheet("background: transparent; border: none;")
+        frame.setProperty("role", "nav-item")
 
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(4, 0, 8, 0)
+        layout.setContentsMargins(SP["1"], 0, SP["2"], 0)
         layout.setSpacing(0)
 
-        # Left accent bar
+        # Left accent bar (coloured by the nav-accent role when active)
         accent = QFrame()
         accent.setFixedWidth(4)
-        accent.setStyleSheet(f"background: transparent; border-radius: {RADIUS_SM}px;")
         layout.addWidget(accent)
 
         # Icon
@@ -409,9 +368,7 @@ class Sidebar(QFrame):
 
         # Text label
         text_lbl = QLabel(label)
-        text_lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 13px; background: transparent;"
-        )
+        text_lbl.setProperty("role", "nav-label")
         text_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         layout.addWidget(text_lbl, 1)
         if not self._expanded:
@@ -421,9 +378,7 @@ class Sidebar(QFrame):
         shortcut_text = NAV_SHORTCUTS.get(key)
         if shortcut_text:
             shortcut_lbl = QLabel(shortcut_text)
-            shortcut_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px; background: transparent;"
-            )
+            shortcut_lbl.setProperty("fontRole", "helper")
             shortcut_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
             layout.addWidget(shortcut_lbl)
             self._shortcut_labels[key] = shortcut_lbl

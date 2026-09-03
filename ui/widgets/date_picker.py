@@ -58,7 +58,12 @@ class QtDatePicker(QWidget):
         layout.addWidget(self.line_edit)
 
         self.calendar_button = QPushButton("\u25BC", self)  # ▼
-        self.calendar_button.setFixedSize(height, height)
+        # Compact square calendar toggle: the width stays a hard cap so the
+        # glyph reads as a square icon button; the height is a minimum floor
+        # (the global QPushButton QSS governs the rendered height). Intentional
+        # icon-button geometry (Phase 2).
+        self.calendar_button.setFixedWidth(height)
+        self.calendar_button.setMinimumHeight(height)
         self.calendar_button.setProperty("variant", "ghost")
         self.calendar_button.setToolTip(t("date_picker.open_calendar", default="Open calendar"))
         layout.addWidget(self.calendar_button)
@@ -161,7 +166,10 @@ class _CalendarDialog(QDialog):
         self.setWindowTitle(t("date_picker.select_date", default="Select date"))
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setFixedSize(280, 300)
+        # DPI-safe (Phase 2): QCalendarWidget scales poorly when forcibly fixed.
+        # Use a generous minimum and let the layout sizeHint drive the popup
+        # size so it can grow at 125-150% Windows scaling.
+        self.setMinimumSize(280, 300)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -190,7 +198,9 @@ class _CalendarDialog(QDialog):
             return
 
         geo = screen.availableGeometry()
-        dialog_size = self.sizeHint() if not self.isFixedSize() else self.size()
+        # Popup is DPI-safe (min + sizeHint, not fixed); sizeHint is the
+        # reliable measure before the dialog has been shown.
+        dialog_size = self.sizeHint()
         x = global_pos.x()
         y = global_pos.y()
 

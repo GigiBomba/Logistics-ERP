@@ -3,6 +3,19 @@ name: Business Invariants
 on:
   push:
     branches: [main, develop, staging]
+    # Only run the 15-minute invariant job when backend-adjacent code or the
+    # workflow itself actually changed — frontend-only pushes are a no-op.
+    paths:
+      - "backend/**"
+      - "services/**"
+      - "repositories/**"
+      - "models/**"
+      - "database/**"
+      - "scripts/**"
+      - "business_invariants/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/business-invariants.yml"
   pull_request:
     branches: [main, develop]
   schedule:

@@ -91,6 +91,8 @@ class TestStressConnectionPool:
             try:
                 conn = pool.conn
                 conn.execute("SELECT 1")
+                # KEEP: this sleep IS the simulated heavy workload (300ms
+                # "calculation") under stress — not a blind test de-race wait.
                 time.sleep(duration)
                 return _id
             except Exception as e:

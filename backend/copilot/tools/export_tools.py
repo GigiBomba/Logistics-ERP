@@ -66,6 +66,12 @@ class ExportPdfReportTool(BaseTool):
     )
     required_permission = "export:write"
     confirmation_level = ConfirmationLevel.INFORMATIONAL
+    # §13 — bulk PDF generation is heavy: dispatched to Celery (inline
+    # fallback), pausable/resumable so wave-1's 409 pause enforcement is
+    # satisfiable.
+    long_running = True
+    supports_pause = True
+    supports_resume = True
     parameters_schema = ExportParams
 
     # ── Internal helpers ────────────────────────────────────────────────────
@@ -186,6 +192,12 @@ class ExportExcelTool(BaseTool):
     )
     required_permission = "export:write"
     confirmation_level = ConfirmationLevel.INFORMATIONAL
+    # §13 — bulk Excel generation is heavy: dispatched to Celery (inline
+    # fallback), pausable/resumable so wave-1's 409 pause enforcement is
+    # satisfiable.
+    long_running = True
+    supports_pause = True
+    supports_resume = True
     parameters_schema = ExportParams
 
     # ── Internal helpers ────────────────────────────────────────────────────

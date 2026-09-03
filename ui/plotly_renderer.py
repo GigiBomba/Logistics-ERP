@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 from services.i18n import t as _t
 from ui.design_tokens import (
     BG_SURFACE,
+    COLOR_BG_OVERLAY,
     FONT_FAMILY,
     TEXT_MUTED,
 )
@@ -197,6 +198,15 @@ def _fallback_svg(width: int, height: int, message: str) -> bytes:
 
 
 # ── Empty / error figure factories ─────────────────────────────────
+
+
+def figure_has_data(fig: go.Figure) -> bool:
+    """Return True when *fig* contains renderable data traces.
+
+    Empty placeholder figures (``empty_figure``) carry only an annotation
+    and no traces, so ``bool(fig.data)`` is a reliable no-data signal.
+    """
+    return fig is not None and bool(getattr(fig, "data", None))
 
 
 def empty_figure(
@@ -564,6 +574,7 @@ class PlotlyChartWidget(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
         self._fig: go.Figure | None = None
         self._fig_id: int = 0  # last ``id()`` of the figure we rendered
+        self._grid_visible: bool = True  # grid-line toggle state (see set_grid_visible)
         self._width: int = 420
         self._height: int = 170
         self._min_height: int = min_height
@@ -612,6 +623,23 @@ class PlotlyChartWidget(QFrame):
         self._label.setStyleSheet("background: transparent; border: none;")
         layout.addWidget(self._label)
 
+        # Subtle "No data available" placeholder shown via ``set_empty``.
+        # Painted over a surface background (never pure black) so empty
+        # chart cards read as deliberate empty states, not render errors.
+        self._empty = False
+        self._empty_message = _t("common.no_data", default="No data available")
+        self._empty_lbl = QLabel(self._empty_message, self)
+        self._empty_lbl.setObjectName("plotly-chart-empty")
+        self._empty_lbl.setAlignment(Qt.AlignCenter)
+        self._empty_lbl.setWordWrap(True)
+        self._empty_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._empty_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-family: '{FONT_FAMILY}';"
+            " font-size: 12px; background: transparent; border: none;"
+        )
+        self._empty_lbl.hide()
+        layout.addWidget(self._empty_lbl)
+
         # Wire the singleton render manager's ``delivered`` signal once
         # per widget.  All renders flow through this single slot; the
         # ``_pending_tag`` guard ensures only the most recent render
@@ -625,6 +653,46 @@ class PlotlyChartWidget(QFrame):
 
     # ── public API ─────────────────────────────────────────────
 
+    def set_empty(self, empty: bool, message: str = "") -> None:
+        """Show/hide the standard 'No data available' empty state.
+
+        When *empty* is True the pixmap label is hidden and a muted,
+        centered label is shown over a surface (non-black) background.
+        Any in-flight render is cancelled and the owning tab is notified
+        immediately so loading overlays count empty charts as delivered.
+
+        Pass ``empty=False`` to restore the chart pixmap (re-rendering
+        the stored figure if one is present).
+        """
+        self._empty = bool(empty)
+        if message:
+            self._empty_message = message
+        else:
+            self._empty_message = _t("common.no_data", default="No data available")
+
+        if self._empty:
+            if self._pending_tag is not None:
+                try:
+                    get_render_manager().cancel(self._pending_tag)
+                except Exception:
+                    _log.debug("Could not cancel in-flight render for empty chart")
+                self._pending_tag = None
+            self._empty_lbl.setText(self._empty_message)
+            self._label.hide()
+            self._empty_lbl.show()
+            self.setStyleSheet(
+                f"background: {COLOR_BG_OVERLAY}; border: none;"
+            )
+            # Let the owning tab's loading overlay count this chart as
+            # delivered — no pixmap render will ever arrive.
+            self._notify_owner()
+        else:
+            self._empty_lbl.hide()
+            self._label.show()
+            self.setStyleSheet("")
+            if self._fig is not None:
+                self.set_figure(self._fig)
+
     def set_figure(self, fig: go.Figure) -> None:
         """Store the figure and queue a render.
 
@@ -636,6 +704,9 @@ class PlotlyChartWidget(QFrame):
         pixmap is applied directly without a render call.  This is
         the common case after a view-switch — re-entering a view that
         already rendered the chart is instant.
+
+        Calling ``set_figure`` also clears any active empty state
+        (``set_empty(True)``) so a data refresh repopulates the card.
 
         Deferral rules (preserved verbatim — these are what the rest
         of the file relies on):
@@ -656,6 +727,11 @@ class PlotlyChartWidget(QFrame):
         re-renders (data change, resize) the widget is already laid
         out so the cache-or-render path runs immediately.
         """
+        if self._empty:
+            self._empty = False
+            self._empty_lbl.hide()
+            self._label.show()
+            self.setStyleSheet("")
         self._fig = fig
         new_fig_id = id(fig)
 
@@ -698,6 +774,32 @@ class PlotlyChartWidget(QFrame):
     def figure(self) -> go.Figure | None:
         """Return the currently stored figure, if any."""
         return self._fig
+
+    def set_grid_visible(self, visible: bool) -> None:
+        """Toggle x/y axis grid lines on the stored figure and re-render.
+
+        The toggle state is kept per widget (``self._grid_visible``) so
+        repeated calls toggle consistently.  When no figure is stored the
+        state is still remembered; a later call on a widget that has a
+        figure will apply it.
+
+        The per-instance pixmap cache is keyed by ``id(fig)``; because the
+        figure is mutated in place, any cached pixmap for it is stale and
+        is dropped before the re-render so the new grid state is actually
+        visible.
+        """
+        self._grid_visible = bool(visible)
+        fig = self._fig
+        if fig is None:
+            return
+        fig.update_xaxes(showgrid=self._grid_visible)
+        fig.update_yaxes(showgrid=self._grid_visible)
+        self._pixmap_cache = {
+            key: pixmap
+            for key, pixmap in self._pixmap_cache.items()
+            if key[0] != id(fig)
+        }
+        self.set_figure(fig)
 
     def set_min_height(self, px: int) -> None:
         """Set a minimum height in pixels for the inner label."""
@@ -744,13 +846,16 @@ class PlotlyChartWidget(QFrame):
     def _queue_render(self, w: int | None = None, h: int | None = None, fig_id: int | None = None) -> None:
         """Submit the current figure to the render manager.
 
-        If the figure is ``None`` we show the empty placeholder
-        immediately (no need to round-trip through the worker).
+        If the figure is ``None`` (or the widget is showing its empty
+        state) we show the placeholder immediately (no need to round-trip
+        through the worker).
 
         ``w`` / ``h`` / ``fig_id`` are pre-computed by the caller
         (typically ``set_figure``) when the size and figure identity
         are already known — avoids recomputing the LRU cache key.
         """
+        if self._empty:
+            return
         if self._fig is None:
             self._pending_tag = None
             self._render_empty()
@@ -911,7 +1016,7 @@ class PlotlyChartWidget(QFrame):
         """
         new_w = self._label.width()
         new_h = self._label.height()
-        if self._fig is None:
+        if self._fig is None or self._empty:
             return
         # If a render is already in flight (typically from the
         # ``showEvent`` that fires on the first show), do nothing.
@@ -952,7 +1057,7 @@ class PlotlyChartWidget(QFrame):
         the in-flight render will populate the pixmap.
         """
         super().showEvent(event)
-        if self._fig is None:
+        if self._fig is None or self._empty:
             return
         # If a render is already in flight, the showEvent is a
         # re-fire (e.g. parent layout re-laid out) — do nothing.

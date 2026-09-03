@@ -50,11 +50,13 @@
             "not_yet_implemented": "The AI Co-Pilot is not yet available. Coming in Phase 1."
         },
         "error": {
+            "model_unreachable": "I couldn't reach the AI model just now. Check your AI settings (Settings → AI Vision) and try again — meanwhile you can use the regular screens.",
             "too_many_steps": "This plan has too many steps. Can you narrow it down?",
             "too_many_graph_nodes": "This request would generate too many reasoning steps. Can you narrow it down?",
             "too_many_tokens": "This request is too complex to process in one turn. Can you break it into smaller parts?",
             "timeout": "The operation timed out. Please try again.",
             "feature_not_in_tier": "This feature is not available on your subscription tier.",
+            "quota_exceeded": "You have exceeded your subscription's monthly usage limit.",
             "unavailable": "The AI Co-Pilot is temporarily unavailable. Please use the standard screens instead.",
             "service_error": "The backend service returned an error.",
             "unexpected": "An unexpected error occurred.",
@@ -64,7 +66,8 @@
             "unknown_analytics_domain": "Unknown analytics domain. Available: financial, fleet, driver, client, route_profitability, trip_status, cost_breakdown, monthly_volume, revenue_quarterly, maintenance, truck_utilization, invoice_aging, overdue, summary.",
             "stt_unavailable": "Voice input is not available because the speech-to-text engine is not installed. Install the 'faster-whisper' package or type your request instead.",
             "stt_failed": "Speech-to-text transcription failed. Please try again or type your request.",
-            "stt_no_speech": "No speech detected. Please try speaking again or type your request instead."
+            "stt_no_speech": "No speech detected. Please try speaking again or type your request instead.",
+            "help_only_tier": "Режимът на помощ покрива само документация и указания. Живите данни и действия изискват план Business или Enterprise."
         },
         "step": {
             "vehicle_search_done": "Vehicle search completed.",
@@ -135,6 +138,16 @@
                 "generate_pdf_failed": "PDF generation failed.",
                 "generate_excel_ok": "Excel generated successfully.",
                 "generate_excel_failed": "Excel generation failed."
+            },
+            "whatsapp": {
+                "send_ok": "WhatsApp съобщението е изпратено до {recipient}.",
+                "send_failed": "Неуспешно изпращане на WhatsApp съобщение до {recipient}."
+            },
+            "progress": {
+                "validating": "Валидиране на заявката...",
+                "executing": "Изпълнение във фонов режим...",
+                "succeeded": "Задачата е изпълнена успешно.",
+                "failed": "Задачата се провали."
             }
         },
         "dispatch": {
@@ -248,7 +261,15 @@
             "not_persisted": "Plan history is not yet available.",
             "cancelled": "Plan has been cancelled.",
             "not_found": "Plan with ID {plan_id} not found.",
-            "not_owned": "You do not have access to this plan."
+            "not_owned": "You do not have access to this plan.",
+            "cannot_pause": "Този план не може да бъде поставен на пауза — инструментите му не поддържат пауза.",
+            "cannot_resume": "Този план не може да бъде възобновен — инструментите му не поддържат възобновяване."
+        },
+        "summary": {
+            "llm_chat": "{answer}",
+            "help": {
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+            }
         },
         "world_model": {
             "overdue_invoices": "There are {count} overdue invoices requiring attention.",
@@ -336,6 +357,11 @@
             "processing_tooltip": "Processing...",
             "wake_word_phase3": "Wake word support coming soon. Switching back to Push to Talk.",
             "recording_error": "Microphone error: {error}"
+        },
+        "whatsapp": {
+            "error": {
+                "not_configured": "WhatsApp не е конфигуриран. Помолете администратор да настрои WhatsApp Business API."
+            }
         }
     },
     "app": {
@@ -781,7 +807,7 @@
         "kpi_active_trucks": "Активни Камиони",
         "kpi_total_km": "Общо КМ",
         "kpi_avg_consumption": "Ср. Разход",
-                "kpi_otd": "On-Time Delivery",
+        "kpi_otd": "On-Time Delivery",
         "kpi_maint_alerts": "Известия Поддръжка",
         "kpi_invoices": "Фактури",
         "kpi_cmrs": "CMR",
@@ -1419,7 +1445,12 @@
         "cancelled": "Отменен",
         "invoiced": "Фактуриран",
         "paid": "Платен",
-        "Archived": "Архивиран"
+        "Archived": "Архивиран",
+        "in_progress": "В Процес",
+        "overdue": "Просрочен",
+        "maintenance": "Поддръжка",
+        "unassigned": "Неразпределени",
+        "delayed": "Закъснял"
     },
     "common": {
         "all": "Всички",
@@ -1791,7 +1822,7 @@
         "excellent": "Отличен",
         "export": "Експорт",
         "export_success": "Експортът е успешен",
-        "export_title": "Заглавие Експорт",
+        "export_title": "Експорт",
         "fair": "Среден",
         "filter_label": "Филтър",
         "flash_maint_scheduled": "Поддръжката е Планирана",
@@ -2521,7 +2552,7 @@
     "automation": {
         "attachments_empty": "Прикачените файлове са празни",
         "body_label": "Тяло:",
-        "browse_title": "Заглавие Разглеждане",
+        "browse_title": "Изберете документ(и) за импорт",
         "confirm_delete_title": "Да се изтрие ли това pipeline изпълнение и неговия обработен файл?",
         "continue_to_email": "Продължи към Имейл",
         "copy_run": "Копирай път",
@@ -3230,5 +3261,13 @@
         "offline_title": "Offline",
         "offline_message": "Issue reporting is not available in offline mode.",
         "button_tooltip": "Report an Issue"
+    },
+    "alert_card": {
+        "trip_ref": "Trip {trip_id}",
+        "truck_ref": "Truck {truck_id}"
+    },
+    "client_activity": {
+        "trip_line": "Trip: {truck} — {status} / {client} — {distance} km",
+        "invoice_line": "Invoice: {number} — {status} — {amount} EUR ({trip_status})"
     }
 }

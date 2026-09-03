@@ -19,6 +19,7 @@ from client.remote_maintenance import RemoteMaintenanceService
 from client.remote_invoice_service import RemoteInvoiceService
 from client.remote_driver_service import RemoteDriverService
 from client.remote_route_history import RemoteRouteHistoryService
+from tests.test_remote_services import _jwt_with_company
 
 
 def _make_clean_params_work(mock_api):
@@ -434,18 +435,17 @@ class TestRemoteTachoService:
     # ── import_ddd_file ────────────────────────────────────────────
 
     def test_import_ddd_file_uses_post_with_files(self, service, api, tmp_path):
-        """Verify import_ddd_file calls _api._client.post() with
-        the file opened in binary mode."""
+        """Verify import_ddd_file calls _api._post() with the file opened in
+        binary mode (routed through the retry/backoff path)."""
         ddd_file = tmp_path / "driver1.ddd"
         ddd_file.write_bytes(b"\x00\x01\x02")
-        api._base_url = ""
-        api._client.post.return_value.json.return_value = {"success": True}
+        api._post.return_value = {"success": True}
 
         result = service.import_ddd_file(str(ddd_file))
 
         assert result == {"success": True}
-        api._client.post.assert_called_once()
-        call_args, call_kwargs = api._client.post.call_args
+        api._post.assert_called_once()
+        call_args, call_kwargs = api._post.call_args
         assert call_args[0] == "/api/v1/tacho/import"
         assert "files" in call_kwargs
         # Verify the file was opened for binary read
@@ -455,25 +455,23 @@ class TestRemoteTachoService:
         assert file_name == "driver1.ddd"
 
     def test_import_ddd_file_not_using_client_post(self, service, api, tmp_path):
-        """Verify import_ddd_file uses _api._client.post()."""
+        """Verify import_ddd_file does NOT touch _api._client.post() directly."""
         ddd_file = tmp_path / "test.ddd"
         ddd_file.write_bytes(b"data")
-        api._base_url = ""
-        api._client.post.return_value.json.return_value = {}
+        api._post.return_value = {}
         service.import_ddd_file(str(ddd_file))
-        api._client.post.assert_called_once()
+        api._post.assert_called_once()
+        api._client.post.assert_not_called()
 
     def test_import_ddd_file_raises_when_file_missing(self, service, api):
-        api._base_url = ""
-        api._client.post.side_effect = FileNotFoundError("No such file")
+        api._post.side_effect = FileNotFoundError("No such file")
         with pytest.raises(FileNotFoundError):
             service.import_ddd_file("/nonexistent/file.ddd")
 
     def test_import_ddd_file_raises_on_api_error(self, service, api, tmp_path):
         ddd_file = tmp_path / "error.ddd"
         ddd_file.write_bytes(b"data")
-        api._base_url = ""
-        api._client.post.side_effect = RuntimeError("API error")
+        api._post.side_effect = RuntimeError("API error")
         with pytest.raises(RuntimeError, match="API error"):
             service.import_ddd_file(str(ddd_file))
 
@@ -693,6 +691,13 @@ class TestRemoteDriverService:
     def service(self, api):
         return RemoteDriverService(api)
 
+    @pytest.fixture(autouse=True)
+    def _clear_driver_cache(self):
+        from client.remote_driver_service import _driver_cache
+        _driver_cache.clear()
+        yield
+        _driver_cache.clear()
+
     # ── get_all ────────────────────────────────────────────────────
 
     def test_get_all_returns_items(self, service, api):
@@ -878,6 +883,50 @@ class TestRemoteDriverService:
         api.get_driver_tacho_activity.assert_called_once_with(
             5, from_date="", limit=100,
         )
+
+    # ── get_plates_by_driver_ids (B2 parallel + C1 cache) ──────────────
+
+    def test_get_plates_by_driver_ids_returns_mapping(self, service, api):
+        api.get_driver_truck_plate.side_effect = [
+            {"plate": "AB-1"}, {"plate": "CD-2"}, {"plate": ""},
+        ]
+        result = service.get_plates_by_driver_ids([1, 2, 3])
+        assert result == {1: "AB-1", 2: "CD-2", 3: ""}
+        assert api.get_driver_truck_plate.call_count == 3
+
+    def test_get_plates_by_driver_ids_empty(self, service, api):
+        result = service.get_plates_by_driver_ids([])
+        assert result == {}
+        api.get_driver_truck_plate.assert_not_called()
+
+    def test_get_plates_by_driver_ids_failure_maps_to_empty(self, service, api):
+        api.get_driver_truck_plate.side_effect = [
+            RuntimeError("offline"), {"plate": "XY"},
+        ]
+        result = service.get_plates_by_driver_ids([1, 2])
+        assert result == {1: "", 2: "XY"}
+
+    def test_get_plates_by_driver_ids_cache_hit_zero_network(self, service, api):
+        api._auth.token = _jwt_with_company(5)
+        api.get_driver_truck_plate.side_effect = [
+            {"plate": "AB-1"}, {"plate": "CD-2"},
+        ]
+        first = service.get_plates_by_driver_ids([1, 2])
+        assert api.get_driver_truck_plate.call_count == 2
+
+        second = service.get_plates_by_driver_ids([1, 2])
+        assert first == second
+        assert api.get_driver_truck_plate.call_count == 2  # cached — no new calls
+
+    def test_get_plates_by_driver_ids_cache_is_company_scoped(self, service, api):
+        api._auth.token = _jwt_with_company(6)
+        api.get_driver_truck_plate.side_effect = [{"plate": "AA"}]
+        service.get_plates_by_driver_ids([1])
+
+        api._auth.token = _jwt_with_company(7)
+        api.get_driver_truck_plate.side_effect = [{"plate": "BB"}]
+        result = service.get_plates_by_driver_ids([1])
+        assert result == {1: "BB"}  # NOT the cached "AA" from company 6
 
 
 # ── RemoteRouteHistoryService ───────────────────────────────────────

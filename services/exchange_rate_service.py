@@ -78,10 +78,12 @@ class ExchangeRateService(GracefulWorker):
     def get_rate(self, currency_code: str) -> float:
         """Get the exchange rate for a currency relative to EUR.
 
-        Returns cached rates; does NOT fetch live data.
+        Returns cached rates; triggers a non-blocking background refresh
+        when the cache is stale.
         """
         if currency_code == BASE_CURRENCY:
             return 1.0
+        self.refresh_if_stale()
         with self._rates_lock:
             rate = self._rates.get(currency_code)
         if rate is None:
@@ -116,6 +118,7 @@ class ExchangeRateService(GracefulWorker):
             logger.error("Zero rate encountered: from=%s(%f) to=%s(%f)",
                          from_currency, rate_from, to_currency, rate_to)
             return amount
+        self.refresh_if_stale()
         age = self.age_seconds()
         if age is not None and age > CACHE_TTL_SECONDS * 24:
             logger.warning("Using exchange rates that are %.0f hours old (%.0f days)",
@@ -132,11 +135,11 @@ class ExchangeRateService(GracefulWorker):
         """
         with self._rates_lock:
             if self._last_updated is None:
-                return self.refresh(background=False)
+                return self.refresh(background=True)
             age = time.time() - self._last_updated
             if age > CACHE_TTL_SECONDS:
                 logger.info("Exchange rates stale (age=%.0fs > TTL=%ds), refreshing", age, CACHE_TTL_SECONDS)
-                return self.refresh(background=False)
+                return self.refresh(background=True)
         return True
 
     def refresh(self, background: bool = True) -> bool:

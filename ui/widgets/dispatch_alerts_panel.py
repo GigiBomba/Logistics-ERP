@@ -43,6 +43,11 @@ _DONE_STATUSES = frozenset({
     "Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced",
 })
 
+# Resolve (✓) button is a compact square icon button: width stays a hard cap
+# (square click target); height is a minimum floor. Intentional icon-button
+# geometry (Phase 2).
+_RESOLVE_BTN_SIZE = 22
+
 
 class QtDispatchAlertsPanel(QWidget):
     """Combined panel showing: active alerts, unassigned trips, assignment summary."""
@@ -127,8 +132,7 @@ class QtDispatchAlertsPanel(QWidget):
 
         title_lbl = QLabel(t(title_key))
         title_lbl.setStyleSheet(
-            f"font-size: 14px; font-weight: 600; color: {COLOR_TEXT_PRIMARY}; "
-            f"letter-spacing: 0.3px; background: transparent;"
+            f"font-size: 14px; font-weight: 600; letter-spacing: 0.3px;"
         )
         header_layout.addWidget(title_lbl)
 
@@ -141,8 +145,7 @@ class QtDispatchAlertsPanel(QWidget):
                 variant="ghost",
             )
             resolve_btn.setStyleSheet(
-                f"color: {COLOR_ACCENT_PRIMARY}; font-size: 13px; font-weight: 500; "
-                f"background: transparent;"
+                f"color: {COLOR_ACCENT_PRIMARY}; font-size: 13px; font-weight: 500;"
             )
             resolve_btn.setFixedHeight(24)
             header_layout.addWidget(resolve_btn)
@@ -289,7 +292,8 @@ class QtDispatchAlertsPanel(QWidget):
             command=lambda a=alert: self._resolve_alert_row(a),
             variant="ghost",
         )
-        resolve_btn.setFixedSize(22, 22)
+        resolve_btn.setFixedWidth(_RESOLVE_BTN_SIZE)
+        resolve_btn.setMinimumHeight(_RESOLVE_BTN_SIZE)
         row_layout.addWidget(resolve_btn)
 
         self._alerts_content.addWidget(row)

@@ -11,8 +11,9 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QDockWidget,
     QGraphicsOpacityEffect,
     QLabel,
     QMainWindow,
@@ -22,9 +23,16 @@ from PySide6.QtWidgets import (
 
 from config import Config
 from services.client_service import ClientService
-from ui.design_tokens import FADE_MS
+from ui.design_tokens import (
+    FADE_MS,
+    WINDOW_INITIAL_HEIGHT,
+    WINDOW_INITIAL_WIDTH,
+    WINDOW_MIN_HEIGHT,
+    WINDOW_MIN_WIDTH,
+)
 from ui.mode_guard import ConnectionMode, detect_mode
 from services.fleet_service import FleetService
+from services.exchange_rate_service import ExchangeRateService
 from services.fuel_price_service import FuelPriceService
 from services.i18n import t
 from services.operations.event_bus import (
@@ -61,8 +69,7 @@ from ui.views import (
     FreightSearchView,
     QtGeneratorsView,
     QtHistoryView,
-    QtMaintenanceAnalyticsView,
-    QtMaintenanceControlPanel,
+    QtMaintenanceHub,
     QtMigrationCenterView,
     QtOverviewView,
     QtRouteHistoryView,
@@ -78,7 +85,7 @@ logger = logging.getLogger(__name__)
 # Every module in ``_ALL_MODULE_KEYS`` is now remote-capable: each view
 # either receives a remote service through its view factory (Tier-1: analytics,
 # history, fleet, driver_manager, maintenance, invoices, freight_exchange,
-# clients; Tier-2: dispatch_board, tracking, documents, maintenance_control)
+# clients; Tier-2: dispatch_board, tracking, documents)
 # or degrades gracefully when no local database is available.
 #
 # ``_modules_available_in`` is kept as the single per-instance availability
@@ -86,7 +93,7 @@ logger = logging.getLogger(__name__)
 _ALL_MODULE_KEYS: frozenset[str] = frozenset({
     "calculator", "overview", "route_planner", "analytics", "history",
     "route_history", "dispatch_board", "tracking", "fleet", "driver_manager",
-    "clients", "documents", "maintenance", "maintenance_control",
+    "clients", "documents", "maintenance",
     "tachograph", "invoices", "team", "settings", "migration_center",
     "freight_exchange", "copilot",
 })
@@ -99,6 +106,36 @@ def _modules_available_in(mode: ConnectionMode) -> set[str]:
     policy stays centralised if a future module needs LOCAL-only gating.
     """
     return set(_ALL_MODULE_KEYS)
+
+
+def _initial_window_size() -> tuple[int, int]:
+    """Compute the initial main-window size from the primary screen.
+
+    Uses ``WINDOW_INITIAL_WIDTH`` x ``WINDOW_INITIAL_HEIGHT`` when the
+    available screen geometry is large enough. Otherwise sizes to ~80% of
+    the available geometry, clamped to at least ``WINDOW_MIN_WIDTH`` x
+    ``WINDOW_MIN_HEIGHT`` and at most the available size. If the screen is
+    smaller than the minimum, the minimum is used anyway — Qt clamps the
+    window to the screen when shown.
+    """
+    screen = QGuiApplication.primaryScreen()
+    if screen is None:
+        return WINDOW_INITIAL_WIDTH, WINDOW_INITIAL_HEIGHT
+    avail = screen.availableGeometry()
+    if (
+        avail.width() >= WINDOW_INITIAL_WIDTH
+        and avail.height() >= WINDOW_INITIAL_HEIGHT
+    ):
+        return WINDOW_INITIAL_WIDTH, WINDOW_INITIAL_HEIGHT
+    width = max(
+        WINDOW_MIN_WIDTH,
+        min(round(avail.width() * 0.8), avail.width()),
+    )
+    height = max(
+        WINDOW_MIN_HEIGHT,
+        min(round(avail.height() * 0.8), avail.height()),
+    )
+    return width, height
 
 
 class MainWindow(QMainWindow):
@@ -159,6 +196,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._setup_shortcuts()
+        self._init_observability_dock()
         self._init_fuel_status()
         self._warmup_started = False
 
@@ -179,8 +217,14 @@ class MainWindow(QMainWindow):
         # Check for first-launch onboarding (after UI is fully settled)
         QTimer.singleShot(1500, self._check_onboarding)
 
-        # Initial alert refresh
-        QTimer.singleShot(500, self, self._refresh_alerts)
+        # Initial alert refresh. Parented single-shot timer (NOT the
+        # ``QTimer.singleShot(msec, context, callable)`` overload, which drops
+        # the Python reference to the callable and can crash natively if the
+        # address is recycled before the timer fires).
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self._refresh_alerts)
+        _timer.start(500)
 
         # ── Performance: pre-create all pages in background ──
         # After the UI is visible, warm up all view modules so
@@ -303,10 +347,13 @@ class MainWindow(QMainWindow):
         self._fuel_service = FuelPriceService()
         self._fuel_service.refresh_if_stale()
 
+        self._exchange_service = ExchangeRateService()
+        self._exchange_service.refresh_if_stale()
+
     def _build_ui(self):
         self.setWindowTitle(Config.APP_NAME)
-        self.resize(1400, 900)
-        self.setMinimumSize(1024, 600)
+        self.resize(*_initial_window_size())
+        self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
 
         self.app_shell = AppShell(
             self,
@@ -363,7 +410,6 @@ class MainWindow(QMainWindow):
             ("clients", t("nav.clients"), "nav.clients"),
             ("documents", t("nav.documents"), "nav.documents"),
             ("maintenance", t("nav.maintenance_analytics"), "nav.maintenance_analytics"),
-            ("maintenance_control", t("nav.maintenance_control"), "nav.maintenance_control"),
             ("tachograph", t("nav.tachograph"), "nav.tachograph"),
         ])
 
@@ -406,6 +452,11 @@ class MainWindow(QMainWindow):
         # ── Back navigation (Alt+Left) ──
         self._shortcut_back = QShortcut(QKeySequence("Alt+Left"), self, self._go_back)
 
+        # ── Dev toolkit: toggle Co-Pilot observability dock (Ctrl+Shift+O) ──
+        self._shortcut_observability = QShortcut(
+            QKeySequence("Ctrl+Shift+O"), self, self._toggle_observability
+        )
+
         # ── Navigation shortcuts (Ctrl+1..Ctrl+9) ──
         self._nav_shortcuts: list[QShortcut] = []
         _nav_keys = [
@@ -433,6 +484,10 @@ class MainWindow(QMainWindow):
         self._fuel_timer.start(60_000)
 
     def _update_fuel_status(self):
+        # Skip work entirely when the window (and therefore the fuel status
+        # indicator) isn't visible — e.g. on startup or when hidden.
+        if not self.isVisible():
+            return
         text = self._fuel_status_text()
         logger.debug("Fuel status: %s", text)
         with contextlib.suppress(Exception):
@@ -655,7 +710,7 @@ class MainWindow(QMainWindow):
     _WARMUP_KEYS = [
         "overview", "analytics", "route_planner", "calculator",
         "dispatch_board", "tracking", "fleet", "driver_manager",
-        "clients", "documents", "maintenance", "maintenance_control",
+        "clients", "documents", "maintenance",
         "tachograph", "invoices", "history", "route_history",
         "copilot", "migration_center", "settings",
     ]
@@ -728,6 +783,87 @@ class MainWindow(QMainWindow):
             "Co-Pilot controller unavailable: no remote service and no local DB"
         )
         return None
+
+    def _build_copilot_view(self, parent: QWidget):
+        """Compose the Co-Pilot module: chat panel + proactive insight queue.
+
+        The insight review queue (§18) is mounted alongside the chat panel in
+        the same module, mirroring how ``CoPilotPanel`` is composed into
+        ``CoPilotView``.  It loads its own data on the next event-loop tick so
+        module creation never blocks on the HTTP call (and degrades gracefully
+        when no API client or backend insights exist).
+        """
+        controller = self._build_copilot_controller()
+        view = QtCopilotView(parent, controller=controller)
+
+        try:
+            from ui.copilot.widgets.insight_queue import InsightQueueWidget
+
+            queue = InsightQueueWidget(
+                parent=view,
+                api_client=self._api_client,
+                controller=controller,
+            )
+            layout = view.layout()
+            if layout is not None:
+                layout.addWidget(queue)
+            # Load the queue's data off the creation path.
+            QTimer.singleShot(0, queue.refresh)
+        except Exception:
+            logger.exception("Failed to mount insight queue in Co-Pilot view")
+
+        return view
+
+    # ── Dev-toolkit: Co-Pilot observability dock (§23.6) ────────────────
+
+    def _init_observability_dock(self) -> None:
+        """Mount the toggleable Co-Pilot observability dock.
+
+        A ``QDockWidget`` on the right edge (hidden by default; toggle with
+        ``Ctrl+Shift+O``).  The panel itself is built lazily on first toggle
+        so app startup never pays the audit/metrics query cost.  In LOCAL
+        mode the panel reads the local ``copilot_audit_log`` DB; in REMOTE
+        mode it degrades to honest empty states until a backend observability
+        endpoint exists (cross-lane hook — see report).
+        """
+        try:
+            dock = QDockWidget(
+                t("nav.observability", default="Co-Pilot Observability"), self
+            )
+            dock.setObjectName("observability-dock")
+            dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+            dock.setFeatures(
+                QDockWidget.DockWidgetClosable
+                | QDockWidget.DockWidgetMovable
+                | QDockWidget.DockWidgetFloatable
+            )
+            self._observability_dock = dock
+            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            dock.hide()
+            logger.info(
+                "Co-Pilot observability dock mounted (hidden; Ctrl+Shift+O to toggle)"
+            )
+        except Exception:
+            logger.exception("Failed to mount observability dock")
+            self._observability_dock = None
+
+    def _toggle_observability(self) -> None:
+        """Show/hide the Co-Pilot observability dock (builds it on first use)."""
+        dock = getattr(self, "_observability_dock", None)
+        if dock is None:
+            return
+        if dock.widget() is None:
+            try:
+                from ui.copilot.widgets.observability_panel import ObservabilityPanel
+
+                panel = ObservabilityPanel(
+                    parent=dock, db=self.db, api_client=getattr(self, "_api_client", None)
+                )
+                dock.setWidget(panel)
+            except Exception:
+                logger.exception("Failed to build observability panel")
+                return
+        dock.setVisible(not dock.isVisible())
 
     def _create_module(self, key: str):
         """Factory for view modules — registry pattern."""
@@ -805,13 +941,10 @@ class MainWindow(QMainWindow):
                     parent, db=self.db, prefs=self.prefs, ops=self.ops,
                     document_service=self.document_service, api_client=ac,
                 ),
-                # MODE: {self._mode.value}  — remote-capable via maintenance_service
-                "maintenance": lambda: QtMaintenanceAnalyticsView(
+                # MODE: {self._mode.value}  — unified maintenance hub (Control + Analytics tabs)
+                "maintenance": lambda: QtMaintenanceHub(
                     parent, db=self.db, repo=self.maintenance_service,
-                ),
-                # MODE: {self._mode.value}  — remote-capable via control/maintenance services
-                "maintenance_control": lambda: QtMaintenanceControlPanel(
-                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                    prefs=self.prefs, ops=self.ops,
                     control_service=self.control_panel_service,
                     maintenance_service=self.maintenance_service,
                     api_client=ac,
@@ -842,10 +975,7 @@ class MainWindow(QMainWindow):
                     freight_service=self.freight_service,
                 ),
                 # MODE: {self._mode.value}  — controller always wired (local mode runs the pipeline in-process)
-                "copilot": lambda: QtCopilotView(
-                    parent,
-                    controller=self._build_copilot_controller(),
-                ),
+                "copilot": lambda: self._build_copilot_view(parent),
             }
 
         factory = MainWindow._VIEW_FACTORIES.get(key)
@@ -949,7 +1079,10 @@ class MainWindow(QMainWindow):
 
     def _on_alert_event(self, ev):
         """Refresh alert count and data when alerts are created or resolved."""
-        QTimer.singleShot(0, self, self._refresh_alerts)
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self._refresh_alerts)
+        _timer.start(0)
 
     def _refresh_alerts(self):
         """Query OperationsEngine for active alerts and push to top bar."""
@@ -1006,10 +1139,15 @@ class PlaceholderView(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
-        label = QLabel(f"{key}\n(Module not yet migrated)")
-        label.setProperty("role", "muted")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
+        from ui.components import EmptyState
+
+        empty = EmptyState(
+            self,
+            icon_name="mdi6.tools",
+            title=key,
+            subtitle=t("module.not_migrated", default="Module not yet migrated"),
+        )
+        layout.addWidget(empty)
 
 
 class ErrorPlaceholderView(QWidget):

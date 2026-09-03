@@ -26,6 +26,18 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
+import shiboken6
+
+
+def _is_valid(obj: Any) -> bool:
+    """True when *obj*'s underlying C++ object still exists.
+
+    PySide6 wrapper objects can outlive their C++ counterpart (a deleted
+    widget); any method call — including ``Signal.emit`` — then raises
+    "Signal source has been deleted".  This is the canonical liveness check.
+    """
+    return shiboken6.isValid(obj)
+
 from PySide6.QtCore import (
     Property,
     QEasingCurve,
@@ -44,11 +56,12 @@ from PySide6.QtGui import (
     QColor,
     QEnterEvent,
     QFont,
+    QKeyEvent,
     QMouseEvent,
     QPainter,
     QPaintEvent,
     QPen,
-    QKeyEvent,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -160,6 +173,7 @@ class GuidedOverlayWidget(QWidget):
         self._pulse_timer.timeout.connect(self._start_pulse)
         self._pulse_anim: Optional[QPropertyAnimation] = None
         self._fade_anim: Optional[QPropertyAnimation] = None
+        self._fade_in_anim: Optional[QPropertyAnimation] = None
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self._opacity_effect.setOpacity(0.0)
         self.setGraphicsEffect(self._opacity_effect)
@@ -168,11 +182,39 @@ class GuidedOverlayWidget(QWidget):
         self._parent_event_filter: Optional[_ParentResizeFilter] = None
 
         self._build_ui()
+
+        # Install resize filter immediately so geometry stays correct even
+        # if the parent is resized before the tour starts.
+        if self.parentWidget() and self._parent_event_filter is None:
+            self._parent_event_filter = _ParentResizeFilter(self, self.parentWidget())
+            self.parentWidget().installEventFilter(self._parent_event_filter)
+            self._parent_event_filter.resized.connect(self._on_parent_resized)
+
         self.setAccessibleName("Guided Tour Overlay")
         self.setAccessibleDescription("Step-by-step guided walkthrough overlay")
         self.hide()
 
     # ── Public API ────────────────────────────────────────────────────────
+
+    def _schedule_after(self, ms: int, fn: Callable[[], None]) -> None:
+        """Run *fn* after *ms* ms, no-op if this widget was destroyed first.
+
+        ``QTimer.singleShot`` callbacks that capture ``self`` fire even after
+        the underlying C++ object was deleted (widget torn down while a tour
+        timer is still pending — e.g. tests garbage-collecting the overlay
+        before a 2-3s timer fires), which raises "Signal source has been
+        deleted" from inside the Qt event loop and poisons later tests.
+        Checking ``shiboken6.isValid`` drops the callback once the object is
+        gone.
+        """
+        pointer = self
+
+        def _run() -> None:
+            if not _is_valid(pointer):
+                return
+            fn()
+
+        QTimer.singleShot(ms, _run)
 
     def start_tour(
         self,
@@ -193,11 +235,6 @@ class GuidedOverlayWidget(QWidget):
         self._title_key = title_key
         self._title_params = title_params or {}
         self._current_step_index = start_from
-
-        if self.parentWidget() and self._parent_event_filter is None:
-            self._parent_event_filter = _ParentResizeFilter(self, self.parentWidget())
-            self.parentWidget().installEventFilter(self._parent_event_filter)
-            self._parent_event_filter.resized.connect(self._on_parent_resized)
 
         self._show_step(start_from)
 
@@ -366,9 +403,14 @@ class GuidedOverlayWidget(QWidget):
         target_id = step.get("target_element_id")
         tooltip_params = step.get("tooltip_params", {})
 
-        # Fade in new step
+        # Stop any running fade animations to avoid opacity traps
+        if self._fade_anim:
+            self._fade_anim.stop()
+        if self._fade_in_anim:
+            self._fade_in_anim.stop()
+
         self._state = "ANIMATING"
-        self._fade_transition(lambda: self._render_step(step_type, target_id, tooltip_key, tooltip_params, index))
+        self._render_step(step_type, target_id, tooltip_key, tooltip_params, index)
 
     def _render_step(
         self,
@@ -409,15 +451,22 @@ class GuidedOverlayWidget(QWidget):
             self._state = "SHOWING"
             self._stop_pulse()
             # Auto-advance after showing success for a moment
-            QTimer.singleShot(2000, self._finish_tour)
+            self._schedule_after(2000, self._finish_tour)
         elif step_type == "navigate":
             self._state = "SHOWING"
             self._stop_pulse()
             # Advance after a brief pause for the user to read
-            QTimer.singleShot(3000, lambda: self.skip_step() if self.is_active() else None)
+            self._schedule_after(3000, lambda: self.skip_step() if self.is_active() else None)
         else:
             self._state = "SHOWING"
             self._stop_pulse()
+
+        # Ensure the overlay covers the full parent and is fully opaque
+        if self.parentWidget():
+            self.setGeometry(self.parentWidget().rect())
+        else:
+            self.setGeometry(QApplication.primaryScreen().geometry())
+        self._opacity_effect.setOpacity(1.0)
 
         # Show UI
         self._tooltip_card.show()
@@ -497,12 +546,13 @@ class GuidedOverlayWidget(QWidget):
             target_rect = QRect(target_global, self._target_widget.size())
             if target_rect.contains(global_pos):
                 # Let the click pass through and advance to next step
-                QTimer.singleShot(100, self.next_step)
+                self._schedule_after(100, self.next_step)
 
-        # Cancel on clicking outside the tooltip (if not WAITING_CLICK/INPUT)
+        # Click outside the tooltip advances the tour so a misplaced tooltip
+        # can never trap the user.
         if self._state == "SHOWING" and self._tooltip_card:
             if not self._tooltip_card.geometry().contains(event.position().toPoint()):
-                pass  # Don't auto-cancel on outside click — too aggressive
+                self.skip_step()
 
         super().mousePressEvent(event)
 
@@ -642,6 +692,9 @@ class GuidedOverlayWidget(QWidget):
         if self._fade_anim:
             self._fade_anim.stop()
             self._fade_anim = None
+        if self._fade_in_anim:
+            self._fade_in_anim.stop()
+            self._fade_in_anim = None
         self._tooltip_card.hide()
         self._target_widget = None
         self._target_rect = QRect()
@@ -666,7 +719,7 @@ class GuidedOverlayWidget(QWidget):
         """Handle input detected on target widget — advance to next step."""
         if self._state == "WAITING_INPUT":
             self._remove_input_filter()
-            QTimer.singleShot(100, self.next_step)
+            self._schedule_after(100, self.next_step)
 
     # ── Helpers ───────────────────────────────────────────────────────────
 

@@ -9,6 +9,20 @@ import pytest
 
 
 @pytest.fixture(autouse=True, scope="function")
+def _clear_kill_switch_memo():
+    """Clear the in-process kill-switch memo before and after each test.
+
+    ``_check_kill_switch`` memoizes pass-through results for ~2s; tests that
+    exercise kill-switch behaviour need a clean memo or a memo entry written
+    by a prior test would short-circuit their Redis reads.
+    """
+    from backend.api.v1.copilot_router import _kill_switch_memo
+    _kill_switch_memo.clear()
+    yield
+    _kill_switch_memo.clear()
+
+
+@pytest.fixture(autouse=True, scope="function")
 def _qt_event_loop_cleanup():
     """Drain pending Qt events after each test to prevent stale timer
     callbacks from ``guided_overlay_widget`` polluting subsequent tests.

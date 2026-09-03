@@ -13,7 +13,12 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
-from backend.copilot.tools.base import BaseTool, ToolExecutionContext
+from backend.copilot.tools.base import (
+    MAX_RESULTS,
+    BaseTool,
+    ToolExecutionContext,
+    cap_result_list,
+)
 from backend.copilot.tools.registry import register_tool
 
 logger = logging.getLogger(__name__)
@@ -278,6 +283,11 @@ class FreightSearchLoadsTool(BaseTool):
     description = "Search freight loads across connected freight exchange providers"
     required_permission = "freight:read"
     confirmation_level = ConfirmationLevel.SAFE
+    # §13 — multi-provider fan-out: heavy, dispatched to Celery (inline fallback),
+    # pausable/resumable so wave-1's 409 pause enforcement is satisfiable.
+    long_running = True
+    supports_pause = True
+    supports_resume = True
     parameters_schema = SearchLoadsParams
 
     async def validate(self, params: SearchLoadsParams, ctx: ToolExecutionContext) -> List[str]:
@@ -312,14 +322,17 @@ class FreightSearchLoadsTool(BaseTool):
                 provider_ids=params.provider_ids,
             )
 
-            # Apply max_results
-            all_results = result_set.results
-            if len(all_results) > params.max_results:
-                all_results = all_results[:params.max_results]
+            # Apply fan-out cap (§23.3) — top N bounded by MAX_RESULTS even if
+            # the caller requested more; the truncation flag stays visible.
+            limit = min(params.max_results or MAX_RESULTS, MAX_RESULTS)
+            capped, total, truncated = cap_result_list(
+                result_set.results, max_results=limit,
+            )
 
             data = {
-                "results": [r.model_dump(mode="json") for r in all_results],
-                "total_results": len(all_results),
+                "results": [r.model_dump(mode="json") for r in capped],
+                "total_results": total,
+                "truncated": truncated,
                 "providers_queried": result_set.total_providers_queried,
                 "providers_skipped": result_set.total_providers_skipped,
                 "provider_statuses": [
@@ -332,7 +345,7 @@ class FreightSearchLoadsTool(BaseTool):
                 status="success",
                 data=data,
                 message_key="copilot.tool.freight.search_loads_ok",
-                message_params={"count": len(all_results)},
+                message_params={"count": len(capped)},
             )
 
         except Exception as exc:
@@ -512,9 +525,13 @@ class FreightRefreshSearchTool(BaseTool):
                 saved_search_id=params.saved_search_id,
             )
 
+            # Fan-out cap (§23.3) — a refreshed search may return unbounded rows.
+            capped, total, truncated = cap_result_list(result_set.results)
+
             data = {
-                "results": [r.model_dump(mode="json") for r in result_set.results],
-                "total_results": len(result_set.results),
+                "results": [r.model_dump(mode="json") for r in capped],
+                "total_results": total,
+                "truncated": truncated,
                 "providers_queried": result_set.total_providers_queried,
                 "providers_skipped": result_set.total_providers_skipped,
                 "provider_statuses": [
@@ -527,7 +544,7 @@ class FreightRefreshSearchTool(BaseTool):
                 status="success",
                 data=data,
                 message_key="copilot.tool.freight.refresh_search_ok",
-                message_params={"count": len(result_set.results)},
+                message_params={"count": len(capped)},
             )
 
         except ValueError as exc:
@@ -632,6 +649,11 @@ class FreightFindBestTrucksTool(BaseTool):
     description = "Find the best trucks for a freight load ranked by match score"
     required_permission = "freight:read"
     confirmation_level = ConfirmationLevel.SAFE
+    # §13 — fleet-wide scoring: heavy, dispatched to Celery (inline fallback),
+    # pausable/resumable so wave-1's 409 pause enforcement is satisfiable.
+    long_running = True
+    supports_pause = True
+    supports_resume = True
     parameters_schema = FindBestTrucksParams
 
     async def validate(self, params: FindBestTrucksParams, ctx: ToolExecutionContext) -> List[str]:

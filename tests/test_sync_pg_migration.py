@@ -31,8 +31,90 @@ from database.db_manager import (
 
 TEST_DSN = os.environ.get(
     "OPERION_TEST_POSTGRES_DSN",
-    "postgresql://operion:operion_test_ci@localhost:5432/operion_test",
+    "postgresql://operion:operion_test_ci@localhost:5432/operion_test_sync",
 )
+
+#: Per-file isolated database name — this module owns ``operion_test_sync``
+#: so its own DDL/migrations can never collide with other test files' on the
+#: shared ``operion_test`` database (xdist `-n 2` concurrent runs).
+_TEST_DB_NAME = "operion_test_sync"
+
+#: Admin DSN: connect to the always-existing ``operion_test`` database so the
+#: (superuser) ``operion`` role can issue CREATE/DROP DATABASE for the
+#: per-file database above.
+_BASE_DSN = "postgresql://operion:operion_test_ci@localhost:5432/operion_test"
+
+
+def _ensure_test_db() -> None:
+    """Create the per-file test database (idempotent; superuser required).
+
+    No-op when ``OPERION_TEST_POSTGRES_DSN`` is set explicitly — the caller
+    pointed us at a database of their choosing, and we must not touch it.
+    """
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True  # CREATE DATABASE cannot run inside a transaction
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (_TEST_DB_NAME,))
+        if not cur.fetchone():
+            cur.execute(
+                pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(_TEST_DB_NAME))
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        # Best-effort: the DB may already exist (idempotent) or PG may be
+        # unreachable (the pg_conn fixtures skip).
+        pass
+
+
+def _drop_test_db() -> None:
+    """Drop the per-file test database at module teardown (best-effort)."""
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Never force-kill another session's connections — if any remain,
+        # leave the DB in place (mirrors tests/integration/conftest.py).
+        cur.execute(
+            "SELECT COUNT(*) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (_TEST_DB_NAME,),
+        )
+        row = cur.fetchone()
+        other_sessions = (row[0] if row else 0) or 0
+        if not other_sessions:
+            cur.execute(
+                pgsql.SQL("DROP DATABASE IF EXISTS {}").format(
+                    pgsql.Identifier(_TEST_DB_NAME)
+                )
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        pass  # a failed drop must not fail tests
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _per_file_test_db():
+    """Drop the per-file database after this module's tests finish."""
+    yield
+    _drop_test_db()
+
+
+# Create the per-file database BEFORE any fixture connects (a module-level
+# skip in the fixture would otherwise leave the DB missing and skip tests).
+_ensure_test_db()
 
 LEGACY_INLINE_UNIQUE = """
 CREATE TABLE sync_server_map (
@@ -103,6 +185,17 @@ def _connect():
     return psycopg2.connect(TEST_DSN, cursor_factory=RealDictCursor, connect_timeout=5)
 
 
+#: Session-level advisory lock serializing this module's PG tests across
+#: xdist workers.  The tests share the per-file ``operion_test_sync`` database
+#: and DROP/CREATE the SAME tables (sync_server_map, the 5 Phase-B tables), so
+#: when ``--dist=load`` splits this file across workers (e.g. a
+#: `-o addopts=` override strips pyproject.toml's ``--dist=loadscope``), two
+#: workers running these tests concurrently would clobber each other's tables.
+#: A blocking session-level advisory lock (same pattern as DatabaseManager's
+#: schema-build lock) runs the tests one at a time, whichever worker owns them.
+_PG_SYNC_TEST_LOCK_KEY = 0x0F1207A2
+
+
 @pytest.fixture
 def pg_conn():
     try:
@@ -110,7 +203,20 @@ def pg_conn():
         conn.autocommit = True
     except Exception as exc:
         pytest.skip(f"PostgreSQL unavailable: {exc}")
+    # Serialize the module's PG tests across processes (see lock docstring).
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_lock(%s)", (_PG_SYNC_TEST_LOCK_KEY,))
+        cur.close()
+    except Exception:
+        pass  # PG unreachable is handled by the skip above
     yield conn
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_unlock(%s)", (_PG_SYNC_TEST_LOCK_KEY,))
+        cur.close()
+    except Exception:
+        pass
     try:
         conn.close()
     except Exception:

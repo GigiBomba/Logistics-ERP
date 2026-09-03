@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 class _DbMock(MagicMock):
@@ -29,20 +28,16 @@ class StrippedMock(MagicMock):
         kwargs.pop("company_id", None)
         return super()._increment_mock_call(*args, **kwargs)
 
-# Import the main FastAPI app
-# The app is created in backend/main.py or similar — read the file to find the app instance.
-# If there's no single app factory, create one from the router:
-
-from backend.api.v1.router import api_v1_router
-from fastapi import FastAPI
-
-# Re-export create_test_app for convenience
-from tests.test_api.helpers import create_test_app  # noqa: F401
-
 
 @pytest.fixture
 def app():
     """Create a FastAPI app with the v1 router for testing."""
+    # Heavy backend imports are deferred into the fixture body so that importing
+    # this conftest (e.g. via the root-conftest re-export) does not load the
+    # FastAPI/backend stack at collection time.
+    from fastapi import FastAPI
+    from backend.api.v1.router import api_v1_router
+
     app = FastAPI()
     app.include_router(api_v1_router)
 
@@ -66,6 +61,7 @@ def app():
 def client(app):
     """TestClient with mocked authentication."""
     # Override the auth dependency to bypass JWT
+    from fastapi.testclient import TestClient
     from backend.dependencies_security import get_current_user, require_dispatcher, require_admin, require_manager
     mock_user = {"id": 1, "email": "test@test.com", "role": "admin", "is_admin": True, "company_id": 1}
     app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -139,6 +135,7 @@ def client_with_mocks(app, mock_trip_service, mock_client_service, mock_fleet_se
     dependency name (``trip_service``, ``client_service``, ``driver_repo``,
     ``db``, …) for convenient assertion and configuration in tests.
     """
+    from fastapi.testclient import TestClient
     from backend.dependencies import (
         get_trip_service, get_client_service, get_fleet_service,
         get_driver_repo, get_document_service, get_analytics_service, get_db,

@@ -193,6 +193,54 @@ class TestProcessDocumentOcr:
         result = process_document_ocr(1, company_id=1)
         assert "DB update failed" in result["error"]
 
+    def test_already_processed_skips_extractor(
+        self, _mock_db, _mock_doc_service
+    ):
+        """C3 idempotency: a document already carrying OCR results must NOT
+        re-run the expensive extractor (retry after a partial failure)."""
+        _mock_doc_service.get_by_id.return_value = {
+            "id": 1,
+            "file_path": "/whatever.pdf",
+            "file_name": "test.pdf",
+            "ocr_text": "already extracted",
+            "ocr_engine": "tesseract",
+            "ocr_run_at": "2026-07-02T10:00:00Z",
+            "extracted_data_json": json.dumps({"total": "1500.00"}),
+        }
+        with patch(
+            "services.document_automation.ocr_extractor.OcrExtractor.extract",
+            create=True,
+        ) as mock_extract:
+            result = process_document_ocr(1, company_id=1)
+        mock_extract.assert_not_called()
+        assert result["status"] == "ok"
+        assert result["document_id"] == 1
+        assert result["already_processed"] is True
+        assert result["text_length"] == len("already extracted")
+        assert result["field_count"] == 1
+
+    def test_no_results_yet_still_extracts(
+        self, _mock_db, _mock_doc_service, _real_file
+    ):
+        """C3 idempotency: a document with no OCR results still runs the
+        extractor (guard must not block the normal first-run path)."""
+        _mock_doc_service.get_by_id.return_value = {
+            "id": 1, "file_path": _real_file, "file_name": "test.pdf",
+        }
+        with patch(
+            "services.document_automation.ocr_extractor.OcrExtractor.extract",
+            create=True,
+        ) as mock_extract:
+            from services.document_automation.ocr_extractor import ExtractionResult
+            mock_extract.return_value = ExtractionResult(
+                full_text="fresh text", extracted={},
+                confidence=0.9, engine="tesseract", pages_processed=1,
+            )
+            result = process_document_ocr(1, company_id=1)
+        mock_extract.assert_called_once()
+        assert result["status"] == "ok"
+        assert result.get("already_processed") is not True
+
 
 # ── batch_ocr_documents ─────────────────────────────────────────────────────
 

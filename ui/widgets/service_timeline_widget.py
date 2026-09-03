@@ -186,7 +186,10 @@ class QtServiceTimelineWidget(QWidget):
         dot_wrapper_layout.setAlignment(Qt.AlignCenter)
 
         dot = QFrame()
-        dot.setFixedSize(dot_size, dot_size)
+        # Decorative timeline dot: minimum floor + Fixed size policy keeps its
+        # size in the centered wrapper layout (Phase 2: minimums, not caps).
+        dot.setMinimumSize(dot_size, dot_size)
+        dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         dot.setStyleSheet(
             f"background-color: {color}; border-radius: {NODE_RADIUS}px;"
             f"border: 1px solid {COLOR_BG_OVERLAY};"
@@ -297,7 +300,10 @@ class QtServiceTimelineWidget(QWidget):
         """Display a detail dialog for a maintenance record."""
         dlg = QDialog(self)
         dlg.setWindowTitle(iconed("maint_timeline.detail_title"))
-        dlg.setFixedSize(420, 300)
+        # DPI-safe (Phase 2): a hard 420x300 cap squeezes content at
+        # 125-150% Windows scaling. Use a sane floor and let the layout
+        # sizeHint drive the actual size (dialog stays resizable).
+        dlg.setMinimumSize(420, 300)
         self._detail_dialog = dlg
 
         layout = QVBoxLayout(dlg)

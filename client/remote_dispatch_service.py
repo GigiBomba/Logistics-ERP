@@ -30,10 +30,19 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
+from services.i18n import t
+
 logger = logging.getLogger("remote_dispatch")
 
 # Column order mirrors ``COLUMN_KEYS`` in the backend dispatch router.
-_COLUMN_KEYS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
+# Labels routed through i18n with English defaults preserved.
+_COLUMN_KEYS = [
+    t("dispatch.column.planned", default="Planned"),
+    t("dispatch.column.loading", default="Loading"),
+    t("dispatch.column.in_transit", default="In Transit"),
+    t("dispatch.column.delivered", default="Delivered"),
+    t("dispatch.column.cancelled", default="Cancelled"),
+]
 
 # Sentinel distinguishing "field omitted" (leave untouched) from an explicit
 # ``None`` (clear the field).  The backend PATCH/POST assignment endpoints
@@ -61,15 +70,6 @@ class RemoteDispatchService:
     def __init__(self, api_client) -> None:
         self._api = api_client
 
-    @staticmethod
-    def _query_params(**kwargs: Any) -> dict:
-        """Strip ``None``/empty-string values from query params.
-
-        Mirrors ``ApiClient._clean_params`` without depending on the client
-        instance, so the wrapper keeps a predictable surface for mocks.
-        """
-        return {k: v for k, v in kwargs.items() if v is not None and v != ""}
-
     # ── Board data ─────────────────────────────────────────────────────────
 
     def get_board_data(
@@ -90,7 +90,7 @@ class RemoteDispatchService:
         try:
             resp = self._api._get(
                 "/api/v1/dispatch/board",
-                params=self._query_params(
+                params=self._api._clean_params(
                     delivered_window_days=delivered_window_days,
                     limit=limit,
                 ),
@@ -138,7 +138,7 @@ class RemoteDispatchService:
         try:
             resp = self._api._get(
                 "/api/v1/dispatch/driver-hours",
-                params=self._query_params(week_start=week_start),
+                params=self._api._clean_params(week_start=week_start),
             )
             if not isinstance(resp, dict):
                 logger.warning(
@@ -480,7 +480,7 @@ class RemoteDispatchService:
         try:
             resp = self._api._get(
                 "/api/v1/dispatch/slots/next",
-                params=self._query_params(
+                params=self._api._clean_params(
                     driver_id=driver_id,
                     truck_id=truck_id,
                     start_at=start_at,

@@ -291,17 +291,17 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._related_trip_combo.blockSignals(True)
         self._related_trip_combo.clear()
         self._related_trip_combo.addItem("")
-        for t in trips:
+        for trip in trips:
             # NOTE: Reusing invoice key "invoice.trip_list_format" because no
             # receipt-specific key exists in translations yet.
             label = t("invoice.trip_list_format").format(
-                id=t["id"],
-                truck_number=t.get("truck_number", ""),
-                client_name=t.get("client_name", ""),
-                created_at=((t.get("created_at") or "")[:10]),
+                id=trip["id"],
+                truck_number=trip.get("truck_number", ""),
+                client_name=trip.get("client_name", ""),
+                created_at=((trip.get("created_at") or "")[:10]),
             )
             self._related_trip_combo.addItem(label)
-            self._trip_combo_map[label] = t["id"]
+            self._trip_combo_map[label] = trip["id"]
         idx = self._related_trip_combo.findText(current)
         if idx >= 0:
             self._related_trip_combo.setCurrentIndex(idx)

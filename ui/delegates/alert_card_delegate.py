@@ -16,12 +16,14 @@ from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QStyledItemDelegate
 
+from services.i18n import t
 from services.operations.alert_manager import Alert, AlertType, Severity
 from ui.design_tokens import (
     BG_ELEVATED,
     BG_OVERLAY,
     BORDER_DEFAULT,
     DANGER,
+    FONT_MONO,
     INFO,
     TEXT_MUTED,
     TEXT_WHITE,
@@ -81,15 +83,15 @@ class AlertCardDelegate(QStyledItemDelegate):
         self._font_title = QFont("Segoe UI", 10, QFont.Bold)
         if self._font_title.pointSize() <= 0:
             self._font_title.setPointSize(10)
-        self._font_body = QFont("Segoe UI", 9)
+        self._font_body = QFont("Segoe UI", 10)
         if self._font_body.pointSize() <= 0:
-            self._font_body.setPointSize(9)
-        self._font_small = QFont("Segoe UI", 8)
+            self._font_body.setPointSize(10)
+        self._font_small = QFont("Segoe UI", 10)
         if self._font_small.pointSize() <= 0:
-            self._font_small.setPointSize(8)
-        self._font_mono = QFont("Consolas", 9)
+            self._font_small.setPointSize(10)
+        self._font_mono = QFont(FONT_MONO, 10)
         if self._font_mono.pointSize() <= 0:
-            self._font_mono.setPointSize(9)
+            self._font_mono.setPointSize(10)
 
     def sizeHint(self, option, index):
         return QSize(option.rect.width(), _CARD_HEIGHT)
@@ -146,9 +148,9 @@ class AlertCardDelegate(QStyledItemDelegate):
         # Row 3: references
         refs = []
         if alert.truck_id:
-            refs.append(f"\U0001F69A  Truck {alert.truck_id}")
+            refs.append(f"\U0001F69A  {t('alert_card.truck_ref', truck_id=alert.truck_id)}")
         if alert.trip_id:
-            refs.append(f"\U0001F4CB  Trip {alert.trip_id}")
+            refs.append(f"\U0001F4CB  {t('alert_card.trip_ref', trip_id=alert.trip_id)}")
         if refs:
             painter.setFont(self._font_small)
             painter.setPen(QColor(_COLORS["info"]))

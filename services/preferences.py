@@ -10,7 +10,7 @@ logger = logging.getLogger("preferences")
 
 # ── AI provider API keys (env-first, prefs fallback) ────────────────
 
-def get_ai_api_key(name: str, prefs_value: Optional[str]) -> Optional[str]:
+def get_ai_api_key(name: str, prefs_value: Optional[str], log_missing: bool = True) -> Optional[str]:
     """Resolve an AI provider API key: env var first, prefs fallback.
 
     Args:
@@ -18,14 +18,18 @@ def get_ai_api_key(name: str, prefs_value: Optional[str]) -> Optional[str]:
         prefs_value: Value stored in preferences (``gemini_api_key`` /
                      ``qwen_api_key``). Pass ``""`` or ``None`` when the
                      key is not configured in prefs.
+        log_missing: When True (default), log an ERROR if neither env nor
+                     prefs provides a key.  Pass False when the caller's
+                     provider mode does not require a key at all (e.g.
+                     Ollama — no auth header needed).
 
     Returns:
         The key value, or ``None`` when neither env nor prefs provides one.
 
     The environment variable is ``OPERION_<NAME>_API_KEY`` and always wins.
     Falling back to a prefs-stored key logs a warning; having neither logs
-    a clear error so a missing key is never silent. Key values are never
-    logged.
+    a clear error so a missing key is never silent (unless the caller
+    opted out via ``log_missing=False``). Key values are never logged.
     """
     env_key = f"OPERION_{name.upper()}_API_KEY"
     val = os.environ.get(env_key)
@@ -37,10 +41,11 @@ def get_ai_api_key(name: str, prefs_value: Optional[str]) -> Optional[str]:
             name, env_key,
         )
         return prefs_value
-    logger.error(
-        "%s API key is not configured — set env var %s (or store the key "
-        "in preferences).", name, env_key,
-    )
+    if log_missing:
+        logger.error(
+            "%s API key is not configured — set env var %s (or store the key "
+            "in preferences).", name, env_key,
+        )
     return None
 
 # ── Safe numeric helpers ──────────────────────────────────────────────

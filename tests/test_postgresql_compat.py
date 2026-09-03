@@ -26,8 +26,95 @@ _SCHEMA_PG_SQL = os.path.join(_PROJECT, "database", "schema_pg.sql")
 
 TEST_DSN = os.environ.get(
     "OPERION_TEST_POSTGRES_DSN",
-    "postgresql://operion:operion_test_ci@localhost:5432/operion_test",
+    "postgresql://operion:operion_test_ci@localhost:5432/operion_test_compat",
 )
+
+#: Per-file isolated database name — this module owns ``operion_test_compat``
+#: so its own schema build / migrations can never collide with other test
+#: files' on the shared ``operion_test`` database (xdist `-n 2` concurrent
+#: runs).
+_TEST_DB_NAME = "operion_test_compat"
+
+#: Admin DSN: connect to the always-existing ``operion_test`` database so the
+#: (superuser) ``operion`` role can issue CREATE/DROP DATABASE for the
+#: per-file database above.
+_BASE_DSN = "postgresql://operion:operion_test_ci@localhost:5432/operion_test"
+
+
+def _ensure_test_db() -> None:
+    """Create the per-file test database (idempotent; superuser required).
+
+    No-op when ``OPERION_TEST_POSTGRES_DSN`` is set explicitly — the caller
+    pointed us at a database of their choosing, and we must not touch it.
+    """
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True  # CREATE DATABASE cannot run inside a transaction
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (_TEST_DB_NAME,))
+        if not cur.fetchone():
+            cur.execute(
+                pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(_TEST_DB_NAME))
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        # Best-effort: the DB may already exist (idempotent) or PG may be
+        # unreachable (the module-level guard below skips).
+        pass
+
+
+def _drop_test_db() -> None:
+    """Drop the per-file test database at session teardown (best-effort)."""
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Never force-kill another session's connections — if any remain,
+        # leave the DB in place (mirrors tests/integration/conftest.py).
+        cur.execute(
+            "SELECT COUNT(*) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (_TEST_DB_NAME,),
+        )
+        row = cur.fetchone()
+        other_sessions = (row[0] if row else 0) or 0
+        if not other_sessions:
+            cur.execute(
+                pgsql.SQL("DROP DATABASE IF EXISTS {}").format(
+                    pgsql.Identifier(_TEST_DB_NAME)
+                )
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        pass  # a failed drop must not fail tests
+
+
+def _build_schema() -> None:
+    """Apply the real deployment schema (schema_pg.sql + Alembic + extra DDL).
+
+    Advisory-locked and idempotent (safe to run repeatedly); a freshly
+    created per-file database starts empty, so this is what makes the
+    ``_has_app_schema()`` guard below (and the tests) see a real schema.
+    """
+    try:
+        from database.db_manager import DatabaseManager
+
+        db = DatabaseManager(db_path=TEST_DSN, engine="postgresql", pool_min=1, pool_max=2)
+        db.close()
+    except Exception:
+        pass  # the _has_app_schema() re-check below decides the outcome
 
 
 def pg_reachable() -> bool:
@@ -38,6 +125,8 @@ def pg_reachable() -> bool:
     except Exception:
         return False
 
+
+_ensure_test_db()
 
 _HAS_PG = pg_reachable()
 if not _HAS_PG:
@@ -69,6 +158,12 @@ def _has_app_schema() -> bool:
 
 
 if not _has_app_schema():
+    # A freshly created per-file database starts empty — apply the REAL
+    # schema (advisory-locked, idempotent) before deciding to skip.  No-op
+    # when the database already has the schema (shared DB / explicit DSN).
+    _build_schema()
+
+if not _has_app_schema():
     pytest.skip(
         "PostgreSQL reachable but the app schema is not applied "
         "(CI docker PG is a bare smoke instance without migrations) — skipping",
@@ -88,11 +183,15 @@ except Exception:
 def pg_schema():
     """Ensure the full PostgreSQL schema (including PL/pgSQL functions) is
     applied to the test database.  Uses the same DatabaseManager path that
-    integration tests use, so tests validate the real deployment schema."""
+    integration tests use, so tests validate the real deployment schema.
+
+    Drops the per-file database at session teardown.
+    """
     from database.db_manager import DatabaseManager
     db = DatabaseManager(db_path=TEST_DSN, engine="postgresql", pool_min=1, pool_max=2)
     db.close()
-    return TEST_DSN
+    yield TEST_DSN
+    _drop_test_db()
 
 
 @pytest.fixture(scope="module")

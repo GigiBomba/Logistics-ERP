@@ -24,8 +24,82 @@ from scripts.backfill_updated_at import EPOCH, backfill
 
 TEST_DSN = os.environ.get(
     "OPERION_TEST_POSTGRES_DSN",
-    "postgresql://operion:operion_test_ci@localhost:5432/operion_test",
+    "postgresql://operion:operion_test_ci@localhost:5432/operion_test_bf",
 )
+
+#: Per-file isolated database name — this module owns ``operion_test_bf`` so
+#: its own schema build / DDL can never collide with other test files' on the
+#: shared ``operion_test`` database (xdist `-n 2` concurrent runs).
+_TEST_DB_NAME = "operion_test_bf"
+
+#: Admin DSN: connect to the always-existing ``operion_test`` database so the
+#: (superuser) ``operion`` role can issue CREATE/DROP DATABASE for the
+#: per-file database above.
+_BASE_DSN = "postgresql://operion:operion_test_ci@localhost:5432/operion_test"
+
+
+def _ensure_test_db() -> None:
+    """Create the per-file test database (idempotent; superuser required).
+
+    No-op when ``OPERION_TEST_POSTGRES_DSN`` is set explicitly — the caller
+    pointed us at a database of their choosing, and we must not touch it.
+    """
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True  # CREATE DATABASE cannot run inside a transaction
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (_TEST_DB_NAME,))
+        if not cur.fetchone():
+            cur.execute(
+                pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(_TEST_DB_NAME))
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        # Best-effort: the DB may already exist (idempotent) or PG may be
+        # unreachable (the pg_schema fixture skips).
+        pass
+
+
+def _drop_test_db() -> None:
+    """Drop the per-file test database at module teardown (best-effort)."""
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Never force-kill another session's connections — if any remain,
+        # leave the DB in place (mirrors tests/integration/conftest.py).
+        cur.execute(
+            "SELECT COUNT(*) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (_TEST_DB_NAME,),
+        )
+        row = cur.fetchone()
+        other_sessions = (row[0] if row else 0) or 0
+        if not other_sessions:
+            cur.execute(
+                pgsql.SQL("DROP DATABASE IF EXISTS {}").format(
+                    pgsql.Identifier(_TEST_DB_NAME)
+                )
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        pass  # a failed drop must not fail tests
+
+
+# Create the per-file database BEFORE the first fixture connects.
+_ensure_test_db()
 
 
 # ── SQLite (unit) ──────────────────────────────────────────────────────────
@@ -130,7 +204,7 @@ def test_sqlite_idempotent(sqldb):
 def pg_schema():
     """Build the real PG schema (idempotent) so trips/clients/client_tags exist.
 
-    ``operion_test`` may be freshly created (or schema-less); the deployment
+    ``operion_test_bf`` may be freshly created (or schema-less); the deployment
     path — ``DatabaseManager(dsn, engine="postgresql")`` — runs schema_pg.sql
     + Alembic + ``_apply_pg_extra_ddl`` and is safe to run repeatedly.  Each
     statement runs in its own autocommit transaction, so a single failure
@@ -143,6 +217,8 @@ def pg_schema():
     except Exception as exc:
         pytest.skip(f"PostgreSQL unavailable: {exc}")
     db.close()
+    yield
+    _drop_test_db()
 
 
 @pytest.fixture

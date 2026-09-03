@@ -137,7 +137,12 @@ class TestPlannerMutationCoverage:
             "route.calculate",
             "route.estimate_cost",
             "route.plan_multistop",
+            "route.list",
+            "route.get",
             "trip.calculate_profitability",
+            "trip.list",
+            "trip.get",
+            "conversation.recall_recent",
             "client.payment_summary",
             "document.search",
             "currency.get_rate",
@@ -147,6 +152,7 @@ class TestPlannerMutationCoverage:
             "analytics.query",
             "help.answer_question",
             "help.guide_workflow",
+            "help.greeting",
         }
         actual = set(self._collect_intent_names())
         missing = expected_intents - actual
@@ -155,18 +161,22 @@ class TestPlannerMutationCoverage:
         assert len(extras) == 0, f"INTENT_PATTERNS has unexpected intents: {extras}"
 
     def test_intent_pattern_count(self):
-        """Verify INTENT_PATTERNS has exactly 16 entries."""
+        """Verify INTENT_PATTERNS has exactly 22 entries (17 + §9.1 Level-0
+        route/trip list-get + conversation recall)."""
         from backend.copilot.planner import INTENT_PATTERNS
-        assert len(INTENT_PATTERNS) == 16, (
-            f"INTENT_PATTERNS count changed from 16 to {len(INTENT_PATTERNS)}"
+        assert len(INTENT_PATTERNS) == 22, (
+            f"INTENT_PATTERNS count changed from 22 to {len(INTENT_PATTERNS)}"
         )
 
-    def test_each_pattern_has_three_elements(self):
-        """Every INTENT_PATTERNS entry must be a 3-tuple: (keywords, name, entity_mappings)."""
+    def test_each_pattern_has_three_or_four_elements(self):
+        """Every INTENT_PATTERNS entry must be a 3- or 4-tuple:
+        (keywords, name, entity_mappings[, {lang: [phrases, ...]}]) — the
+        optional 4th element carries the per-language phrase corpus (§23.4
+        Tier-B multilingual expansion)."""
         from backend.copilot.planner import INTENT_PATTERNS
         for i, pattern in enumerate(INTENT_PATTERNS):
-            assert len(pattern) == 3, (
-                f"INTENT_PATTERNS[{i}] has {len(pattern)} elements, expected 3"
+            assert len(pattern) in (3, 4), (
+                f"INTENT_PATTERNS[{i}] has {len(pattern)} elements, expected 3 or 4"
             )
             assert isinstance(pattern[0], list), (
                 f"INTENT_PATTERNS[{i}][0] should be a list (keyword_hints)"
@@ -177,6 +187,10 @@ class TestPlannerMutationCoverage:
             assert isinstance(pattern[2], list), (
                 f"INTENT_PATTERNS[{i}][2] should be a list (entity_types)"
             )
+            if len(pattern) == 4:
+                assert isinstance(pattern[3], dict), (
+                    f"INTENT_PATTERNS[{i}][3] should be a dict ({{lang: [phrases]}})"
+                )
 
     def test_intent_names_are_unique(self):
         """No duplicate intent names in INTENT_PATTERNS."""
@@ -194,10 +208,14 @@ class TestPlannerMutationCoverage:
             )
 
     def test_min_match_threshold_is_unchanged(self):
-        """Verify MIN_MATCH_THRESHOLD inside extract_intent remains 2."""
+        """Verify MIN_MATCH_THRESHOLD inside _extract_intent_scored remains 2.
+
+        The threshold lives in the scoring core (``_extract_intent_scored``)
+        since ``extract_intent`` became a thin wrapper over it.
+        """
         import inspect
-        from backend.copilot.planner import extract_intent
-        source = inspect.getsource(extract_intent)
+        from backend.copilot.planner import _extract_intent_scored
+        source = inspect.getsource(_extract_intent_scored)
         assert "MIN_MATCH_THRESHOLD = 2" in source, (
             "MIN_MATCH_THRESHOLD changed from 2 — intent extraction may now match spuriously"
         )
@@ -307,7 +325,7 @@ class TestExecutorMutationCoverage:
         )
 
     def test_plan_status_members(self):
-        """Verify all 11 PlanStatus enum members and their string values."""
+        """Verify all 13 PlanStatus enum members and their string values."""
         from backend.copilot.executor import PlanStatus
         expected = {
             "UNDERSTOOD": "understood",
@@ -317,10 +335,12 @@ class TestExecutorMutationCoverage:
             "AWAITING_CLARIFICATION": "awaiting_clarification",
             "AWAITING_CONFIRMATION": "awaiting_confirmation",
             "EXECUTING": "executing",
+            "PAUSED": "paused",
             "SUMMARIZING": "summarizing",
             "COMPLETED": "completed",
             "PARTIALLY_COMPLETED": "partially_completed",
             "CANCELLED": "cancelled",
+            "STOPPED": "stopped",
         }
         actual = {m.name: m.value for m in PlanStatus}
         assert actual == expected, (
@@ -337,16 +357,31 @@ class TestAPIMutationCoverage:
     def test_router_registered(self):
         """The copilot router must exist in the main API router."""
         from backend.api.v1.router import api_v1_router
-        from backend.api.v1 import copilot_router
-        # Check that copilot routes are included by looking for the embedded router
-        for route in api_v1_router.routes:
-            if hasattr(route, "original_router") and route.original_router is copilot_router.router:
-                assert len(route.original_router.routes) > 0
-                # Verify at least the chat endpoint exists
-                paths = [getattr(sr, "path", "") for sr in route.original_router.routes]
-                assert any("/chat" in p for p in paths), f"No /chat route in copilot router: {paths}"
-                return
-        pytest.fail("copilot_router not found in api_v1_router.routes")
+        # FastAPI version differences: some versions flatten included routers
+        # into ``api_v1_router.routes`` as plain APIRoute objects, others wrap
+        # them in ``_IncludedRouter`` (no ``.path`` attribute).  Collect paths
+        # recursively so detection works on both — version-agnostic.
+        def _collect_paths(router, prefix=""):
+            paths = []
+            for route in router.routes:
+                path = getattr(route, "path", None)
+                if path:
+                    paths.append(prefix + path)
+                    continue
+                original = getattr(route, "original_router", None)
+                if original is not None:
+                    include_context = getattr(route, "include_context", None)
+                    sub_prefix = getattr(include_context, "prefix", "")
+                    paths.extend(_collect_paths(original, prefix + sub_prefix))
+            return paths
+
+        paths = _collect_paths(api_v1_router)
+        assert any("/copilot/chat" in p for p in paths), (
+            f"No /copilot/chat route in api_v1_router: {paths}"
+        )
+        assert any("/copilot/voice" in p for p in paths), (
+            f"No /copilot/voice route in api_v1_router: {paths}"
+        )
 
     def test_kill_switch_cache_keys(self):
         """Kill switch cache key patterns must remain unchanged."""

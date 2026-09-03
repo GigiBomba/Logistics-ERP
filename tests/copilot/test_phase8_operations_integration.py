@@ -150,6 +150,9 @@ class TestExecutorOperations:
         from backend.copilot.executor import execute_with_fallback
 
         async def slow_operation():
+            # KEEP: sleep(10) is only a "longer than the 1s timeout" stub;
+            # execute_with_fallback cancels it via asyncio.wait_for, so this
+            # does not actually wait 10s and there is no completion event.
             await asyncio.sleep(10)
             return "done"
 

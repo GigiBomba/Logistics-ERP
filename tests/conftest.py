@@ -44,6 +44,8 @@ os.environ.setdefault("BF_WINDOW_MINUTES", "5")
 os.environ.setdefault("BF_LOCKOUT_MINUTES", "15")
 
 import logging
+import sys
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -103,57 +105,89 @@ def reset_singletons():
     clear_context()
 
     # EventBus
-    from services.operations.event_bus import EventBus
-    EventBus._instance = None
+    # ``services.operations`` has a heavy __init__ (imports all engine
+    # modules), so find_spec on a leaf would trigger it — use sys.modules.
+    if "services.operations.event_bus" in sys.modules:
+        from services.operations.event_bus import EventBus
+        EventBus._instance = None
 
     # AlertManager
-    from services.operations.alert_manager import AlertManager
-    AlertManager._instance = None
+    if "services.operations.alert_manager" in sys.modules:
+        from services.operations.alert_manager import AlertManager
+        AlertManager._instance = None
 
     # ExchangeRateService
-    from services.exchange_rate_service import ExchangeRateService
-    ExchangeRateService._instance = None
+    if "services.exchange_rate_service" in sys.modules:
+        from services.exchange_rate_service import ExchangeRateService
+        ExchangeRateService._instance = None
 
     # FuelPriceService
-    from services.fuel_price_service import FuelPriceService
-    FuelPriceService._instance = None
+    if "services.fuel_price_service" in sys.modules:
+        from services.fuel_price_service import FuelPriceService
+        FuelPriceService._instance = None
 
     # OperationsEngine
-    from services.operations.operations_engine import OperationsEngine
-    OperationsEngine._instance = None
+    if "services.operations.operations_engine" in sys.modules:
+        from services.operations.operations_engine import OperationsEngine
+        OperationsEngine._instance = None
 
     # TripContextService
-    from services.trip_context import TripContextService
-    TripContextService._instance = None
+    if "services.trip_context" in sys.modules:
+        from services.trip_context import TripContextService
+        TripContextService._instance = None
 
     # Rules singleton
-    from services.operations.rules import Rules
-    Rules._instance = None
+    if "services.operations.rules" in sys.modules:
+        from services.operations.rules import Rules
+        Rules._instance = None
 
     # FleetTrackingService
-    from services.fleet_tracking_service import FleetTrackingService
-    FleetTrackingService._instance = None
+    if "services.fleet_tracking_service" in sys.modules:
+        from services.fleet_tracking_service import FleetTrackingService
+        FleetTrackingService._instance = None
 
     # AppState
-    from services.app_state import AppState
-    AppState._instance = None
+    if "services.app_state" in sys.modules:
+        from services.app_state import AppState
+        AppState._instance = None
 
     # RouteStateManager (dict of instances)
-    from services.route_state import RouteStateManager
-    RouteStateManager._instances = {}
+    if "services.route_state" in sys.modules:
+        from services.route_state import RouteStateManager
+        RouteStateManager._instances = {}
 
     # i18n module-level globals
-    import services.i18n as _i18n
-    _i18n._translations = {}
-    _i18n._current_lang = "en"
+    if "services.i18n" in sys.modules:
+        import services.i18n as _i18n
+        _i18n._translations = {}
+        _i18n._current_lang = "en"
+        # Reload translations from disk (same entry point main.py uses via
+        # init_language) so t() resolves real strings instead of falling back
+        # to raw keys for the rest of the test.
+        _i18n.load_translations()
 
     # Auth manager
-    import client.auth_manager as _auth_mgr
-    _auth_mgr._auth_instance = None
+    if "client.auth_manager" in sys.modules:
+        import client.auth_manager as _auth_mgr
+        _auth_mgr._auth_instance = None
 
     # Backend cache
-    import backend.cache as _backend_cache
-    _backend_cache._cache_instance = None
+    if "backend.cache" in sys.modules:
+        import backend.cache as _backend_cache
+        _backend_cache._cache_instance = None
+
+    # CircuitBreaker — class-level shared state across instances
+    if "backend.copilot.circuit_breaker" in sys.modules:
+        from backend.copilot.circuit_breaker import CircuitBreaker
+        CircuitBreaker._states.clear()
+
+    # BackendSettings process-global cache (F1).  ``get_settings()`` caches
+    # the first BackendSettings parse; tests that mutate OPERION_* env vars
+    # (module-scoped ``_set_env`` fixtures, monkeypatch.setenv) must not see
+    # a stale cached copy.  Reset the cache before every test so the first
+    # ``get_settings()`` call of each test re-reads the current environment.
+    from backend.config import reload_settings
+    reload_settings()
 
     # ── Chart-export engine (Choreographer/Chrome) ────────────────
     # Replace with a mock so that async QThreadPool render workers

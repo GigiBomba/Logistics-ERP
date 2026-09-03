@@ -12,6 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 from typing import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -298,6 +299,105 @@ class TestProductionGuard:
         with pytest.raises(RuntimeError) as exc:
             AuthMiddleware(app)
         assert "OPERION_API_KEY" in str(exc.value)
+
+
+# ── Validated-key cache (R7) ─────────────────────────────────────────────
+
+
+class TestValidatedKeyCache:
+    """Per-partner key validation is cached in-process for a short TTL."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_key_cache(self):
+        from backend.middleware.auth_middleware import _VALIDATED_KEY_CACHE
+        _VALIDATED_KEY_CACHE.clear()
+        yield
+        _VALIDATED_KEY_CACHE.clear()
+
+    def _build_partner_client(self, monkeypatch, validate_result):
+        """Client whose partner-key validation hits a stubbed repository."""
+        from backend.middleware.auth_middleware import AuthMiddleware
+
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "global-super-key")
+        app = FastAPI()
+        _add_routes(app)
+        mw = AuthMiddleware(app)
+        # Never touch a real DB.
+        mw._get_db = lambda: MagicMock()
+        client = TestClient(mw)
+        return client
+
+    def test_second_request_within_ttl_does_zero_db_calls(
+        self, monkeypatch
+    ):
+        """Two requests with the same key within the TTL validate once."""
+        from backend.middleware.auth_middleware import AuthMiddleware
+
+        mock_repo = MagicMock()
+        mock_repo.validate_key.return_value = {
+            "id": 7, "partner": "acme", "scopes": '["read"]',
+        }
+
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "global-super-key")
+        app = FastAPI()
+        _add_routes(app)
+        mw = AuthMiddleware(app)
+        mw._get_db = lambda: MagicMock()
+        client = TestClient(mw)
+
+        with patch(
+            "backend.repositories.api_key_repository.ApiKeyRepository",
+            return_value=mock_repo,
+        ):
+            r1 = client.get("/", headers={"X-API-Key": "ok_same_key_123"})
+            r2 = client.get("/", headers={"X-API-Key": "ok_same_key_123"})
+
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        # Only the FIRST request touched the repository; the second was
+        # served entirely from the in-memory cache.
+        assert mock_repo.validate_key.call_count == 1
+        mock_repo.validate_key.assert_called_once_with("ok_same_key_123")
+
+    def test_different_keys_validate_independently(self, monkeypatch):
+        """Each distinct key performs its own validation (no false hits)."""
+        from backend.middleware.auth_middleware import AuthMiddleware
+
+        mock_repo = MagicMock()
+        mock_repo.validate_key.return_value = {
+            "id": 8, "partner": "acme", "scopes": "[]",
+        }
+
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "global-super-key")
+        app = FastAPI()
+        _add_routes(app)
+        mw = AuthMiddleware(app)
+        mw._get_db = lambda: MagicMock()
+        client = TestClient(mw)
+
+        with patch(
+            "backend.repositories.api_key_repository.ApiKeyRepository",
+            return_value=mock_repo,
+        ):
+            assert client.get("/", headers={"X-API-Key": "ok_key_a"}).status_code == 200
+            assert client.get("/", headers={"X-API-Key": "ok_key_b"}).status_code == 200
+
+        assert mock_repo.validate_key.call_count == 2
+
+    def test_revoked_key_evicted_from_cache(self, monkeypatch):
+        """evict_api_key_cache_by_id removes the matching cached entry."""
+        from backend.middleware.auth_middleware import (
+            _VALIDATED_KEY_CACHE,
+            evict_api_key_cache_by_id,
+        )
+
+        _VALIDATED_KEY_CACHE["abc"] = (9999999999.0, {"id": 42, "partner": "p"})
+        _VALIDATED_KEY_CACHE["def"] = (9999999999.0, {"id": 43, "partner": "p"})
+
+        evict_api_key_cache_by_id(42)
+
+        assert "abc" not in _VALIDATED_KEY_CACHE
+        assert "def" in _VALIDATED_KEY_CACHE
 
 
 # ── Edge cases ───────────────────────────────────────────────────────────

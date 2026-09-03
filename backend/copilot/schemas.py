@@ -51,7 +51,7 @@ class ExecutionStep(BaseModel):
     parameters: Dict[str, Any]
     depends_on: List[str] = []
     confirmation_level: ConfirmationLevel
-    status: Literal["pending", "running", "succeeded", "failed", "skipped", "awaiting_confirmation"]
+    status: Literal["pending", "running", "paused", "succeeded", "failed", "skipped", "stopped", "awaiting_confirmation"]
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     started_at: Optional[datetime] = None
@@ -67,6 +67,18 @@ class ExecutionPlan(BaseModel):
     steps: List[ExecutionStep]
     overall_confidence: float = Field(ge=0.0, le=1.0)
     requires_confirmation: bool
+    # §13 pause/resume — when True the execution loop halts between steps; the
+    # plan may be resumed (continues the remaining steps) or stopped/cancelled.
+    paused: bool = False
+    # §23.3 guardrail fidelity — the REAL resolved-graph node count, stamped by
+    # the planner after resolve_reasoning_graph; validate_guardrails uses it
+    # instead of the step-count estimate when present.
+    reasoning_graph_nodes: Optional[int] = None
+    # §23.3 — real LLM token usage accumulated from provider responses that
+    # surface usage (LLMResponse.input_tokens/output_tokens, or a tool result's
+    # data["llm_usage"]).  validate_guardrails adds this to the estimate for
+    # steps that report no usage.
+    used_llm_tokens: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -164,6 +176,23 @@ class SessionContext(BaseModel):
     current_vehicle_id: Optional[int] = None
     current_module: Optional[str] = None      # e.g. "dispatcher_board", "maintenance_panel"
     expires_at: Optional[datetime] = None
+
+
+class UIContext(BaseModel):
+    """Screen/selection context reported by the desktop client (§8, §11, §30).
+
+    Sent by the client with every chat/voice request so entity resolution can
+    prefer the entity the user currently has selected on screen over asking a
+    clarification question (§11 resolution order).  ``selected_entity_type``
+    uses the client-side entity vocabulary (``"vehicle"``, ``"driver"``,
+    ``"client"``, ``"trip"`` …); ``selected_entity_id`` is the entity's id.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    active_screen: Optional[str] = None            # e.g. "dispatcher_board", "fleet_panel"
+    selected_entity_type: Optional[str] = None     # e.g. "vehicle", "driver", "client", "trip"
+    selected_entity_id: Optional[Union[int, str]] = None
+    captured_at: Optional[datetime] = None          # when the client captured the selection
 
 
 class ConversationContext(BaseModel):

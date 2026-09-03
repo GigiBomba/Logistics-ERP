@@ -105,8 +105,17 @@ class DocumentService:
                 self._cache = None  # type: ignore
         return self._cache
 
-    def _cache_key(self, doc_id: int) -> str:
-        return f"doc:{doc_id}"
+    def _cache_key(self, doc_id: int, company_id=None) -> Optional[str]:
+        """Build the tenant-scoped document cache key.
+
+        Returns ``None`` when ``company_id`` is falsy (admin / desktop flows) —
+        those callers **bypass** the cache entirely rather than writing a
+        global, tenant-blind ``doc:<id>`` entry that another company could be
+        served (R3).  Invalidation sites must guard for ``None``.
+        """
+        if not company_id:
+            return None
+        return f"doc:{company_id}:{doc_id}"
 
     def _svc(self, name: str):
         """Lazy-create and cache a focused sub-service."""
@@ -338,7 +347,9 @@ class DocumentService:
         self._repo.delete(document_id)
         cache = self._get_cache()
         if cache:
-            cache.delete(self._cache_key(document_id))
+            key = self._cache_key(document_id, doc.get("company_id"))
+            if key:
+                cache.delete(key)
             cache.flush_pattern("doc:*")
         self._event_bus.publish(DOCUMENT_DELETED, {"document_id": document_id})
         self._log_audit("document.deleted", f"Deleted document {document_id}")
@@ -576,22 +587,22 @@ class DocumentService:
         ``company_id`` (the JWT-derived company, per blueprint §1.8) is
         honored when provided: a document belonging to a different company
         is treated as not found.  When ``company_id`` is falsy (admin /
-        desktop flows) the document is returned unscoped.
+        desktop flows) the document is returned unscoped **and the cache is
+        bypassed entirely** — no global cache entry is created (R3).
 
-        Tenant-checked reads always hit the database — the shared cache key
-        is company-blind (``doc:<id>``), so a cached copy written by another
-        company could otherwise be served across tenants.
+        Cache reads/writes are tenant-scoped (``doc:{company_id}:<id>``), so
+        a document cached by company A can never be served to company B.
         """
         cache = self._get_cache()
         doc = None
-        if not company_id and cache:
-            cached = cache.get(self._cache_key(doc_id))
+        if company_id and cache:
+            cached = cache.get(self._cache_key(doc_id, company_id))
             if cached is not None:
                 doc = cached
         if doc is None:
             doc = self._repo.get_by_id(doc_id)
-            if doc and not company_id and cache:
-                cache.set(self._cache_key(doc_id), doc, ttl=300)
+            if doc and company_id and cache:
+                cache.set(self._cache_key(doc_id, company_id), doc, ttl=300)
         # Tenant check at read time — never leak a document across companies.
         if doc and company_id and doc.get("company_id") != company_id:
             return None
@@ -672,7 +683,9 @@ class DocumentService:
         self._repo.delete(doc_id)
         cache = self._get_cache()
         if cache:
-            cache.delete(self._cache_key(doc_id))
+            key = self._cache_key(doc_id, doc.get("company_id"))
+            if key:
+                cache.delete(key)
             cache.flush_pattern("doc:*")
         self._event_bus.publish(DOCUMENT_DELETED, {"document_id": doc_id})
         self._log_audit("document.deleted", f"Deleted document {doc_id}")

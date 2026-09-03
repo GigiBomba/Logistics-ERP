@@ -171,9 +171,14 @@ def _api_key() -> str:
 
     Prefers ``OPERION_QWEN_API_KEY``; falls back to the DB/prefs-stored
     ``qwen_api_key``. Returns ``""`` when neither is configured.
+
+    Ollama mode needs no auth header — a missing key is not an error
+    there, so the missing-key ERROR is only logged for OpenAI-compatible
+    endpoints (``qwen_api_mode != "ollama"``).
     """
     from services.preferences import get_ai_api_key
-    return get_ai_api_key("qwen", _setting("qwen_api_key", "")) or ""
+    log_missing = _setting("qwen_api_mode", DEFAULT_API_MODE) != "ollama"
+    return get_ai_api_key("qwen", _setting("qwen_api_key", ""), log_missing=log_missing) or ""
 
 
 def _auth_headers() -> dict[str, str]:

@@ -32,8 +32,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from ui.widgets.flow_layout import FlowLayout
-
 from services.client_service import ClientService
 from services.conflict_service import TripConflictService
 from ui.performance_timer import PerfTimer
@@ -351,17 +349,27 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._board_stack = QStackedWidget()
 
         # Page 0: Kanban columns
+        #
+        # Columns are laid out left-to-right in a plain QHBoxLayout inside a
+        # scroll area.  QHBoxLayout honours each column's minimum width, so a
+        # column can never be squeezed below 260px.  The container keeps its
+        # minimum size (the sum of column minimums) when the viewport is too
+        # narrow, which makes the scroll area show a horizontal scrollbar
+        # instead of crushing the columns (a FlowLayout would have laid columns
+        # out at their sizeHint — not their minimum — and wrapped them into a
+        # single narrow stack).
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         columns_container = QWidget()
         columns_container.setProperty("role", "kanban-columns-container")
-        columns_layout = FlowLayout(columns_container, margin=SP["3"], spacing=SP["3"])
+        columns_layout = QHBoxLayout(columns_container)
         columns_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        columns_layout.setSpacing(SP["3"])
 
         for _i, (status_key, title_key, accent_color) in enumerate(COLUMN_DEFS):
             is_delivered = status_key == "Delivered"
@@ -381,10 +389,23 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                 on_load_older=self._on_load_older_delivered,
                 on_retry=lambda sk=status_key: self._start_load(),
             )
+            # Columns expand to share available width at wide viewports, stay
+            # at their 260px minimum when space runs out, and fill the full
+            # height of the board area.
+            col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             columns_layout.addWidget(col)
             self._columns[status_key] = col
             col.setAccessibleName(f"{status_key} column" if status_key else "Kanban column")
             col.tripDropped.connect(self._on_card_dropped_on_column)
+
+        # Make the container's minimum width structural.  A plain QWidget only
+        # reports the combined minimum via minimumSizeHint(); an explicit
+        # minimum (1372px = 5×260 + margins + spacing) makes QWidget::resize()
+        # clamp to it, so the scroll area can never crush the columns below
+        # 260px — it must show a horizontal scrollbar instead.  The minimum
+        # never forces the window wider (QScrollArea::minimumSizeHint stays
+        # small), so at wide viewports the columns still expand freely.
+        columns_container.setMinimumWidth(columns_layout.minimumSize().width())
 
         scroll_area.setWidget(columns_container)
         self._board_stack.addWidget(scroll_area)  # index 0

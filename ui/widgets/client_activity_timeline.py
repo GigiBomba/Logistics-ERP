@@ -126,12 +126,11 @@ class QtClientActivityTimeline(QWidget):
             color = self._status_color(status)
             events.append({
                 "ts": trip.get("start_date") or trip.get("created_at", ""),
-                "label": "Trip: {} — {} / {} — {} km".format(
-                    trip.get("truck_number", "?"),
-                    status,
-                    trip.get("client_name", "?"),
-                    int(trip.get("distance_km", 0) or 0),
-                ),
+                "label": t("client_activity.trip_line",
+                           truck=trip.get("truck_number", "?"),
+                           status=status,
+                           client=trip.get("client_name", "?"),
+                           distance=int(trip.get("distance_km", 0) or 0)),
                 "color": color,
             })
 
@@ -141,12 +140,11 @@ class QtClientActivityTimeline(QWidget):
             color = "success" if status == "Paid" else "warning"
             events.append({
                 "ts": inv.get("issue_date", ""),
-                "label": "Invoice: {} — {} — {} EUR ({})".format(
-                    inv.get("invoice_number", "?"),
-                    status,
-                    int(inv.get("total_amount", 0) or 0),
-                    inv.get("trip_status", "?"),
-                ),
+                "label": t("client_activity.invoice_line",
+                           number=inv.get("invoice_number", "?"),
+                           status=status,
+                           amount=int(inv.get("total_amount", 0) or 0),
+                           trip_status=inv.get("trip_status", "?")),
                 "color": color,
             })
 

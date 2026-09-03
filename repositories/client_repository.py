@@ -5,6 +5,17 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
+
+def _chunked(items, size):
+    """Yield successive ``size``-sized chunks of *items*.
+
+    Used by batched ``UPDATE ... WHERE id IN (...)` statements so the number
+    of bound parameters stays well under SQLite's ~999-variable limit.
+    """
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
 class ClientRepository(BaseRepository):
     TABLE = "clients"
     SOFT_DELETE = True
@@ -148,13 +159,23 @@ class ClientRepository(BaseRepository):
         return 0
 
     def reassign_contacts(self, source_id: int, target_id: int) -> int:
-        """Reassign all contacts from source client to target client."""
+        """Reassign all contacts from source client to target client.
+
+        Batched: contact IDs are fetched once from the source client, then
+        moved with ``UPDATE ... WHERE id IN (...)`` chunks of 500 ids — one
+        statement per chunk instead of one per contact row (DB1).  The
+        ``commit=False`` transaction flow and the returned count (number of
+        contacts reassigned) match the previous per-row implementation.
+        """
         from repositories.contact_repository import ContactRepository
         contacts = ContactRepository(self.db).get_by_client(source_id)
-        for c in contacts:
-            self._execute(
-                "UPDATE client_contacts SET client_id = ? WHERE id = ?",
-                (target_id, c["id"]),
+        if not contacts:
+            return 0
+        for chunk in _chunked([c["id"] for c in contacts], 500):
+            placeholders = ", ".join("?" for _ in chunk)
+            self._execute_with_count(
+                f"UPDATE client_contacts SET client_id = ? WHERE id IN ({placeholders})",
+                (target_id,) + tuple(chunk),
                 commit=False,
             )
         return len(contacts)

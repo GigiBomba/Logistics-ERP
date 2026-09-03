@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPlainTextEdit,
-    QPushButton,
     QRadioButton,
     QScrollArea,
     QSizePolicy,
@@ -44,7 +43,6 @@ from ui.design_tokens import (
 )
 from ui.design_tokens import SP
 from ui.design_tokens import SP as S
-from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Inputs
@@ -122,54 +120,10 @@ class StyledComboBox(QComboBox):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-class ActionButton(QPushButton):
-    """Styled push button with variants matching the old CTk ActionButton.
-
-    Variants are resolved by the global QSS via the ``variant`` property:
-    ``primary`` (default), ``secondary``, ``danger``, ``ghost``, ``success``.
-    """
-
-    def __init__(
-        self,
-        parent: QWidget | None,
-        text: str,
-        command: Callable | None = None,
-        color: str | None = None,
-        hover_color: str | None = None,
-        width: int | None = None,
-        variant: str = "primary",
-        **kwargs,
-    ):
-        super().__init__(text, parent)
-        self.setProperty("variant", self._resolve_variant(color, variant))
-        if width is not None:
-            self.setFixedWidth(width)
-        if command:
-            self.clicked.connect(command)
-        # Explicit color override: only used when a variant cannot be inferred.
-        if color and not self._variant_from_color(color):
-            self.setStyleSheet(
-                f"QPushButton {{ background-color: {color}; }}\n"
-                f"QPushButton:hover {{ background-color: {hover_color or color}; }}"
-            )
-
-    @staticmethod
-    def _variant_from_color(color: str) -> str | None:
-        normalized = color.lower()
-        if normalized in (COLOR_SUCCESS_DEFAULT.lower(), COLOR_SUCCESS_DEFAULT.lower()):
-            return "success"
-        if normalized == COLOR_ERROR_DEFAULT.lower():
-            return "danger"
-        if normalized == COLOR_ACCENT_PRIMARY.lower():
-            return "primary"
-        return None
-
-    def _resolve_variant(self, color: str | None, variant: str) -> str:
-        if color:
-            inferred = self._variant_from_color(color)
-            if inferred:
-                return inferred
-        return variant
+# Canonical action button — consolidated into ui.components. Re-exported here
+# so existing ``from ui.widgets import ActionButton`` callers keep working
+# unchanged (findChildren(ActionButton) still matches the canonical class).
+from ui.components import ActionButton  # noqa: E402,F401
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -245,7 +199,15 @@ class SectionHeader(QWidget):
 
 
 class KpiCard(QFrame):
-    """Metric card showing a title and a large value."""
+    """Metric card showing a title and a large value.
+
+    Part of the canonical KPI-card family (alongside
+    ``ui.components.KPICard`` / ``CompactKPICard`` and ``ui.widgets.StatCard``).
+    Kept as a distinct widget because it uses its own ``role="kpi-card"`` QSS
+    treatment (elevated card + ``kpi-label`` / ``kpi-value`` roles); aliasing
+    it to ``components.KPICard`` would change its rendered appearance, which
+    is relied on by ``ui.dialogs.maintenance_view``.
+    """
 
     def __init__(
         self,

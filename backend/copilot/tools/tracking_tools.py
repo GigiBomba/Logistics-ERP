@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
-from backend.copilot.tools.base import BaseTool, ToolExecutionContext
+from backend.copilot.tools.base import BaseTool, ToolExecutionContext, cap_result_list
 from backend.copilot.tools.registry import register_tool
 
 
@@ -56,27 +56,32 @@ class GetLivePositionsTool(BaseTool):
             service = FleetTrackingService()  # singleton
             positions = service.get_positions(force_refresh=params.force_refresh)
 
+            position_dicts = [
+                {
+                    "vehicle_id": p.device_id,
+                    "name": p.name,
+                    "latitude": p.latitude,
+                    "longitude": p.longitude,
+                    "timestamp": p.timestamp.isoformat()
+                    if hasattr(p.timestamp, "isoformat")
+                    else str(p.timestamp),
+                    "speed_kmh": p.speed_kmh,
+                    "heading": p.heading,
+                    "status": p.status,
+                }
+                for p in positions
+            ]
+            position_dicts, total, truncated = cap_result_list(position_dicts)
+
             return ToolResult(
                 status="success",
                 data={
-                    "positions": [
-                        {
-                            "vehicle_id": p.device_id,
-                            "name": p.name,
-                            "latitude": p.latitude,
-                            "longitude": p.longitude,
-                            "timestamp": p.timestamp.isoformat()
-                            if hasattr(p.timestamp, "isoformat")
-                            else str(p.timestamp),
-                            "speed_kmh": p.speed_kmh,
-                            "heading": p.heading,
-                            "status": p.status,
-                        }
-                        for p in positions
-                    ]
+                    "positions": position_dicts,
+                    "total_results": total,
+                    "truncated": truncated,
                 },
                 message_key="copilot.tracking.positions_fetched",
-                message_params={"count": len(positions)},
+                message_params={"count": len(position_dicts)},
             )
         except Exception as e:
             return ToolResult(
@@ -148,12 +153,15 @@ class GetVehicleHistoryTool(BaseTool):
                 }
                 for p in filtered
             ]
+            positions, total, truncated = cap_result_list(positions)
 
             return ToolResult(
                 status="success",
                 data={
                     "vehicle_id": params.vehicle_id,
                     "positions": positions,
+                    "total_results": total,
+                    "truncated": truncated,
                 },
                 message_key="copilot.tracking.history_fetched",
                 message_params={"vehicle_id": str(params.vehicle_id), "count": str(len(positions))},

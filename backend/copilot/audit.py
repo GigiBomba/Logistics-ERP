@@ -72,25 +72,21 @@ async def log_step_start(
     r = _get_repo(repo)
     if r is not None:
         try:
-            r.log_action(
+            r.log_step_execution(
                 conversation_id=conversation_id,
-                action="tool_execution_start",
-                entity_type="step",
-                entity_id=step.step_id,
-                new_value=json.dumps({
-                    "company_id": company_id,
-                    "user_id": user_id,
-                    "plan_id": plan_id,
-                    "tool_name": step.tool_name,
-                    "tool_version": step.tool_version,
-                    "parameters": step.parameters,
-                    "confirmation_level": step.confirmation_level,
-                    "model_used": model_used,
-                    "provider_id": provider_id,
-                    "prompt_version": prompt_version,
-                    "started_at": step.started_at.isoformat() if step.started_at else now,
-                }),
-                performed_by=str(user_id),
+                plan_id=plan_id,
+                step_id=step.step_id,
+                tool_name=step.tool_name,
+                tool_version=step.tool_version,
+                status="running",
+                parameters=step.parameters,
+                company_id=company_id,
+                user_id=user_id,
+                model_used=model_used,
+                provider_id=provider_id,
+                prompt_version=prompt_version,
+                confirmation_level=int(step.confirmation_level),
+                started_at=step.started_at.isoformat() if step.started_at else now,
             )
         except Exception as exc:
             logger.warning("Failed to log audit step start: %s", exc)
@@ -113,8 +109,48 @@ async def log_step_complete(
 
     Writes to both app logger and copilot_audit_log table.
     """
-    status = "succeeded" if not error else "failed"
+    # Terminal status flows through from the step when it is one of the
+    # executor's terminal values; otherwise derive from the error flag.
+    if step.status in ("succeeded", "failed", "skipped"):
+        status = step.status
+    else:
+        status = "succeeded" if not error else "failed"
     now = datetime.utcnow().isoformat()
+
+    # Calculate execution time if we have started_at
+    execution_time_ms = None
+    started_at = step.started_at.isoformat() if step.started_at else now
+    if step.started_at:
+        delta = datetime.utcnow() - step.started_at
+        execution_time_ms = int(delta.total_seconds() * 1000)
+
+    # Write to database via repository
+    # DDL moved to Alembic migration d4e5f6a7b8c4
+    r = _get_repo(repo)
+    if r is not None:
+        try:
+            r.log_step_execution(
+                conversation_id=conversation_id,
+                plan_id=plan_id,
+                step_id=step.step_id,
+                tool_name=step.tool_name,
+                tool_version=step.tool_version,
+                status=status,
+                parameters=step.parameters,
+                company_id=company_id,
+                user_id=user_id,
+                result=result,
+                error=error,
+                model_used=model_used,
+                provider_id=provider_id,
+                prompt_version=prompt_version,
+                confirmation_level=int(step.confirmation_level),
+                started_at=started_at,
+                finished_at=now,
+                execution_time_ms=execution_time_ms,
+            )
+        except Exception as exc:
+            logger.warning("Failed to log audit step complete: %s", exc)
     logger.info(
         "AUDIT END   | company=%d user=%d conv=%s plan=%s step=%s tool=%s status=%s "
         "model=%s provider=%s prompt_ver=%s",
@@ -161,6 +197,7 @@ async def log_step_complete(
                     "finished_at": now,
                 }),
                 performed_by=str(user_id),
+                user_id=user_id,
             )
         except Exception as exc:
             logger.warning("Failed to log audit step complete: %s", exc)

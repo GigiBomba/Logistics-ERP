@@ -5,6 +5,7 @@ All tasks are referred to by entries in ``backend/celery_app.schedule``.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -22,6 +23,11 @@ from repositories.trans_eu_repository import (
 logger = logging.getLogger(__name__)
 
 settings = BackendSettings()
+
+# Per-freight timeout for the external Trans.eu ``get_load`` call during
+# trans_eu_sync_active_freights.  Bounds a single hung freight so it cannot
+# stall the whole 10-minute sync cycle (C1b).
+TRANS_EU_SYNC_FREIGHT_TIMEOUT_SECONDS = 30
 
 
 @celery_app.task(bind=True, max_retries=0)
@@ -104,74 +110,88 @@ def trans_eu_sync_active_freights(self, company_id: int = None,
         company_id, request_id,
     )
     db = DatabaseManager(Config.DB_PATH)
+    # C1a: ONE event loop for the whole task run — reuse it for every freight
+    # instead of creating (and tearing down) a new loop per freight every 10 min.
+    loop = asyncio.new_event_loop()
     try:
-        offer_repo = TransEuFreightOfferRepository(db)
-        exclude_statuses = ["closed", "accepted"]
+        try:
+            offer_repo = TransEuFreightOfferRepository(db)
+            exclude_statuses = ["closed", "accepted"]
 
-        if company_id is not None:
-            rows = [{"company_id": company_id}]
-        else:
-            rows = offer_repo.get_distinct_company_ids_by_status(exclude_statuses)
+            if company_id is not None:
+                rows = [{"company_id": company_id}]
+            else:
+                rows = offer_repo.get_distinct_company_ids_by_status(exclude_statuses)
 
-        synced = 0
-        for row in rows:
-            cid = row["company_id"]
-            set_company_context(cid)
+            synced = 0
+            for row in rows:
+                cid = row["company_id"]
+                set_company_context(cid)
 
-            # Get active freights for this company
-            freights = offer_repo.get_freight_ids_by_company_and_status(cid, exclude_statuses)
+                # Get active freights for this company
+                freights = offer_repo.get_freight_ids_by_company_and_status(cid, exclude_statuses)
 
-            for freight_row in freights:
-                try:
-                    fid = freight_row["trans_eu_freight_id"]
-                    # Fetch current status from Trans.eu
-                    from services.freight_exchange.connection_manager import ConnectionManagerService
-                    from services.freight_exchange.registry import get_adapter
-
-                    conn_mgr = ConnectionManagerService(db)
-                    session = conn_mgr.get_active_session_sync(cid, "trans_eu")
-                    if session is None:
-                        continue
-
-                    adapter = get_adapter("trans_eu")
-                    if adapter is None:
-                        continue
-
-                    # Use asyncio to run the async get_load in sync context
-                    import asyncio
-                    loop = asyncio.new_event_loop()
+                for freight_row in freights:
                     try:
+                        fid = freight_row["trans_eu_freight_id"]
+                        # Fetch current status from Trans.eu
+                        from services.freight_exchange.connection_manager import ConnectionManagerService
+                        from services.freight_exchange.registry import get_adapter
+
+                        conn_mgr = ConnectionManagerService(db)
+                        session = conn_mgr.get_active_session_sync(cid, "trans_eu")
+                        if session is None:
+                            continue
+
+                        adapter = get_adapter("trans_eu")
+                        if adapter is None:
+                            continue
+
+                        # C1b: run the async get_load on the shared loop, bounded by a
+                        # per-freight timeout so one hung freight can't stall the
+                        # whole 10-minute cycle. A timeout surfaces as an exception
+                        # and is caught below (log + skip that freight only).
                         result = loop.run_until_complete(
-                            adapter.get_load(session, str(fid))
-                        )
-                    finally:
-                        loop.close()
-
-                    if result:
-                        # Sync status from raw_payload
-                        raw = result.raw_payload if hasattr(result, 'raw_payload') else {}
-                        new_status = raw.get("status", "")
-                        if new_status:
-                            offer_repo.update_status(
-                                fid, cid, new_status,
-                                datetime.now(timezone.utc).isoformat(),
+                            asyncio.wait_for(
+                                adapter.get_load(session, str(fid)),
+                                timeout=TRANS_EU_SYNC_FREIGHT_TIMEOUT_SECONDS,
                             )
-                            synced += 1
-                except Exception as e:
-                    logger.warning("Failed to sync freight %d for company %d: %s", fid, cid, e)
+                        )
 
-        logger.info(
-            "trans_eu_sync_active_freights completed: synced=%d request_id=%s",
-            synced, request_id,
-        )
-        return {"synced": synced, "companies_checked": len(rows)}
+                        if result:
+                            # Sync status from raw_payload
+                            raw = result.raw_payload if hasattr(result, 'raw_payload') else {}
+                            new_status = raw.get("status", "")
+                            if new_status:
+                                # C1c: idempotent check-then-set — only UPDATE when the
+                                # stored status actually differs, so retries don't issue
+                                # redundant writes. Read is company-scoped (tenant isolation).
+                                current = db.conn.execute(
+                                    "SELECT status FROM trans_eu_freight_offers "
+                                    "WHERE company_id = ? AND trans_eu_freight_id = ?",
+                                    (cid, fid),
+                                ).fetchone()
+                                stored_status = current[0] if current else None
+                                if stored_status != new_status:
+                                    offer_repo.update_status(cid, new_status, stored_status)
+                                    synced += 1
+                    except Exception as e:
+                        logger.warning("Failed to sync freight %d for company %d: %s", fid, cid, e)
 
-    except Exception as e:
-        logger.exception("trans_eu_sync_active_freights failed: %s", e)
-        raise self.retry(exc=e)
+            logger.info(
+                "trans_eu_sync_active_freights completed: synced=%d request_id=%s",
+                synced, request_id,
+            )
+            return {"synced": synced, "companies_checked": len(rows)}
+
+        except Exception as e:
+            logger.exception("trans_eu_sync_active_freights failed: %s", e)
+            raise self.retry(exc=e)
+    finally:
+        loop.close()
 
 
-@celery_app.task(bind=True, max_retries=0)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def trans_eu_process_failed_webhooks(self) -> dict:
     """Retry processing failed webhook events from the dead letter queue.
 
@@ -179,86 +199,91 @@ def trans_eu_process_failed_webhooks(self) -> dict:
     Processes events where next_retry_at <= NOW().
     """
     db = DatabaseManager(Config.DB_PATH)
+    # C2: ONE event loop for the whole run — reuse it per event row instead of
+    # asyncio.run() churning a fresh loop up to 50 times per cycle.
+    loop = asyncio.new_event_loop()
     try:
-        now = datetime.now(timezone.utc).isoformat()
-        # TODO: migrate to repo when TransEuWebhookEventFailedRepository is available
-        rows = db.conn.execute(
-            "SELECT id, company_id, trans_eu_event_id, event_name, payload, "
-            "attempt_count "
-            "FROM trans_eu_webhook_events_failed "
-            "WHERE status IN ('pending', 'retrying') AND next_retry_at <= ? "
-            "LIMIT 50",
-            (now,),
-        ).fetchall()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            # TODO: migrate to repo when TransEuWebhookEventFailedRepository is available
+            rows = db.conn.execute(
+                "SELECT id, company_id, trans_eu_event_id, event_name, payload, "
+                "attempt_count "
+                "FROM trans_eu_webhook_events_failed "
+                "WHERE status IN ('pending', 'retrying') AND next_retry_at <= ? "
+                "LIMIT 50",
+                (now,),
+            ).fetchall()
 
-        processed = 0
-        for row in rows:
-            try:
-                cid = row["company_id"]
-                set_company_context(cid)
-                event_id = row["trans_eu_event_id"]
-                event_name = row["event_name"]
+            processed = 0
+            for row in rows:
+                try:
+                    cid = row["company_id"]
+                    set_company_context(cid)
+                    event_id = row["trans_eu_event_id"]
+                    event_name = row["event_name"]
 
-                import json
-                payload = json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"]
-                attempts = row["attempt_count"]
+                    import json
+                    payload = json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"]
+                    attempts = row["attempt_count"]
 
-                import asyncio
-                from services.trans_eu.webhook_ingestion import WebhookIngestionService
-                service = WebhookIngestionService(db)
+                    from services.trans_eu.webhook_ingestion import WebhookIngestionService
+                    service = WebhookIngestionService(db)
 
-                async def _process():
-                    return await service.process_webhook(
-                        company_id=cid, event_id=event_id,
-                        event_name=event_name,
-                        occurred_at=payload.get("occurred_at", ""),
-                        payload=payload,
-                    )
+                    async def _process():
+                        return await service.process_webhook(
+                            company_id=cid, event_id=event_id,
+                            event_name=event_name,
+                            occurred_at=payload.get("occurred_at", ""),
+                            payload=payload,
+                        )
 
-                result = asyncio.run(_process())
+                    result = loop.run_until_complete(_process())
 
-                if result.get("status") == "processed":
-                    # TODO: migrate to repo
-                    db.conn.execute(
-                        "UPDATE trans_eu_webhook_events_failed SET status = 'resolved' WHERE id = ?",
-                        (row["id"],),
-                    )
-                else:
-                    raise RuntimeError(result.get("error", "unknown error"))
+                    if result.get("status") == "processed":
+                        # TODO: migrate to repo
+                        db.conn.execute(
+                            "UPDATE trans_eu_webhook_events_failed SET status = 'resolved' WHERE id = ?",
+                            (row["id"],),
+                        )
+                    else:
+                        raise RuntimeError(result.get("error", "unknown error"))
 
-                db.conn.commit()
-                processed += 1
+                    db.conn.commit()
+                    processed += 1
 
-            except Exception as e:
-                attempts = row["attempt_count"] + 1
-                if attempts >= 10:
-                    # TODO: migrate to repo
-                    db.conn.execute(
-                        "UPDATE trans_eu_webhook_events_failed SET status = 'failed_permanent' WHERE id = ?",
-                        (row["id"],),
-                    )
-                else:
-                    # Calculate next retry: exponential backoff
-                    delays = [60, 120, 240, 480, 960, 1800, 3600, 7200, 14400, 28800]
-                    delay = delays[min(attempts, len(delays) - 1)]
-                    next_retry = datetime.fromtimestamp(
-                        datetime.now(timezone.utc).timestamp() + delay,
-                        tz=timezone.utc,
-                    )
-                    # TODO: migrate to repo
-                    db.conn.execute(
-                        "UPDATE trans_eu_webhook_events_failed "
-                        "SET attempt_count = ?, next_retry_at = ?, status = 'retrying' "
-                        "WHERE id = ?",
-                        (attempts, next_retry.isoformat(), row["id"]),
-                    )
-                db.conn.commit()
+                except Exception as e:
+                    attempts = row["attempt_count"] + 1
+                    if attempts >= 10:
+                        # TODO: migrate to repo
+                        db.conn.execute(
+                            "UPDATE trans_eu_webhook_events_failed SET status = 'failed_permanent' WHERE id = ?",
+                            (row["id"],),
+                        )
+                    else:
+                        # Calculate next retry: exponential backoff
+                        delays = [60, 120, 240, 480, 960, 1800, 3600, 7200, 14400, 28800]
+                        delay = delays[min(attempts, len(delays) - 1)]
+                        next_retry = datetime.fromtimestamp(
+                            datetime.now(timezone.utc).timestamp() + delay,
+                            tz=timezone.utc,
+                        )
+                        # TODO: migrate to repo
+                        db.conn.execute(
+                            "UPDATE trans_eu_webhook_events_failed "
+                            "SET attempt_count = ?, next_retry_at = ?, status = 'retrying' "
+                            "WHERE id = ?",
+                            (attempts, next_retry.isoformat(), row["id"]),
+                        )
+                    db.conn.commit()
 
-        return {"processed": processed, "total": len(rows) if rows else 0}
+            return {"processed": processed, "total": len(rows) if rows else 0}
 
-    except Exception as e:
-        logger.exception("trans_eu_process_failed_webhooks failed: %s", e)
-        return {"error": str(e)}
+        except Exception as e:
+            logger.exception("trans_eu_process_failed_webhooks failed: %s", e)
+            return {"error": str(e)}
+    finally:
+        loop.close()
 
 
 @celery_app.task(bind=True, max_retries=0)
@@ -269,45 +294,46 @@ def trans_eu_health_check(self, company_id: int = None) -> dict:
     Updates last_health_check_status for each connection.
     """
     db = DatabaseManager(Config.DB_PATH)
+    # C2: ONE event loop for the whole run — reuse it per company instead of
+    # creating a new loop per company on every 5-minute cycle.
+    loop = asyncio.new_event_loop()
     try:
-        # TODO: migrate to repo when FreightExchangeConnectionRepository is available
-        query = (
-            "SELECT company_id, provider_id FROM freight_exchange_connections "
-            "WHERE provider_id = 'trans_eu' AND status = 'connected'"
-        )
-        params = []
-        if company_id is not None:
-            query += " AND company_id = ?"
-            params.append(company_id)
-        rows = db.conn.execute(query, params).fetchall()
+        try:
+            # TODO: migrate to repo when FreightExchangeConnectionRepository is available
+            query = (
+                "SELECT company_id, provider_id FROM freight_exchange_connections "
+                "WHERE provider_id = 'trans_eu' AND status = 'connected'"
+            )
+            params = []
+            if company_id is not None:
+                query += " AND company_id = ?"
+                params.append(company_id)
+            rows = db.conn.execute(query, params).fetchall()
 
-        checked = 0
-        for row in rows:
-            try:
-                cid = row["company_id"]
-                set_company_context(cid)
-
-                from services.freight_exchange.connection_manager import ConnectionManagerService
-                conn_mgr = ConnectionManagerService(db)
-                import asyncio
-                loop = asyncio.new_event_loop()
+            checked = 0
+            for row in rows:
                 try:
+                    cid = row["company_id"]
+                    set_company_context(cid)
+
+                    from services.freight_exchange.connection_manager import ConnectionManagerService
+                    conn_mgr = ConnectionManagerService(db)
                     health = loop.run_until_complete(
                         conn_mgr.test_connection(cid, "trans_eu")
                     )
-                finally:
-                    loop.close()
 
-                if health:
-                    checked += 1
-            except Exception as e:
-                logger.warning("Health check failed for company %d: %s", cid, e)
+                    if health:
+                        checked += 1
+                except Exception as e:
+                    logger.warning("Health check failed for company %d: %s", cid, e)
 
-        return {"checked": checked, "total": len(rows)}
+            return {"checked": checked, "total": len(rows)}
 
-    except Exception as e:
-        logger.exception("trans_eu_health_check failed: %s", e)
-        return {"error": str(e)}
+        except Exception as e:
+            logger.exception("trans_eu_health_check failed: %s", e)
+            return {"error": str(e)}
+    finally:
+        loop.close()
 
 
 @celery_app.task(bind=True, max_retries=0)

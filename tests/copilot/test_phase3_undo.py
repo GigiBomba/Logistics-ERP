@@ -70,24 +70,24 @@ def _make_ctx(**overrides: Any) -> ToolExecutionContext:
 
 
 class TestDestructiveToolBasics:
-    """Basic structural tests for all 9 DESTRUCTIVE tools."""
+    """Basic structural tests for all 10 DESTRUCTIVE tools."""
 
-    # Exact 9 tools that are DESTRUCTIVE in the registry
+    # Exact 10 tools that are DESTRUCTIVE in the registry
     DESTRUCTIVE_NAMES = {
         "trip.delete", "vehicle.delete", "driver.remove", "client.delete",
         "invoice.delete", "route.delete", "dispatch.cancel",
-        "automail.send_now", "email.send_bulk",
+        "automail.send_now", "email.send_bulk", "whatsapp.send_message",
     }
 
-    def test_all_9_destructive_tools_registered(self):
-        """Expect exactly 9 DESTRUCTIVE tools registered."""
+    def test_all_10_destructive_tools_registered(self):
+        """Expect exactly 10 DESTRUCTIVE tools registered."""
         dest = [t for t in all_tools() if t.confirmation_level == ConfirmationLevel.DESTRUCTIVE]
         names = {t.name for t in dest}
         assert names == self.DESTRUCTIVE_NAMES, (
             f"DESTRUCTIVE tools mismatch. Extra: {names - self.DESTRUCTIVE_NAMES}. "
             f"Missing: {self.DESTRUCTIVE_NAMES - names}"
         )
-        assert len(dest) == 9, f"Expected 9 DESTRUCTIVE tools, got {len(dest)}"
+        assert len(dest) == 10, f"Expected 10 DESTRUCTIVE tools, got {len(dest)}"
 
     @pytest.mark.parametrize("name", sorted(DESTRUCTIVE_NAMES))
     def test_destructive_permission_naming(self, name):

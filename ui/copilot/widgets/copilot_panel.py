@@ -11,18 +11,23 @@ Composes:
 Handles:
     - Text send -> display user bubble -> call controller -> display response/error
     - Push-to-talk via AudioRecorder + mic button
-    - Voice mode selector (Enterprise tier) with wake-word placeholder (Phase 3)
+    - Voice mode selector (Enterprise tier) — Push-to-Talk or continuous
+      wake-word listening (§3.5, §16), with TTS response output opt-in
     - i18n language changes via register_listener
 """
 
 from __future__ import annotations
 
+import array
 import asyncio
 import logging
 import threading
-from typing import Optional
+import time
+from typing import Callable, Optional
 
-from PySide6.QtCore import QTimer
+import shiboken6
+
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -68,6 +73,37 @@ from ui.widgets import StyledComboBox
 
 logger = logging.getLogger(__name__)
 
+# ── Voice state machine (§16) ──────────────────────────────────────────────
+# The voice flow is a 4-state machine shared by push-to-talk and wake-word:
+#   Idle -> Listening -> Processing -> Responding -> Idle
+VOICE_IDLE = "idle"
+VOICE_LISTENING = "listening"
+VOICE_PROCESSING = "processing"
+VOICE_RESPONDING = "responding"
+
+# Wake-word / utterance-capture timings (ms unless noted).
+_UTTERANCE_MAX_MS = 7000        # hard cap after a wake-word trigger
+_SILENCE_MS = 900               # trailing silence this long ends the utterance
+_MIN_SOUND_MS = 350             # require some speech before silence can end it
+_SILENCE_ENERGY = 350.0         # RMS amplitude below this counts as silence
+_RESPONDING_COOLDOWN_MS = 2000  # re-arm the wake word after a response (TTS)
+_WAKE_WORD_STATUS_MS = 3000     # how long the "listening" status banner shows
+
+
+def _pcm_rms(data: bytes) -> float:
+    """Return the RMS amplitude of 16-bit mono PCM *data* (silence ≈ 0)."""
+    if not data:
+        return 0.0
+    n_samples = len(data) // 2
+    if n_samples == 0:
+        return 0.0
+    samples = array.array("h")
+    samples.frombytes(data[: n_samples * 2])
+    if not samples:
+        return 0.0
+    energy = sum(s * s for s in samples)
+    return (energy / len(samples)) ** 0.5
+
 
 class CoPilotPanel(QFrame):
     """AI Co-Pilot chat panel -- dockable, Phase 1+ chat UI with voice.
@@ -81,6 +117,32 @@ class CoPilotPanel(QFrame):
     enterprise_voice : bool
         When ``True`` the voice-mode combo box is shown (Enterprise tier).
     """
+
+    # ── Signals ──────────────────────────────────────────────────────
+    # Worker threads emit these instead of touching widgets directly; Qt
+    # auto-queues the emission to the receiver's (main) thread, so the
+    # slots always run on the GUI thread.
+    response_ready = Signal(dict)   # backend response dict → _handle_response
+    request_failed = Signal(str)    # error message → _handle_error
+
+    def _schedule_after(self, ms: int, fn: Callable[[], None]) -> None:
+        """Run *fn* after *ms* ms, no-op if this widget was destroyed first.
+
+        ``QTimer.singleShot`` callbacks that capture ``self`` fire even after
+        the underlying C++ object was deleted (panel torn down while a wake
+        word / cooldown timer is still pending), which raises "Signal source
+        has been deleted" from inside the Qt event loop and poisons later
+        tests.  Checking ``shiboken6.isValid`` drops the callback once the
+        object is gone.
+        """
+        target = self
+
+        def _run() -> None:
+            if not shiboken6.isValid(target):
+                return
+            fn()
+
+        QTimer.singleShot(ms, _run)
 
     def __init__(
         self,
@@ -98,14 +160,35 @@ class CoPilotPanel(QFrame):
         self._enterprise_voice = enterprise_voice
         self._recorder = AudioRecorder(self)
 
+        # Cross-thread results are delivered via queued Qt signals so worker
+        # threads never touch widgets directly.
+        self.response_ready.connect(self._handle_response)
+        self.request_failed.connect(self._handle_error)
+
         self._voice_mode_combo: Optional[QComboBox] = None
         self._wake_word_notice: Optional[QLabel] = None
+
+        # Wake-word / voice state machine (§16): Idle→Listening→Processing→Responding
+        self._wake_word_enabled: bool = False
+        self._voice_state: str = VOICE_IDLE
+        self._capturing: bool = False
+        self._utterance_started_at: float = 0.0
+        self._last_sound_at: Optional[float] = None
+        self._sound_ever: bool = False
+        self._utterance_timer = QTimer(self)
+        self._utterance_timer.setSingleShot(True)
+        self._utterance_timer.timeout.connect(self._finish_utterance)
 
         self._i18n_callback = self._on_language_changed
         register_listener(self._i18n_callback)
 
         self._build_ui()
         self._connect_voice()
+
+        # Voice mode is an opt-in per session: a voice mode selected in the
+        # combo box (Enterprise tier) activates TTS response output.
+        if self._voice_mode_combo is not None:
+            self._set_voice_mode_active(True)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -212,6 +295,7 @@ class CoPilotPanel(QFrame):
         self._chat_input.mic_pressed.connect(self._on_mic_pressed)
         self._chat_input.mic_released.connect(self._on_mic_released)
         self._recorder.audio_ready.connect(self._on_audio_ready)
+        self._recorder.chunk_ready.connect(self._on_chunk_ready)
         self._recorder.error_occurred.connect(self._on_recorder_error)
 
     # -- Public API --------------------------------------------------------
@@ -229,6 +313,15 @@ class CoPilotPanel(QFrame):
     def set_controller(self, controller: CoPilotController) -> None:
         """Set or replace the controller after construction."""
         self._controller = controller
+        # Re-propagate the current voice-mode opt-in state.
+        if self._voice_mode_combo is not None:
+            self._set_voice_mode_active(True)
+        if self._wake_word_enabled:
+            try:
+                if hasattr(controller, "set_wake_word_enabled"):
+                    controller.set_wake_word_enabled(True)
+            except Exception:
+                logger.exception("Failed to propagate wake-word state to controller")
 
     def set_enterprise_voice(self, enabled: bool) -> None:
         """Show/hide the voice-mode selector (Enterprise tier gate)."""
@@ -237,13 +330,21 @@ class CoPilotPanel(QFrame):
             self._voice_mode_combo.setVisible(enabled)
         if self._wake_word_notice is not None:
             self._wake_word_notice.setVisible(False)
+        if not enabled:
+            self._disable_wake_word()
+        # TTS response output follows the voice-mode opt-in state.
+        self._set_voice_mode_active(
+            bool(enabled and self._voice_mode_combo is not None)
+        )
 
     def shutdown(self) -> None:
-        """Clean up i18n listener and recorder."""
+        """Clean up i18n listener, wake-word monitoring, and recorder."""
         try:
             unregister_listener(self._i18n_callback)
         except Exception:
             pass
+        self._wake_word_enabled = False
+        self._utterance_timer.stop()
         self._recorder.stop_recording()
 
     # -- Mic / Push-to-Talk ------------------------------------------------
@@ -251,12 +352,14 @@ class CoPilotPanel(QFrame):
     def _on_mic_pressed(self) -> None:
         """Begin recording when the mic button is pressed."""
         logger.debug("Mic pressed -- starting recording")
+        self._voice_state = VOICE_LISTENING
         self._chat_input.set_mic_state("listening")
         self._recorder.start_recording()
 
     def _on_mic_released(self) -> None:
         """Stop recording when the mic button is released."""
         logger.debug("Mic released -- stopping recording")
+        self._voice_state = VOICE_PROCESSING
         self._chat_input.set_mic_state("processing")
         self._recorder.stop_recording()
 
@@ -281,23 +384,20 @@ class CoPilotPanel(QFrame):
                 response = asyncio.run(
                     self._controller.send_voice(audio_bytes, language=language)
                 )
-                # Schedule UI update back on the main thread
-                QTimer.singleShot(
-                    0,
-                    lambda: self._handle_response(
-                        {
-                            "summary_key": response.summary_key,
-                            "summary_params": response.summary_params,
-                            "clarification_question_key": response.clarification_question_key,
-                            "clarification_params": response.clarification_params,
-                            "status": "ok",
-                        }
-                    ),
+                # Emit on the Qt signal — auto-queued to the main thread
+                self.response_ready.emit(
+                    {
+                        "summary_key": response.summary_key,
+                        "summary_params": response.summary_params,
+                        "clarification_question_key": response.clarification_question_key,
+                        "clarification_params": response.clarification_params,
+                        "status": "ok",
+                    }
                 )
             except Exception as exc:
                 logger.exception("Voice processing failed")
                 error_msg = str(exc)
-                QTimer.singleShot(0, lambda: self._handle_error(error_msg))
+                self.request_failed.emit(error_msg)
 
         thread = threading.Thread(target=_run_async, daemon=True)
         thread.start()
@@ -306,6 +406,11 @@ class CoPilotPanel(QFrame):
         """Handle audio-recorder errors gracefully."""
         logger.error("AudioRecorder error: %s", message)
         self._chat_input.set_mic_state("idle")
+        if self._wake_word_enabled:
+            # Mic unavailable during wake-word monitoring — fall back to PTT
+            # silently (logged) instead of spamming error bubbles.
+            self._revert_to_ptt()
+            return
         self._conversation.add_message(
             t(
                 "copilot.voice.recording_error",
@@ -357,12 +462,12 @@ class CoPilotPanel(QFrame):
                     "timeline": response.timeline,
                     "conversation_id": response.conversation_id,
                 }
-                # Schedule UI update back on the main thread
-                QTimer.singleShot(0, lambda: self._handle_response(response_dict))
+                # Emit on the Qt signal — auto-queued to the main thread
+                self.response_ready.emit(response_dict)
             except Exception as exc:
                 logger.exception("Co-Pilot request failed")
                 error_msg = str(exc)
-                QTimer.singleShot(0, lambda: self._handle_error(error_msg))
+                self.request_failed.emit(error_msg)
 
         thread = threading.Thread(target=_run_async, daemon=True)
         thread.start()
@@ -375,6 +480,8 @@ class CoPilotPanel(QFrame):
         # Build display text from response
         display_text = self._format_response(response_dict)
         self._conversation.add_message(display_text, is_user=False)
+
+        self._finish_voice_turn()
 
     def _handle_error(self, error_message: str) -> None:
         """Display an error message.
@@ -393,6 +500,8 @@ class CoPilotPanel(QFrame):
         )
         self._conversation.add_message(error_text, is_user=False)
 
+        self._finish_voice_turn()
+
     def _format_response(self, response_dict: dict) -> str:
         """Format a CoPilotResponse dict into a display string.
 
@@ -406,18 +515,26 @@ class CoPilotPanel(QFrame):
         # Summary text
         summary_key = response_dict.get("summary_key")
         if summary_key:
-            summary_params = response_dict.get("summary_params", {})
-            summary_text = t(summary_key, **summary_params)
-            timeline = response_dict.get("timeline") or []
-            timeline_text = self._render_timeline(timeline)
-            if summary_text and summary_text != summary_key:
-                parts.append(summary_text)
-            elif timeline_text:
-                # Untranslated summary key — render the executed steps instead
-                # of showing a raw i18n key (common for local in-process runs).
-                parts.append(timeline_text)
+            if summary_key == "copilot.summary.llm_chat":
+                # Verbatim passthrough — the LLM answer may contain {, } or
+                # newlines that str.format() would mangle or crash on, so it
+                # must never go through t()/format().
+                answer = (response_dict.get("summary_params") or {}).get("answer")
+                if isinstance(answer, str) and answer.strip():
+                    parts.append(answer)
             else:
-                parts.append(summary_text)
+                summary_params = response_dict.get("summary_params", {})
+                summary_text = t(summary_key, **summary_params)
+                timeline = response_dict.get("timeline") or []
+                timeline_text = self._render_timeline(timeline)
+                if summary_text and summary_text != summary_key:
+                    parts.append(summary_text)
+                elif timeline_text:
+                    # Untranslated summary key — render the executed steps instead
+                    # of showing a raw i18n key (common for local in-process runs).
+                    parts.append(timeline_text)
+                else:
+                    parts.append(summary_text)
 
         # Clarification question
         clarification_key = response_dict.get("clarification_question_key")
@@ -506,19 +623,110 @@ class CoPilotPanel(QFrame):
     # -- Voice mode selector -----------------------------------------------
 
     def _on_voice_mode_changed(self, mode: str) -> None:
-        """Handle voice-mode combo-box changes (Enterprise only)."""
+        """Handle voice-mode combo-box changes (Enterprise only).
+
+        Push to Talk → PTT capture.  Wake Word → continuous wake-word
+        listening (§3.5): the mic streams PCM, the wake-word engine is
+        consulted per chunk, and a trigger activates the voice turn exactly
+        like a PTT press.
+        """
         if self._wake_word_notice is None:
             return
 
         is_wake_word = "Wake Word" in mode or "activare vocala" in mode.lower()
-        self._wake_word_notice.setVisible(is_wake_word)
+
+        # Selecting any voice mode opts the session into TTS response output.
+        self._set_voice_mode_active(True)
 
         if is_wake_word:
-            logger.info("Wake Word selected -- showing Phase 3 notice, reverting in 3 s")
-            QTimer.singleShot(3000, self._reset_voice_mode)
+            self._enable_wake_word()
+        else:
+            self._disable_wake_word()
 
-    def _reset_voice_mode(self) -> None:
-        """Switch the combo box back to 'Push to Talk' after the wake-word notice."""
+    # -- Wake-word monitoring (§3.5, §16) -----------------------------------
+
+    def _enable_wake_word(self) -> None:
+        """Turn on continuous wake-word monitoring (Enterprise)."""
+        self._wake_word_enabled = True
+        if self._controller is not None and hasattr(self._controller, "set_wake_word_enabled"):
+            try:
+                self._controller.set_wake_word_enabled(True)
+            except Exception:
+                logger.exception("Failed to propagate wake-word state to controller")
+
+        # A stale Responding state (e.g. from an earlier PTT turn) must not
+        # block fresh monitoring.
+        if self._voice_state == VOICE_RESPONDING:
+            self._voice_state = VOICE_IDLE
+
+        if not self._wake_word_available():
+            logger.info("Wake-word engine unavailable — falling back to push-to-talk")
+            self._revert_to_ptt()
+            return
+        if self._start_wake_word_listening():
+            self._show_wake_word_status()
+
+    def _disable_wake_word(self) -> None:
+        """Turn off wake-word monitoring (back to push-to-talk)."""
+        self._wake_word_enabled = False
+        if self._controller is not None and hasattr(self._controller, "set_wake_word_enabled"):
+            try:
+                self._controller.set_wake_word_enabled(False)
+            except Exception:
+                logger.exception("Failed to propagate wake-word state to controller")
+        self._stop_wake_word_listening()
+
+    def _start_wake_word_listening(self) -> bool:
+        """Begin continuous mic monitoring for the wake word (non-blocking).
+
+        Returns ``True`` when monitoring is active, ``False`` when the mic
+        could not be opened (an ``_on_recorder_error`` revert already ran).
+        """
+        if not self._wake_word_enabled:
+            return False
+        if self._voice_state != VOICE_IDLE:
+            return False  # a turn is in flight — never overlap capture/TTS
+        self._capturing = False
+        self._recorder.clear_buffer()
+        self._recorder.start_recording()  # idempotent; streams chunk_ready
+        if not self._wake_word_enabled:
+            # Mic unavailable — _on_recorder_error already reverted to PTT.
+            return False
+        if self._wake_word_notice is not None:
+            self._wake_word_notice.setVisible(False)
+        logger.info("Wake-word monitoring active")
+        return True
+
+    def _stop_wake_word_listening(self) -> None:
+        """Stop wake-word mic monitoring and any pending utterance timer."""
+        self._utterance_timer.stop()
+        self._capturing = False
+        if self._voice_state in (VOICE_IDLE, VOICE_RESPONDING):
+            # Mid-utterance (Listening/Processing) is owned by the turn and
+            # is stopped by the normal audio_ready flow.
+            self._recorder.stop_recording()
+        if self._wake_word_notice is not None:
+            self._wake_word_notice.setVisible(False)
+
+    def _wake_word_available(self) -> bool:
+        if self._controller is None:
+            return False
+        try:
+            if hasattr(self._controller, "wake_word_available"):
+                return bool(self._controller.wake_word_available)
+        except Exception:
+            logger.exception("Wake-word availability check failed")
+        return False
+
+    def _revert_to_ptt(self) -> None:
+        """Graceful fallback: stop monitoring and select Push to Talk."""
+        self._wake_word_enabled = False
+        if self._controller is not None and hasattr(self._controller, "set_wake_word_enabled"):
+            try:
+                self._controller.set_wake_word_enabled(False)
+            except Exception:
+                pass
+        self._stop_wake_word_listening()
         if self._voice_mode_combo is not None:
             ptt_label = t("copilot.voice.mode_ptt", default="Push to Talk")
             idx = self._voice_mode_combo.findText(ptt_label)
@@ -527,7 +735,155 @@ class CoPilotPanel(QFrame):
                 self._voice_mode_combo.setCurrentIndex(idx)
                 self._voice_mode_combo.blockSignals(False)
         if self._wake_word_notice is not None:
+            self._wake_word_notice.setText(
+                t(
+                    "copilot.voice.wake_word_unavailable",
+                    default="Wake word engine unavailable — switched back to Push to Talk.",
+                )
+            )
+            self._wake_word_notice.setVisible(True)
+            self._schedule_after(_WAKE_WORD_STATUS_MS, self._hide_wake_word_status)
+        # PTT is still a voice mode — TTS output stays active.
+        self._set_voice_mode_active(True)
+
+    def _show_wake_word_status(self) -> None:
+        """Show a short "listening for wake word" status banner."""
+        if self._wake_word_notice is None:
+            return
+        self._wake_word_notice.setText(
+            t(
+                "copilot.voice.wake_word_listening",
+                default="Listening for wake word…",
+            )
+        )
+        self._wake_word_notice.setVisible(True)
+        self._schedule_after(_WAKE_WORD_STATUS_MS, self._hide_wake_word_status)
+
+    def _hide_wake_word_status(self) -> None:
+        if self._wake_word_notice is not None:
             self._wake_word_notice.setVisible(False)
+
+    # -- Streaming audio plumbing --------------------------------------------
+
+    def _on_chunk_ready(self, chunk: bytes) -> None:
+        """Stream each PCM chunk — wake-word detection or utterance capture."""
+        if self._capturing:
+            # Post-trigger utterance capture — VAD + auto-stop.
+            self._track_utterance_audio(chunk)
+            return
+        if self._voice_state == VOICE_LISTENING:
+            # Push-to-talk: the buffer accumulates for stop_recording.
+            return
+        if self._wake_word_enabled and self._voice_state == VOICE_IDLE:
+            if self._feed_wake_word(chunk):
+                self._on_wake_word_triggered()
+                return
+        # Monitoring (or a stale state) — keep the buffer from growing.
+        self._recorder.clear_buffer()
+
+    def _feed_wake_word(self, chunk: bytes) -> bool:
+        """Feed one PCM chunk to the controller's wake-word engine."""
+        if self._controller is None:
+            return False
+        try:
+            if hasattr(self._controller, "process_wake_word_audio"):
+                return bool(self._controller.process_wake_word_audio(chunk))
+        except Exception:
+            logger.exception("Wake-word feed failed")
+        return False
+
+    def _on_wake_word_triggered(self) -> None:
+        """Wake word heard — start capturing the utterance (like a PTT press)."""
+        if self._voice_state != VOICE_IDLE:
+            return
+        logger.info("Wake word detected — listening")
+        if self._controller is not None and hasattr(self._controller, "reset_wake_word"):
+            try:
+                self._controller.reset_wake_word()
+            except Exception:
+                pass
+        self._voice_state = VOICE_LISTENING
+        self._capturing = True
+        self._recorder.clear_buffer()
+        self._chat_input.set_mic_state("listening")
+        self._utterance_started_at = time.monotonic()
+        self._last_sound_at = None
+        self._sound_ever = False
+        self._utterance_timer.start(_UTTERANCE_MAX_MS)
+
+    def _track_utterance_audio(self, chunk: bytes) -> None:
+        """Simple energy-based end-of-speech detection on captured PCM."""
+        now = time.monotonic()
+        if _pcm_rms(chunk) >= _SILENCE_ENERGY:
+            self._last_sound_at = now
+            self._sound_ever = True
+            return
+        if not self._sound_ever or self._last_sound_at is None:
+            return
+        silent_for = now - self._last_sound_at
+        elapsed = now - self._utterance_started_at
+        if silent_for >= (_SILENCE_MS / 1000.0) and elapsed >= (_MIN_SOUND_MS / 1000.0):
+            self._finish_utterance()
+
+    def _finish_utterance(self) -> None:
+        """End utterance capture and submit it (like a PTT release)."""
+        if self._voice_state != VOICE_LISTENING or not self._capturing:
+            return
+        self._utterance_timer.stop()
+        self._capturing = False
+        self._voice_state = VOICE_PROCESSING
+        self._chat_input.set_mic_state("processing")
+        self._recorder.stop_recording()  # → audio_ready → _process_voice
+
+    def _finish_voice_turn(self) -> None:
+        """Voice turn complete — enter Responding, then re-arm the wake word.
+
+        The Responding state intentionally keeps the wake word disarmed while
+        TTS playback (or the displayed answer) is still happening, so a new
+        trigger can never overlap the assistant's response.
+        """
+        self._voice_state = VOICE_RESPONDING
+        self._chat_input.set_mic_state("idle")
+        if self._wake_word_enabled:
+            self._schedule_after(_RESPONDING_COOLDOWN_MS, self._maybe_restart_wake_word)
+
+    def _maybe_restart_wake_word(self) -> None:
+        """Re-arm the wake word once the response (TTS) has finished."""
+        if not self._wake_word_enabled:
+            return
+        if self._voice_state != VOICE_RESPONDING:
+            return
+        if self._controller_is_speaking():
+            # TTS still playing — poll again shortly.
+            self._schedule_after(1000, self._maybe_restart_wake_word)
+            return
+        self._voice_state = VOICE_IDLE
+        self._start_wake_word_listening()
+
+    def _controller_is_speaking(self) -> bool:
+        """Whether the controller is currently playing TTS audio."""
+        if self._controller is None:
+            return False
+        try:
+            if hasattr(self._controller, "tts_playing"):
+                return bool(self._controller.tts_playing)
+        except Exception:
+            return False
+        return False
+
+    def _set_voice_mode_active(self, active: bool) -> None:
+        """Propagate the voice-mode opt-in state to the controller (TTS output).
+
+        Failures are logged and swallowed — the chat flow must never break
+        because of voice-mode state plumbing.
+        """
+        if self._controller is None:
+            return
+        try:
+            if hasattr(self._controller, "set_voice_mode_active"):
+                self._controller.set_voice_mode_active(active)
+        except Exception:
+            logger.exception("Failed to propagate voice-mode state to controller")
 
     def _on_new_conversation(self) -> None:
         """Clear the conversation and reset state."""

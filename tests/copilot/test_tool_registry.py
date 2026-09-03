@@ -3,10 +3,17 @@
 Blueprint: §9 — Registry enforcement.
 
 IMPORTANT: This module registers fixture tools (with names starting with
-``test.``) into the global ``_registry``.  The module-scoped autouse fixture
-``_cleanup_test_tools`` unregisters them after this module finishes, so they
-don't leak into subsequent test files that run ``validate_registry()`` or
-``run_startup_validation()`` (e.g. ``test_copilot_load.py``).
+``test.``) into the global ``_registry``.  Under pytest-xdist a module's tests
+can be interleaved with other test files on a worker (the root
+``reset_singletons`` fixture is function-scoped, so ``--dist=loadscope``
+groups every test at function scope).  When the worker moves to another
+module, pytest finalizes the module-scoped ``_cleanup_test_tools`` fixture —
+deleting the ``test.*`` fixtures *between* this module's own tests.  The
+function-scoped ``_registry_isolation`` fixture re-registers them before every
+test so the validation assertions always see exactly this module's fixtures;
+``_cleanup_test_tools`` still unregisters them after the module finishes so
+they don't leak into subsequent test files that run ``validate_registry()``
+or ``run_startup_validation()`` (e.g. ``test_copilot_load.py``).
 """
 from __future__ import annotations
 
@@ -33,6 +40,42 @@ def _cleanup_test_tools():
     test_tool_names = [name for name in _registry.keys() if name.startswith("test.")]
     for name in test_tool_names:
         del _registry[name]
+
+
+@pytest.fixture(autouse=True)
+def _registry_isolation():
+    """Re-register this module's fixture tools around every test.
+
+    pytest-xdist ``--dist=loadscope`` groups tests by their closest fixture
+    scope; because the root ``reset_singletons`` fixture is function-scoped,
+    every test resolves to function scope and a module's tests can be split
+    across workers and interleaved with other test files.  When this worker
+    moves to another module, pytest finalizes the module-scoped
+    ``_cleanup_test_tools`` fixture — deleting the ``test.*`` fixtures
+    *between* this module's own tests.  The validation tests would then see a
+    registry without their invalid fixtures and fail (flaky, order-dependent).
+    Re-add the fixture tools before each test and restore the pre-test
+    ``test.*`` / ``_IMPORTED`` state afterwards so every test sees exactly its
+    own fixtures.  Production (non-``test.*``) tools are never touched.
+    """
+    from backend.copilot.tools import registry as _reg
+
+    saved_test_tools = {
+        name: tool for name, tool in _reg._registry.items()
+        if name.startswith("test.")
+    }
+    saved_imported = _reg._IMPORTED
+
+    for cls in (_ValidTool, _NoPermissionTool, _NoVersionTool, _BadSchemaTool, _DeprecatedTool):
+        _reg._registry[cls.name] = cls()
+
+    try:
+        yield
+    finally:
+        for name in [n for n in _reg._registry if n.startswith("test.")]:
+            del _reg._registry[name]
+        _reg._registry.update(saved_test_tools)
+        _reg._IMPORTED = saved_imported
 
 
 # ── Fixture tools for testing ──────────────────────────────────────────────

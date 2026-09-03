@@ -28,6 +28,8 @@ _validation_errors = run_startup_validation()
 
 def _production_tools():
     """Return only production tools (excludes test fixtures like test.*)."""
+    from backend.copilot.planner import _ensure_tools_loaded
+    _ensure_tools_loaded()
     return [t for t in all_tools() if not t.name.startswith("test.")]
 
 
@@ -82,9 +84,9 @@ class TestAllToolsRegistered:
         )
 
     def test_67_production_tools_registered(self):
-        """Phase 5 expects exactly 75 tools across 4 confirmation levels."""
+        """Phase 5 expects exactly 81 tools across 4 confirmation levels."""
         tools = _production_tools()
-        assert len(tools) == 75, f"Expected 75 tools, got {len(tools)}"
+        assert len(tools) == 81, f"Expected 81 tools, got {len(tools)}"
 
     def test_no_deprecated_tools(self):
         """No deprecated tools expected in Phase 2."""
@@ -184,10 +186,10 @@ class TestAllToolsRegistered:
         levels = {0: 0, 1: 0, 2: 0, 3: 0}
         for t in tools:
             levels[t.confirmation_level.value] += 1
-        assert levels[0] == 24, f"Expected 24 SAFE tools, got {levels[0]}"
+        assert levels[0] == 29, f"Expected 29 SAFE tools, got {levels[0]}"
         assert levels[1] == 18, f"Expected 18 INFORMATIONAL tools, got {levels[1]}"
         assert levels[2] == 24, f"Expected 24 BUSINESS tools, got {levels[2]}"
-        assert levels[3] == 9, f"Expected 9 DESTRUCTIVE tools, got {levels[3]}"
+        assert levels[3] == 10, f"Expected 10 DESTRUCTIVE tools, got {levels[3]}"
 
     def test_get_tool_every_name(self):
         """Every production tool name must resolve via get_tool()."""
@@ -320,7 +322,12 @@ SAFE_NAMES: Set[str] = {
     "route.calculate",
     "route.estimate_cost",
     "route.plan_multistop",
+    "route.list",
+    "route.get",
     "trip.calculate_profitability",
+    "trip.list",
+    "trip.get",
+    "conversation.recall_recent",
     "client.payment_summary",
     "document.search",
     "currency.get_rate",
@@ -405,6 +412,7 @@ DEST_NAMES: Set[str] = {
     "route.delete",
     "trip.delete",
     "vehicle.delete",
+    "whatsapp.send_message",
 }
 
 
@@ -527,9 +535,10 @@ class TestDomainGroups:
                      "route.plan_multistop", "route.save_plan",
                      "route.export_file", "route.import_file",
                      "route.create_share_link", "route.create", "route.update",
-                     "route.delete"},
+                     "route.delete", "route.list", "route.get"},
         "trip":     {"trip.calculate_profitability", "trip.create", "trip.update",
-                     "trip.delete"},
+                     "trip.delete", "trip.list", "trip.get"},
+        "conversation": {"conversation.recall_recent"},
         "client":   {"client.payment_summary", "client.create", "client.update",
                      "client.delete"},
         "document": {"document.search", "document.auto_rename",
@@ -558,6 +567,7 @@ class TestDomainGroups:
                      "freight.negotiate_offer", "freight.publish_to_exchange"},
         "payment":  {"payment.generate_bulk_csv"},
         "help":    {"help.answer_question", "help.guide_workflow"},
+        "whatsapp": {"whatsapp.send_message"},
     }
 
     def test_every_tool_in_one_domain_group(self):

@@ -42,6 +42,11 @@ class OcrImportTool(BaseTool):
     required_permission = "documents:write"
     confirmation_level = ConfirmationLevel.INFORMATIONAL
     supports_undo = False
+    # §13 — batch OCR is heavy: dispatched to Celery (inline fallback),
+    # pausable/resumable so wave-1's 409 pause enforcement is satisfiable.
+    long_running = True
+    supports_pause = True
+    supports_resume = True
     parameters_schema = OcrImportParams
 
     async def validate(self, params: OcrImportParams, ctx: ToolExecutionContext) -> List[str]:

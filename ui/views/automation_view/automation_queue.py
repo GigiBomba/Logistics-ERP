@@ -245,9 +245,11 @@ class QueueManagementMixin:
             return
         try:
             recovered = self._pipeline_repo.recover_stuck_runs()
-        except Exception:
+        except Exception as exc:
             recovered = 0
-            logger.exception("recover_stuck_runs failed")
+            # Best-effort startup recovery — warning level, no traceback
+            # spam (the repository layer logs the full error once).
+            logger.warning("recover_stuck_runs skipped: %s", exc)
         if recovered:
             logger.info("Recovered %d stuck pipeline runs on startup", recovered)
             self._refresh_from_db()

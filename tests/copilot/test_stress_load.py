@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any, Dict, List
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -30,6 +30,18 @@ from backend.copilot.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _offline_llm_chat():
+    """Force the keyword (offline-fallback) path — a configured provider
+    (env API keys like GOOGLE_API_KEY) must never trigger live calls in the
+    test suite."""
+    from backend.copilot.llm.tool_calling import ToolLoopResult
+
+    with patch("backend.copilot.llm.chat.chat_with_tools", new_callable=AsyncMock) as m:
+        m.return_value = ToolLoopResult(attempted=False, provider_failed=False)
+        yield m
+
 
 @pytest.fixture(autouse=True)
 def ensure_tools():

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -27,6 +28,7 @@ from services.i18n import register_listener, t, unregister_listener
 from ui.components import Btn, Card, EmptyState, IconButton, Label, PageTitle
 from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
 from ui.design_tokens import (
+    COLOR_BG_OVERLAY,
     COLOR_ERROR_DEFAULT,
     COLOR_INFO_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
@@ -36,7 +38,7 @@ from ui.design_tokens import (
 from ui.icons import iconed
 from ui.models.maintenance_view_model import MaintenanceViewModel
 from ui.plotly_charts import CHART_ACCENT, make_grouped_bar_chart, make_trend_chart
-from ui.plotly_renderer import PlotlyChartWidget, empty_figure
+from ui.plotly_renderer import PlotlyChartWidget, empty_figure, figure_has_data
 from ui.widgets import StyledTableWidget
 from ui.widgets.layout_utils import clear_layout
 
@@ -123,7 +125,14 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
-        QTimer.singleShot(0, self, self._load_data)
+        # Deferred initial load. Parented single-shot timer (NOT the
+        # ``singleShot(msec, context, callable)`` overload): the parented timer
+        # keeps its callback referenced and is torn down with this view, so it
+        # cannot fire against a dead C++ object.
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self._load_data)
+        _timer.start(0)
 
     # ── UI Build ─────────────────────────────────────────────────
 
@@ -187,8 +196,8 @@ class QtMaintenanceAnalyticsView(QWidget):
         layout.addWidget(header)
 
     def _build_chart_area(self, layout):
-        chart_card = Card()
-        chart_card.setMinimumHeight(350)
+        self._chart_card = Card()
+        self._chart_card.setMinimumHeight(350)
         frame = QFrame()
         frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         cl = QHBoxLayout(frame)
@@ -198,24 +207,24 @@ class QtMaintenanceAnalyticsView(QWidget):
         # Placeholder frames — real PlotlyChartWidget created lazily in _render_charts
         self._chart_placeholder_a = QFrame()
         self._chart_placeholder_a.setMinimumHeight(300)
-        self._chart_placeholder_a.setStyleSheet("background: #1C1C1F; border-radius: 6px;")
+        self._chart_placeholder_a.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: 6px;")
         self._chart_placeholder_b = QFrame()
         self._chart_placeholder_b.setMinimumHeight(300)
-        self._chart_placeholder_b.setStyleSheet("background: #1C1C1F; border-radius: 6px;")
+        self._chart_placeholder_b.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: 6px;")
         cl.addWidget(self._chart_placeholder_a, 1)
         cl.addWidget(self._chart_placeholder_b, 1)
 
-        chart_card.layout().addWidget(frame)
-        layout.addWidget(chart_card, 3)
+        self._chart_card.layout().addWidget(frame)
+        layout.addWidget(self._chart_card, 3)
 
     def _build_table_area(self, layout):
-        table_card = Card()
+        self._table_card_area = Card()
         self._table_container = QFrame()
         self._table_container.setMinimumHeight(200)
         tl = QVBoxLayout(self._table_container)
         tl.setContentsMargins(0, 0, 0, 0)
-        table_card.layout().addWidget(self._table_container)
-        layout.addWidget(table_card, 2)
+        self._table_card_area.layout().addWidget(self._table_container)
+        layout.addWidget(self._table_card_area, 2)
 
     # ── Data loading (dirty-flag aware) ──────────────────────────
 
@@ -313,16 +322,38 @@ class QtMaintenanceAnalyticsView(QWidget):
             return
 
         try:
-            self._chart_widget_a.set_figure(self._build_cost_by_truck_month_fig())
+            fig_a = self._build_cost_by_truck_month_fig()
+            if figure_has_data(fig_a):
+                self._chart_widget_a.set_figure(fig_a)
+            else:
+                # No records — show the standard muted empty state instead
+                # of a black render void.
+                self._chart_widget_a.set_empty(
+                    True,
+                    t("maint_analytics.no_records", default="No maintenance data available"),
+                )
         except Exception:
             logger.exception("Cost-by-truck-month chart render failed")
-            self._chart_widget_a.set_figure(empty_figure(t("maint_analytics.no_records")))
+            self._chart_widget_a.set_empty(
+                True,
+                t("maint_analytics.no_records", default="No maintenance data available"),
+            )
 
         try:
-            self._chart_widget_b.set_figure(self._build_fleet_trend_fig())
+            fig_b = self._build_fleet_trend_fig()
+            if figure_has_data(fig_b):
+                self._chart_widget_b.set_figure(fig_b)
+            else:
+                self._chart_widget_b.set_empty(
+                    True,
+                    t("maint_analytics.no_data_12mo", default="No maintenance data in the last 12 months"),
+                )
         except Exception:
             logger.exception("Fleet trend chart render failed")
-            self._chart_widget_b.set_figure(empty_figure(t("maint_analytics.no_data_12mo")))
+            self._chart_widget_b.set_empty(
+                True,
+                t("maint_analytics.no_data_12mo", default="No maintenance data in the last 12 months"),
+            )
 
     def _build_cost_by_truck_month_fig(self):
         if not self._cost_by_truck_month:
@@ -388,6 +419,13 @@ class QtMaintenanceAnalyticsView(QWidget):
             self._table_ref.setMinimumHeight(200)
             self._table_ref.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self._table_container.layout().addWidget(self._table_ref)
+            # Interactive sections with a readable minimum — header text is
+            # never elided; columns are resized to fit after data loads
+            # (same approach as history_view).
+            _hdr = self._table_ref.horizontalHeader()
+            _hdr.setStretchLastSection(False)
+            _hdr.setMinimumSectionSize(70)
+            _hdr.setSectionResizeMode(QHeaderView.Interactive)
 
         if not self._truck_summary:
             self._table_ref.set_data([{
@@ -408,6 +446,9 @@ class QtMaintenanceAnalyticsView(QWidget):
                 })
             self._table_ref.set_data(rows)
 
+        # Fit every column (header + content) so headers are never elided.
+        self._table_ref.horizontalHeader().resizeSections(QHeaderView.ResizeToContents)
+
     # ── i18n ─────────────────────────────────────────────────────
 
     def _on_language_changed(self, lang: str):
@@ -423,9 +464,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._grid_visible = not self._grid_visible
         for chart in self.findChildren(PlotlyChartWidget):
             try:
-                chart.fig.update_xaxes(showgrid=self._grid_visible)
-                chart.fig.update_yaxes(showgrid=self._grid_visible)
-                chart.render()
+                chart.set_grid_visible(self._grid_visible)
             except Exception:
                 logger.exception("Failed to toggle grid on chart widget")
 

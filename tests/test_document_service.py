@@ -426,13 +426,55 @@ class TestMisc:
         assert doc_service.get_by_id(1) == mock_doc
 
     def test_get_by_id_from_cache(self, doc_service):
+        """Tenant-scoped reads hit the tenant-scoped cache key (R3)."""
         mock_cache = MagicMock()
-        mock_cache.get.return_value = {"id": 1, "title": "Cached"}
+        mock_cache.get.return_value = {"id": 1, "title": "Cached", "company_id": 7}
+        with patch.object(doc_service, "_get_cache", return_value=mock_cache):
+            result = doc_service.get_by_id(1, company_id=7)
+            assert result["title"] == "Cached"
+            mock_cache.get.assert_called_once_with("doc:7:1")
+            doc_service._repo.get_by_id.assert_not_called()
+
+    def test_get_by_id_no_company_bypasses_cache(self, doc_service):
+        """Admin/desktop (no company_id) calls bypass the cache entirely (R3)."""
+        mock_doc = {"id": 1, "title": "Real", "company_id": 7}
+        doc_service._repo.get_by_id.return_value = mock_doc
+        mock_cache = MagicMock()
         with patch.object(doc_service, "_get_cache", return_value=mock_cache):
             result = doc_service.get_by_id(1)
-            assert result["title"] == "Cached"
-            mock_cache.get.assert_called_once_with("doc:1")
-            doc_service._repo.get_by_id.assert_not_called()
+            assert result == mock_doc
+            mock_cache.get.assert_not_called()
+            mock_cache.set.assert_not_called()
+            doc_service._repo.get_by_id.assert_called_once_with(1)
+
+    def test_get_by_id_caches_under_tenant_key(self, doc_service):
+        """A tenant-scoped read writes the tenant-scoped cache key (R3)."""
+        mock_doc = {"id": 1, "title": "Tenant Doc", "company_id": 42}
+        doc_service._repo.get_by_id.return_value = mock_doc
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        with patch.object(doc_service, "_get_cache", return_value=mock_cache):
+            result = doc_service.get_by_id(1, company_id=42)
+            assert result == mock_doc
+            mock_cache.set.assert_called_once_with("doc:42:1", mock_doc, ttl=300)
+
+    def test_get_by_id_tenant_a_cache_not_served_to_tenant_b(self, doc_service):
+        """A doc cached under tenant A must NOT be served to tenant B (R3)."""
+        mock_cache = MagicMock()
+        # The cache holds the tenant-A entry under the tenant-scoped key only.
+        mock_cache.get.side_effect = lambda key: (
+            {"id": 1, "title": "From A", "company_id": 7}
+            if key == "doc:7:1" else None
+        )
+        with patch.object(doc_service, "_get_cache", return_value=mock_cache):
+            # Tenant B asks for the same doc id — no shared-cache hit.
+            doc_service._repo.get_by_id.return_value = {
+                "id": 1, "title": "From B", "company_id": 9,
+            }
+            result = doc_service.get_by_id(1, company_id=9)
+            assert result["title"] == "From B"
+            assert mock_cache.get.call_args[0][0] == "doc:9:1"
+            doc_service._repo.get_by_id.assert_called_once_with(1)
 
     def test_add_tag(self, doc_service):
         doc_service._repo.add_tag.return_value = True

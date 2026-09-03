@@ -126,8 +126,13 @@ class ApiKeyRepository(BaseRepository):
                 logger.warning("API key '%s' has unparseable expires_at: %s", row["name"], expires)
 
         # ── Update last_used_at ────────────────────────────────────────
+        # Throttled (R7): only write when the previous value is older than
+        # 60s (or NULL).  The condition lives in the WHERE clause so the
+        # throttling is atomic and needs no extra round-trip.
         self._execute(
-            f"UPDATE {self.TABLE} SET last_used_at = datetime('now') WHERE id = ?",
+            f"UPDATE {self.TABLE} SET last_used_at = datetime('now') "
+            f"WHERE id = ? AND (last_used_at IS NULL OR "
+            f"last_used_at <= datetime('now', '-60 seconds'))",
             (row["id"],), commit=True,
 		)
 
@@ -146,6 +151,14 @@ class ApiKeyRepository(BaseRepository):
             (key_id,) + self._company_params(), commit=True,
 		)
         if affected:
+            # Evict any cached validation entry so the revoked key stops being
+            # accepted on the next request (R7).  Best-effort — the middleware
+            # cache TTL remains the upper bound if eviction fails.
+            try:
+                from backend.middleware.auth_middleware import evict_api_key_cache_by_id
+                evict_api_key_cache_by_id(key_id)
+            except Exception:
+                logger.debug("API-key cache eviction skipped for id=%d", key_id)
             logger.info("Revoked API key id=%d", key_id)
             return True
         logger.warning("No API key found to revoke with id=%d", key_id)

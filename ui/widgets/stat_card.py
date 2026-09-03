@@ -20,6 +20,10 @@ from ui.design_tokens import (
     SPACE_5,
 )
 
+# Status-dot size floor. Minimum + Fixed size policy keeps the decorative dot
+# at its footprint in the aligned grid cell (Phase 2: minimums, not caps).
+_DOT_SIZE = 8
+
 
 class StatCard(QFrame):
     """Compact 88px KPI card with label, value, and optional status dot."""
@@ -39,6 +43,7 @@ class StatCard(QFrame):
         label: str = "",
         value: str = "",
         status_dot_color: str | None = None,
+        accent_color: str | None = None,
     ):
         super().__init__(parent)
         self.setObjectName("stat-card")
@@ -50,6 +55,8 @@ class StatCard(QFrame):
 
         self._dot: QLabel | None = None
         self._build_ui(label, value, status_dot_color)
+        if accent_color:
+            self.set_value_color(accent_color)
 
     def _build_ui(self, label: str, value: str, dot_color: str | None) -> None:
         layout = QGridLayout(self)
@@ -77,7 +84,8 @@ class StatCard(QFrame):
 
         if dot_color:
             dot = QLabel(self)
-            dot.setFixedSize(8, 8)
+            dot.setMinimumSize(_DOT_SIZE, _DOT_SIZE)
+            dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             dot.setStyleSheet(f"background: {dot_color}; border-radius: 4px;")
             layout.addWidget(dot, 0, 1, Qt.AlignRight | Qt.AlignTop)
             self._dot = dot
@@ -106,7 +114,8 @@ class StatCard(QFrame):
         if color:
             if dot is None:
                 dot = QLabel(self)
-                dot.setFixedSize(8, 8)
+                dot.setMinimumSize(_DOT_SIZE, _DOT_SIZE)
+                dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 self._grid.addWidget(dot, 0, 1, Qt.AlignRight | Qt.AlignTop)
                 self._dot = dot
             dot.setStyleSheet(f"background: {color}; border-radius: 4px;")

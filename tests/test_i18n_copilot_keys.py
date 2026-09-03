@@ -94,6 +94,7 @@ class TestMajorNamespacesExist:
         "help",
         "guided",
         "voice",
+        "whatsapp",
     }
 
     def test_all_expected_namespaces_exist(self, en_top_level_copilot_keys):

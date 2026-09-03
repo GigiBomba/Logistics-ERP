@@ -10,6 +10,16 @@ from repositories import BaseRepository
 logger = logging.getLogger(__name__)
 
 
+def _chunked(items, size):
+    """Yield successive ``size``-sized chunks of *items*.
+
+    Used by batched ``UPDATE ... WHERE id IN (...)` statements so the number
+    of bound parameters stays well under SQLite's ~999-variable limit.
+    """
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
 class DocumentRepository(BaseRepository):
     TABLE = "documents"
     TABLE_LINKS = "document_links"
@@ -402,10 +412,15 @@ class DocumentRepository(BaseRepository):
         try:
             self.begin_transaction()
             affected = 0
-            for doc_id in doc_ids:
+            # Batched UPDATE ... WHERE id IN (...): one statement per chunk of
+            # 500 ids replaces the previous per-row UPDATE loop (DB2).  The
+            # ``deleted_at`` stamping, company filter and commit flow are
+            # unchanged; affected rows are summed across chunks.
+            for chunk in _chunked(doc_ids, 500):
+                chunk_placeholders = ",".join("?" for _ in chunk)
                 affected += self._execute_with_count(
-                    f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {company_filter}",
-                    (utc_now_iso(), doc_id) + company_params,
+                    f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id IN ({chunk_placeholders}) {company_filter}",
+                    (utc_now_iso(),) + tuple(chunk) + company_params,
                     commit=False,
                 )
             self._execute(

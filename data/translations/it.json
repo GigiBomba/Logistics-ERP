@@ -50,11 +50,13 @@
             "not_yet_implemented": "The AI Co-Pilot is not yet available. Coming in Phase 1."
         },
         "error": {
+            "model_unreachable": "I couldn't reach the AI model just now. Check your AI settings (Settings → AI Vision) and try again — meanwhile you can use the regular screens.",
             "too_many_steps": "This plan has too many steps. Can you narrow it down?",
             "too_many_graph_nodes": "This request would generate too many reasoning steps. Can you narrow it down?",
             "too_many_tokens": "This request is too complex to process in one turn. Can you break it into smaller parts?",
             "timeout": "The operation timed out. Please try again.",
             "feature_not_in_tier": "This feature is not available on your subscription tier.",
+            "quota_exceeded": "You have exceeded your subscription's monthly usage limit.",
             "unavailable": "The AI Co-Pilot is temporarily unavailable. Please use the standard screens instead.",
             "service_error": "The backend service returned an error.",
             "unexpected": "An unexpected error occurred.",
@@ -64,7 +66,8 @@
             "unknown_analytics_domain": "Unknown analytics domain. Available: financial, fleet, driver, client, route_profitability, trip_status, cost_breakdown, monthly_volume, revenue_quarterly, maintenance, truck_utilization, invoice_aging, overdue, summary.",
             "stt_unavailable": "Voice input is not available because the speech-to-text engine is not installed. Install the 'faster-whisper' package or type your request instead.",
             "stt_failed": "Speech-to-text transcription failed. Please try again or type your request.",
-            "stt_no_speech": "No speech detected. Please try speaking again or type your request instead."
+            "stt_no_speech": "No speech detected. Please try speaking again or type your request instead.",
+            "help_only_tier": "La modalità Guida copre solo documentazione e guide pratiche. I dati live e le azioni richiedono un piano Business o Enterprise."
         },
         "step": {
             "vehicle_search_done": "Vehicle search completed.",
@@ -135,6 +138,16 @@
                 "generate_pdf_failed": "PDF generation failed.",
                 "generate_excel_ok": "Excel generated successfully.",
                 "generate_excel_failed": "Excel generation failed."
+            },
+            "whatsapp": {
+                "send_ok": "Messaggio WhatsApp inviato a {recipient}.",
+                "send_failed": "Invio del messaggio WhatsApp a {recipient} non riuscito."
+            },
+            "progress": {
+                "validating": "Convalida della richiesta...",
+                "executing": "Esecuzione in background...",
+                "succeeded": "Attività completata con successo.",
+                "failed": "Attività non riuscita."
             }
         },
         "dispatch": {
@@ -248,7 +261,15 @@
             "not_persisted": "Plan history is not yet available.",
             "cancelled": "Plan has been cancelled.",
             "not_found": "Plan with ID {plan_id} not found.",
-            "not_owned": "You do not have access to this plan."
+            "not_owned": "You do not have access to this plan.",
+            "cannot_pause": "Questo piano non può essere messo in pausa — i suoi strumenti non la supportano.",
+            "cannot_resume": "Questo piano non può essere ripreso — i suoi strumenti non supportano la ripresa."
+        },
+        "summary": {
+            "llm_chat": "{answer}",
+            "help": {
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+            }
         },
         "world_model": {
             "overdue_invoices": "There are {count} overdue invoices requiring attention.",
@@ -336,6 +357,11 @@
             "processing_tooltip": "Processing...",
             "wake_word_phase3": "Wake word support coming soon. Switching back to Push to Talk.",
             "recording_error": "Microphone error: {error}"
+        },
+        "whatsapp": {
+            "error": {
+                "not_configured": "WhatsApp non è configurato. Chiedi a un amministratore di configurare l'API WhatsApp Business."
+            }
         }
     },
     "app": {
@@ -781,7 +807,7 @@
         "kpi_active_trucks": "Camion Attivi",
         "kpi_total_km": "KM Totali",
         "kpi_avg_consumption": "Consumo Medio",
-                "kpi_otd": "On-Time Delivery",
+        "kpi_otd": "On-Time Delivery",
         "kpi_maint_alerts": "Avvisi Manut.",
         "kpi_invoices": "Fatture",
         "kpi_cmrs": "CMRs",
@@ -1419,7 +1445,12 @@
         "cancelled": "Annullato",
         "invoiced": "Fatturato",
         "paid": "Pagato",
-        "Archived": "Archiviato"
+        "Archived": "Archiviato",
+        "in_progress": "In Corso",
+        "overdue": "Scaduto",
+        "maintenance": "Manutenzione",
+        "unassigned": "Non Assegnati",
+        "delayed": "In Ritardo"
     },
     "common": {
         "all": "Tutti",
@@ -1836,7 +1867,7 @@
         "schedule_add": "Aggiungi Pianificazione",
         "schedule_delete_confirm": "Eliminare",
         "schedule_delete_prompt": "Eliminare questa pianificazione?",
-        "schedule_delete_title": "Conferma Eliminazione",
+        "schedule_delete_title": "Elimina Pianificazione",
         "schedule_due_by": "Scadenza Entro",
         "schedule_every_km": "Ogni KM",
         "schedule_every_months": "Ogni Mesi",
@@ -3230,5 +3261,13 @@
         "offline_title": "Offline",
         "offline_message": "Issue reporting is not available in offline mode.",
         "button_tooltip": "Report an Issue"
+    },
+    "alert_card": {
+        "trip_ref": "Trip {trip_id}",
+        "truck_ref": "Truck {truck_id}"
+    },
+    "client_activity": {
+        "trip_line": "Trip: {truck} — {status} / {client} — {distance} km",
+        "invoice_line": "Invoice: {number} — {status} — {amount} EUR ({trip_status})"
     }
 }

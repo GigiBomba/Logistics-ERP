@@ -212,11 +212,17 @@ class TestQtMaintenanceAnalyticsView:
         view._cost_by_month = []
         with (
             patch.object(view._chart_widget_a, "set_figure") as mock_a,
+            patch.object(view._chart_widget_a, "set_empty") as mock_empty_a,
             patch.object(view._chart_widget_b, "set_figure") as mock_b,
+            patch.object(view._chart_widget_b, "set_empty") as mock_empty_b,
         ):
             view._render_charts()
-            mock_a.assert_called_once()
-            mock_b.assert_called_once()
+            # Empty figures must land on the muted empty state (set_empty),
+            # never on the chart render path (set_figure).
+            mock_a.assert_not_called()
+            mock_b.assert_not_called()
+            mock_empty_a.assert_called_once()
+            mock_empty_b.assert_called_once()
 
     # ── Table rendering ────────────────────────────────────────────────
 

@@ -91,8 +91,19 @@ def db() -> InMemoryDB:
 
 @pytest.fixture
 def client(db: InMemoryDB) -> TestClient:
-    """TestClient with mocked get_db and require_dispatcher."""
-    return TestClient(_build_app(db))
+    """TestClient with mocked get_db and require_dispatcher.
+
+    Sends a valid Bearer JWT (company_id=1) so the tenant-scoped idempotency
+    middleware (``idem:{company_id}:{key_hash}``) can derive the tenant and
+    cache — the middleware deliberately skips caching when no tenant is
+    derivable, which would defeat the replay assertions.
+    """
+    from backend.security import create_access_token
+
+    token = create_access_token(
+        {"sub": "1", "user_id": 1, "role": "dispatcher", "company_id": 1}
+    )
+    return TestClient(_build_app(db), headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.fixture(autouse=True)
@@ -208,9 +219,16 @@ class TestConcurrentAccepts:
             mock_cls.return_value = instance
 
             key = "concurrent-accept-tl-001"
+            from backend.security import create_access_token
+
+            token = create_access_token(
+                {"sub": "1", "user_id": 1, "role": "dispatcher", "company_id": 1}
+            )
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(
-                transport=transport, base_url="http://test"
+                transport=transport,
+                base_url="http://test",
+                headers={"Authorization": f"Bearer {token}"},
             ) as ac:
                 resp1, resp2 = await asyncio.gather(
                     ac.post(IMPORT_URL, headers={"Idempotency-Key": key}),

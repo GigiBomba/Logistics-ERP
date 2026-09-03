@@ -1,8 +1,8 @@
 """Integration tests for PostgresConnectionPool against a running PostgreSQL.
 
 These tests require a running PostgreSQL instance at the DSN specified by
-``OPERION_TEST_POSTGRES_DSN`` (defaults to ``tests/test_config.py``'s
-``TEST_POSTGRES_DSN``).  All tests are skipped if PG is unreachable.
+``OPERION_TEST_POSTGRES_DSN`` (defaults to the per-file isolated
+``operion_test_pool`` database).  All tests are skipped if PG is unreachable.
 
 Mark with ``@pytest.mark.postgresql``.
 """
@@ -25,8 +25,85 @@ from database.connection_pool import PostgresConnectionPool
 
 TEST_POSTGRES_DSN = os.environ.get(
     "OPERION_TEST_POSTGRES_DSN",
-    "postgresql://operion:operion_test_ci@localhost:5432/operion_test",
+    "postgresql://operion:operion_test_ci@localhost:5432/operion_test_pool",
 )
+
+#: Per-file isolated database name — this module owns ``operion_test_pool`` so
+#: it never contends with other test files' DDL on the shared ``operion_test``
+#: database (xdist `-n 2` concurrent runs).
+_TEST_DB_NAME = "operion_test_pool"
+
+#: Admin DSN: connect to the always-existing ``operion_test`` database so the
+#: (superuser) ``operion`` role can issue CREATE/DROP DATABASE for the
+#: per-file database above.
+_BASE_DSN = "postgresql://operion:operion_test_ci@localhost:5432/operion_test"
+
+
+def _ensure_test_db() -> None:
+    """Create the per-file test database (idempotent; superuser required).
+
+    No-op when ``OPERION_TEST_POSTGRES_DSN`` is set explicitly — the caller
+    pointed us at a database of their choosing, and we must not touch it.
+    """
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True  # CREATE DATABASE cannot run inside a transaction
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (_TEST_DB_NAME,))
+        if not cur.fetchone():
+            cur.execute(
+                pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(_TEST_DB_NAME))
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        # Best-effort: the DB may already exist (idempotent) or PG may be
+        # unreachable (the module-level guard below skips).
+        pass
+
+
+def _drop_test_db() -> None:
+    """Drop the per-file test database at module teardown (best-effort)."""
+    if os.environ.get("OPERION_TEST_POSTGRES_DSN"):
+        return
+    import psycopg2
+    from psycopg2 import sql as pgsql
+
+    try:
+        conn = psycopg2.connect(_BASE_DSN)
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Never force-kill another session's connections — if any remain,
+        # leave the DB in place (mirrors tests/integration/conftest.py).
+        cur.execute(
+            "SELECT COUNT(*) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (_TEST_DB_NAME,),
+        )
+        row = cur.fetchone()
+        other_sessions = (row[0] if row else 0) or 0
+        if not other_sessions:
+            cur.execute(
+                pgsql.SQL("DROP DATABASE IF EXISTS {}").format(
+                    pgsql.Identifier(_TEST_DB_NAME)
+                )
+            )
+        cur.close()
+        conn.close()
+    except Exception:
+        pass  # a failed drop must not fail tests
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _per_file_test_db():
+    """Drop the per-file database after this module's tests finish."""
+    yield
+    _drop_test_db()
 
 
 def pg_reachable(dsn: str = TEST_POSTGRES_DSN) -> bool:
@@ -162,7 +239,10 @@ def pytest_report_header() -> list[str]:
     return [f"PostgreSQL DSN: {TEST_POSTGRES_DSN}"]
 
 
-# Module-level check: skip all tests if PG is unreachable
+# Module-level check: create the per-file DB first (pg_reachable() below
+# would skip if the database does not exist yet), then skip if PG is
+# unreachable.
+_ensure_test_db()
 if not pg_reachable():
     pytest.skip(
         f"PostgreSQL is not reachable at {TEST_POSTGRES_DSN} — "

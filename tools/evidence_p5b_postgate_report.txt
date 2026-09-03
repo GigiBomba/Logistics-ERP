@@ -1,0 +1,781 @@
+========================================================================
+UI Style Gate -- REPORT (all current violations, baseline-aware)
+========================================================================
+
+Summary:
+  inline_qss         current= 304  grandfathered= 234  new=  70  stale= 141
+  raw_hex_colors     current=  44  grandfathered=  41  new=   3  stale=   3
+  sub_10px_fonts     current=   0  grandfathered=   0  new=   0  stale=   6
+  role_inventory     current= 186  grandfathered= 140  new=  46  stale=  55
+  role_inventory sub-checks: dead=39  unstyled=147  denylist=0
+  fixed_geometry                7 warning(s) (non-blocking, Phase 2)
+  type-mismatch(fontRole)       2 warning(s) (non-blocking)
+
+inline_qss  (304 current)
+-------------------------
+  [NEW          ] ui/components.py:172          self.setStyleSheet(sheet)
+  [NEW          ] ui/components.py:180          self.setStyleSheet(sheet)
+  [NEW          ] ui/components.py:264              self.setStyleSheet(
+  [NEW          ] ui/components.py:556          val.setStyleSheet(f"color: {value_color};")
+  [NEW          ] ui/components.py:625          val.setStyleSheet(
+  [NEW          ] ui/components.py:642              trend_lbl.setStyleSheet(
+  [NEW          ] ui/components.py:736          self.setStyleSheet(sheet)
+  [NEW          ] ui/components.py:971      btn.setStyleSheet(sheet)
+  [NEW          ] ui/components.py:1089          self.setStyleSheet(f"""
+  [NEW          ] ui/components.py:1101          self._text_lbl.setStyleSheet(f"""
+  [NEW          ] ui/components.py:1218          self.setStyleSheet(f"""
+  [NEW          ] ui/components.py:1229          self._thumb.setStyleSheet(f"""
+  [GRANDFATHERED] ui/copilot/widgets/chat_bubble.py:65          self.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/copilot/widgets/chat_bubble.py:89          bubble.setStyleSheet(bubble_style)
+  [GRANDFATHERED] ui/copilot/widgets/chat_bubble.py:98          role_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/chat_bubble.py:107          msg_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/chat_bubble.py:116          ts_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/chat_input.py:108          self.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/copilot/widgets/chat_input.py:123          self._input.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/chat_input.py:161          self._send_btn.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/chat_input.py:224          self._mic_btn.setStyleSheet(ss)
+  [GRANDFATHERED] ui/copilot/widgets/confirmation_modal.py:275          level_badge.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/conversation_display.py:48          self.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/copilot/widgets/conversation_display.py:52          self._container.setStyleSheet("background: transparent;")
+  [GRANDFATHERED] ui/copilot/widgets/conversation_display.py:62          self._empty_label.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/conversation_display.py:75          self._spacer.setStyleSheet("background: transparent;")
+  [GRANDFATHERED] ui/copilot/widgets/copilot_panel.py:157          self.setStyleSheet(f"background-color: {COLOR_BG_BASE};")
+  [GRANDFATHERED] ui/copilot/widgets/copilot_panel.py:200          header.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/copilot_panel.py:210          self._title_label.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/copilot_panel.py:225              self._voice_mode_combo.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/copilot_panel.py:242              self._wake_word_notice.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/copilot_panel.py:255          self._new_btn.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:306          self._tooltip_card.setStyleSheet(f"""
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:319          self._step_counter.setStyleSheet(f"""
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:332          self._tooltip_label.setStyleSheet(f"""
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:342          controls_frame.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:349          self._cancel_btn.setStyleSheet(self._control_btn_style())
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:357          self._skip_btn.setStyleSheet(self._control_btn_style())
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:365          self._replay_btn.setStyleSheet(self._control_btn_style())
+  [GRANDFATHERED] ui/copilot/widgets/insight_queue.py:115          self.setStyleSheet(f"""
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:133      label.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:145          self.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:163          self._value_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:175          self.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:244          self.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:310          scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
+  [GRANDFATHERED] ui/copilot/widgets/observability_panel.py:899              bar.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/thinking_indicator.py:55          label.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/thinking_indicator.py:64              dot.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/thinking_indicator.py:86              dot.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/thinking_indicator.py:95              dot.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/timeline_widget.py:238          self.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/timeline_widget.py:298          self._badge_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/copilot/widgets/timeline_widget.py:379          self._badge_lbl.setStyleSheet(_status_badge_style(status))
+  [GRANDFATHERED] ui/dialogs/dispatch_detail_panel.py:178          chip.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/freight_provider_settings.py:244          name_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/freight_provider_settings.py:262          badge.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/freight_provider_settings.py:313          form_widget.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/login_dialog.py:139          self.setStyleSheet(f"QDialog {{ background-color: {COLOR_BG_BASE}; }}")
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:161          self.setStyleSheet(f"QDialog {{ background-color: {COLOR_BG_BASE}; }}")
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:191          self._subject_input.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:214          self._description_input.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:242          self._severity_combo.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:268          self._screenshot_btn.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:280          self._screenshot_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:289          self._error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT};")
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:304          self._cancel_btn.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/report_issue_dialog.py:322          self._submit_btn.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/sync_conflict_dialog.py:73          self.setStyleSheet(f"QDialog {{ background-color: {COLOR_BG_BASE}; }}")
+  [GRANDFATHERED] ui/dialogs/sync_conflict_dialog.py:102          close_btn.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/sync_conflict_dialog.py:138          keep_btn.setStyleSheet(
+  [GRANDFATHERED] ui/dialogs/sync_conflict_dialog.py:148          take_btn.setStyleSheet(
+  [GRANDFATHERED] ui/form_utils.py:23          label.setStyleSheet(
+  [GRANDFATHERED] ui/map/map_widget.py:82          self.setStyleSheet("QWebEngineView { background-color: #09090b; border: none; margin: 0; padding: 0; }")
+  [GRANDFATHERED] ui/plotly_renderer.py:623          self._label.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/plotly_renderer.py:636          self._empty_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/plotly_renderer.py:683              self.setStyleSheet(
+  [GRANDFATHERED] ui/plotly_renderer.py:692              self.setStyleSheet("")
+  [GRANDFATHERED] ui/plotly_renderer.py:734              self.setStyleSheet("")
+  [GRANDFATHERED] ui/skeleton_widgets.py:83              self.setStyleSheet(
+  [GRANDFATHERED] ui/skeleton_widgets.py:88              self.setStyleSheet(
+  [GRANDFATHERED] ui/skeleton_widgets.py:112          self.setStyleSheet(
+  [GRANDFATHERED] ui/skeleton_widgets.py:201          div.setStyleSheet(f"background: {BORDER_FAINT}; border: none;")
+  [GRANDFATHERED] ui/skeleton_widgets.py:230          chart_area.setStyleSheet("background: transparent;")
+  [GRANDFATHERED] ui/skeleton_widgets.py:263          self.setStyleSheet(f"background: {BG_ELEVATED};")
+  [GRANDFATHERED] ui/skeleton_widgets.py:279          content.setStyleSheet("background: transparent;")
+  [GRANDFATHERED] ui/views/admin_panel_view.py:83          val_lbl.setStyleSheet(f"color: {color};")
+  [GRANDFATHERED] ui/views/admin_panel_view.py:318              self._redis_connected.setStyleSheet(f"color: {_STATUS_COLORS['ok']};")
+  [GRANDFATHERED] ui/views/admin_panel_view.py:324              self._redis_connected.setStyleSheet(f"color: {_STATUS_COLORS['unavailable']};")
+  [GRANDFATHERED] ui/views/admin_panel_view.py:384          self._sql_input.setStyleSheet(
+  [GRANDFATHERED] ui/views/admin_panel_view.py:580          self._log_text.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/_tab_base.py:579              val.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/_tab_base.py:590                  sub.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/client_tab.py:231          val.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/document_tab.py:238              urgency.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/driver_tab.py:329          val.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/fleet_tab.py:166                  note.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/fleet_tab.py:175              util_header.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/fleet_tab.py:185                  row.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/fleet_tab.py:200              maint_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/analytics/route_tab.py:237          val.setStyleSheet(
+  [GRANDFATHERED] ui/views/api_dashboard_view.py:50          self._status.setStyleSheet(_STATUS_STYLES.get(status, _STATUS_STYLES["unknown"]))
+  [GRANDFATHERED] ui/views/api_dashboard_view.py:60          self._status.setStyleSheet(_STATUS_STYLES.get(status, _STATUS_STYLES["unknown"]))
+  [GRANDFATHERED] ui/views/automail/config_panel.py:253          self._timing_lbl.setStyleSheet(f"color: {timing_color}; font-size: 12px; font-weight: {FONT_WEIGHT_MEDIUM};")
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:72          self._bold_btn.setStyleSheet(self._bold_btn.styleSheet() + "font-weight: bold;")
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:76          self._italic_btn.setStyleSheet(self._italic_btn.styleSheet() + "font-style: italic;")
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:80          self._underline_btn.setStyleSheet(self._underline_btn.styleSheet() + "text-decoration: underline;")
+  [GRANDFATHERED] ui/views/automail/timeline_panel.py:72          self.setStyleSheet(
+  [GRANDFATHERED] ui/views/automail/timeline_panel.py:123              badge.setStyleSheet(
+  [GRANDFATHERED] ui/views/automail/timeline_panel.py:130              badge.setStyleSheet(
+  [GRANDFATHERED] ui/views/automail/timeline_panel.py:201          dot.setStyleSheet(f"color: {c}; font-size: {FONT_SIZE_XS}px;")
+  [GRANDFATHERED] ui/views/automail/timeline_panel.py:220          lbl.setStyleSheet(f"color: {color}; font-size: 11px;")
+  [GRANDFATHERED] ui/views/automail_view.py:72          self.setStyleSheet(
+  [GRANDFATHERED] ui/views/automail_view.py:178          self._splitter.setStyleSheet(
+  [NEW          ] ui/views/automation_view/automation_view.py:141          self.setStyleSheet(
+  [NEW          ] ui/views/automation_view/automation_view.py:215          self._status_dot.setStyleSheet(
+  [GRANDFATHERED] ui/views/automation_view/automation_view.py:274          btn.setStyleSheet(
+  [GRANDFATHERED] ui/views/automation_view/automation_view.py:297          btn.setStyleSheet(
+  [NEW          ] ui/views/automation_view/automation_view.py:343          self._simple_status.setStyleSheet(f"color: {ACCENT_TEXT};")
+  [NEW          ] ui/views/automation_view/automation_view.py:350          self._candidates_box.setStyleSheet(f"color: {ACCENT};")
+  [NEW          ] ui/views/automation_view/automation_view.py:376          self._related_label.setStyleSheet(f"color: {TEXT_MUTED};")
+  [NEW          ] ui/views/automation_view/automation_view.py:834          header.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
+  [NEW          ] ui/views/automation_view/automation_view.py:846          mode_row.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
+  [NEW          ] ui/views/automation_view/automation_view.py:998              card.setStyleSheet(
+  [GRANDFATHERED] ui/views/bulk_payments_view.py:925          menu.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/bulk_payments_view.py:965          menu.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/calculator_view.py:353          header.setStyleSheet(
+  [GRANDFATHERED] ui/views/calculator_view.py:385              lbl.setStyleSheet(f"font-size: 13px; color: {COLOR_TEXT_SECONDARY};")
+  [GRANDFATHERED] ui/views/calculator_view.py:388              value_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/calculator_view.py:415          profit_lbl.setStyleSheet(f"font-size: 14px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {COLOR_TEXT_PRIMARY};")
+  [GRANDFATHERED] ui/views/calculator_view.py:418          self._res_profit.setStyleSheet(
+  [GRANDFATHERED] ui/views/calculator_view.py:424          self._res_profit_pct.setStyleSheet(
+  [GRANDFATHERED] ui/views/calculator_view.py:434          self._cost_breakdown_label.setStyleSheet(f"font-size: 12px; color: {COLOR_TEXT_TERTIARY};")
+  [GRANDFATHERED] ui/views/calculator_view.py:728          self._res_profit.setStyleSheet(
+  [GRANDFATHERED] ui/views/client_workspace/client_details.py:560              type_lbl.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY};")
+  [GRANDFATHERED] ui/views/client_workspace/client_details.py:568              star_lbl.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT};")
+  [GRANDFATHERED] ui/views/client_workspace/client_details.py:578          status_lbl.setStyleSheet(f"color: {status_color};")
+  [GRANDFATHERED] ui/views/client_workspace/client_details.py:827                  chip.setStyleSheet(
+  [GRANDFATHERED] ui/views/country_exclusions_panel.py:103          self._count_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/dashboard.py:998          feed_scroll.setStyleSheet("""
+  [GRANDFATHERED] ui/views/dashboard.py:1079          status_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/views/dashboard.py:1098          divider.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
+  [GRANDFATHERED] ui/views/dispatch_board/dispatch_board.py:429          self._detail_backdrop.setStyleSheet(
+  [GRANDFATHERED] ui/views/document_center/document_center.py:107              self.setStyleSheet(
+  [GRANDFATHERED] ui/views/document_center/document_center.py:148          self.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/document_center/document_center.py:1578      dlg.setStyleSheet(
+  [GRANDFATHERED] ui/views/driver_manager.py:1336          view.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/views/driver_manager.py:1364                  viol_lbl.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT};")
+  [GRANDFATHERED] ui/views/driver_manager.py:1393              val.setStyleSheet(f"color: {color};")
+  [GRANDFATHERED] ui/views/email_composer_modal.py:197          self._error_label.setStyleSheet(f"color: {DANGER_TEXT};")
+  [GRANDFATHERED] ui/views/fleet_tab/fleet_tab.py:811                  card.setStyleSheet(
+  [NEW          ] ui/views/fleet_tracking_view.py:225          icon_lbl.setStyleSheet(f"font-size: 64px; color: {COLOR_TEXT_TERTIARY};")
+  [NEW          ] ui/views/fleet_tracking_view.py:611          line.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
+  [NEW          ] ui/views/freight_exchange/connect_view.py:221                      self._expiry_label.setStyleSheet(f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/freight_exchange/connect_view.py:223                      self._expiry_label.setStyleSheet(f"color: {COLOR_WARNING_TEXT}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/freight_exchange/connect_view.py:225                      self._expiry_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/freight_exchange/connect_view.py:228                  self._expiry_label.setStyleSheet(f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_BOLD};")
+  [GRANDFATHERED] ui/views/freight_exchange/load_detail_view.py:376              badge.setStyleSheet(
+  [GRANDFATHERED] ui/views/freight_exchange/load_detail_view.py:455          self._kpi_profit.value_label.setStyleSheet(f"color: {profit_color};")
+  [GRANDFATHERED] ui/views/freight_exchange/load_detail_view.py:465          self._kpi_margin.value_label.setStyleSheet(f"color: {margin_color};")
+  [GRANDFATHERED] ui/views/freight_exchange/load_detail_view.py:475          self._kpi_risk.value_label.setStyleSheet(f"color: {risk_color};")
+  [GRANDFATHERED] ui/views/freight_exchange/search_view.py:151              dot.setStyleSheet(
+  [GRANDFATHERED] ui/views/freight_exchange/search_view.py:218              self._status_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/freight_exchange/search_view.py:222              self._status_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/generators_view.py:433          self._cmr_progress_bar.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/generators_view.py:509              row.setStyleSheet(
+  [GRANDFATHERED] ui/views/generators_view.py:519              accent_bar.setStyleSheet(
+  [GRANDFATHERED] ui/views/generators_view.py:1006          msg_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/views/generators_view.py:1014          path_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/views/invoice_editor/editor_form.py:1025          self._color_swatch.setStyleSheet(f"background-color: {self._company_color};")
+  [GRANDFATHERED] ui/views/invoice_editor/editor_form.py:1129              self._color_swatch.setStyleSheet(f"background-color: {hex_color};")
+  [GRANDFATHERED] ui/views/invoice_editor/editor_form.py:1234                  self._color_swatch.setStyleSheet(f"background-color: {color};")
+  [GRANDFATHERED] ui/views/invoice_editor/editor_form.py:1919                  self._color_swatch.setStyleSheet(f"background-color: {self._company_color};")
+  [GRANDFATHERED] ui/views/maintenance_analytics_view.py:210          self._chart_placeholder_a.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: 6px;")
+  [GRANDFATHERED] ui/views/maintenance_analytics_view.py:213          self._chart_placeholder_b.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: 6px;")
+  [GRANDFATHERED] ui/views/maintenance_control_panel.py:231                  pb.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/maintenance_control_panel.py:243          import_btn.setStyleSheet(
+  [GRANDFATHERED] ui/views/maintenance_control_panel.py:446              lbl.setStyleSheet("")
+  [GRANDFATHERED] ui/views/maintenance_control_panel.py:453                  lbl.setStyleSheet(f"color: {color}; background: transparent;")
+  [GRANDFATHERED] ui/views/maintenance_control_panel.py:476                      self._health_progress.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/migration_center/emigrate_tab.py:376              self._output_path_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/emigrate_tab.py:432          self._status_label.setStyleSheet("")
+  [GRANDFATHERED] ui/views/migration_center/emigrate_tab.py:477              self._status_label.setStyleSheet(f"color: {SUCCESS_TEXT};")
+  [GRANDFATHERED] ui/views/migration_center/emigrate_tab.py:491              self._status_label.setStyleSheet(f"color: {DANGER_TEXT};")
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:130          self._drop_zone.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:147          drop_icon.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:159          drop_hint.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:167          drop_sub.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:310              self._drop_zone.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:319          self._drop_zone.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:331          self._drop_zone.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_physical_tab.py:409              action_widget.setStyleSheet("background: transparent;")
+  [GRANDFATHERED] ui/views/migration_center/immigrate_software_tab.py:371              self._file_path_label.setStyleSheet(
+  [GRANDFATHERED] ui/views/migration_center/immigrate_software_tab.py:619              self._status_label.setStyleSheet(f"color: {SUCCESS_TEXT};")
+  [GRANDFATHERED] ui/views/migration_center/immigrate_software_tab.py:631              self._status_label.setStyleSheet(f"color: {DANGER_TEXT};")
+  [GRANDFATHERED] ui/views/migration_center/migration_center_view.py:77          desc.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+  [NEW          ] ui/views/overview_view.py:555                  val_lbl.setStyleSheet(f"color: {color};")
+  [NEW          ] ui/views/overview_view.py:767              title_lbl.setStyleSheet(
+  [NEW          ] ui/views/overview_view.py:783              more.setStyleSheet(f"color: {ACCENT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+  [NEW          ] ui/views/overview_view.py:830              idx.setStyleSheet(
+  [NEW          ] ui/views/overview_view.py:838              plate_lbl.setStyleSheet(
+  [NEW          ] ui/views/overview_view.py:844              rev_lbl.setStyleSheet(
+  [NEW          ] ui/views/overview_view.py:915              plate_lbl.setStyleSheet(
+  [NEW          ] ui/views/overview_view.py:923              client_lbl.setStyleSheet(f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};")
+  [NEW          ] ui/views/overview_view.py:928              profit_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/views/proforma_editor/editor_form.py:637          self._color_swatch.setStyleSheet(f"background-color: {self._company_color}; border-radius: 4px;")
+  [GRANDFATHERED] ui/views/proforma_editor/editor_form.py:942              self._color_swatch.setStyleSheet(
+  [GRANDFATHERED] ui/views/route_history_view.py:443          panel.setStyleSheet(
+  [GRANDFATHERED] ui/views/route_history_view.py:485          err.setStyleSheet(
+  [NEW          ] ui/views/route_planner_view.py:845          self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/route_planner_view.py:924          self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+  [NEW          ] ui/views/route_planner_view.py:1321              self._empty_error_label.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/route_planner_view.py:1353              self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/route_planner_view.py:1359              self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+  [NEW          ] ui/views/route_planner_view.py:1477          self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+  [NEW          ] ui/views/route_planner_view.py:1500              self._summary_text.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT}; font-size: {FONT_SIZE_SM}px;")
+  [NEW          ] ui/views/route_planner_view.py:1510              self._summary_text.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_SM}px;")
+  [NEW          ] ui/views/route_planner_view.py:1606              self._summary_text.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT};")
+  [NEW          ] ui/views/route_planner_view.py:1609          self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+  [NEW          ] ui/views/route_planner_view.py:1705              self._summary_text.setStyleSheet(
+  [NEW          ] ui/views/route_planner_view.py:1713              self._summary_text.setStyleSheet(
+  [GRANDFATHERED] ui/views/settings_view/settings_fields.py:95          header_btn.setStyleSheet(f"""
+  [GRANDFATHERED] ui/views/settings_view/settings_fields.py:345          swatch.setStyleSheet(
+  [GRANDFATHERED] ui/views/settings_view/settings_view.py:540              swatch.setStyleSheet(
+  [NEW          ] ui/views/tacho_import_view.py:162          drop_icon.setStyleSheet(f"font-size: 28px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;")
+  [NEW          ] ui/views/tacho_import_view.py:168          drop_hint.setStyleSheet(
+  [NEW          ] ui/views/tacho_import_view.py:188          steps.setStyleSheet(f"padding: {SP['2']}px; color: {COLOR_TEXT_TERTIARY};")
+  [NEW          ] ui/views/tacho_import_view.py:206          self._btn_vehicle.setStyleSheet(
+  [NEW          ] ui/views/tacho_import_view.py:236          self._drop_zone.setStyleSheet(
+  [NEW          ] ui/views/tacho_import_view.py:290          self._result_violations.setStyleSheet(
+  [NEW          ] ui/views/tacho_import_view.py:530          self._result_icon.setStyleSheet(
+  [NEW          ] ui/views/tacho_import_view.py:578          self._result_icon.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/alert_panel.py:138              clear_btn.setStyleSheet("font-size: 14px; padding: 0 4px;")
+  [GRANDFATHERED] ui/widgets/alert_panel.py:206          chip.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/assignment_dropdown.py:84              dot.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/assignment_dropdown.py:89              dot.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/assignment_dropdown.py:106          label_widget.setStyleSheet(f"color: {text_color};")
+  [GRANDFATHERED] ui/widgets/assignment_dropdown.py:157              self.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/assignment_dropdown.py:166              self.setStyleSheet("")
+  [GRANDFATHERED] ui/widgets/chart_loading_overlay.py:106          self._spinner.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/chart_loading_overlay.py:116          self._title.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/chart_loading_overlay.py:127          self._progress.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/chart_loading_overlay.py:143              bar.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/chart_loading_overlay.py:160          self.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/dispatch_alerts_panel.py:134          title_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/dispatch_alerts_panel.py:147              resolve_btn.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/dispatch_alerts_panel.py:277          chip.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/dispatch_search_bar.py:119              dot.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/dispatch_timeline.py:237          bar.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/kanban_column.py:157          self._accent_bar.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/kanban_column.py:437          self.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/kanban_column.py:443          self.setStyleSheet("")
+  [GRANDFATHERED] ui/widgets/kanban_column.py:447          self.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/kanban_column.py:453          self.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/loading_overlay.py:41          self.setStyleSheet(f"""
+  [GRANDFATHERED] ui/widgets/loading_overlay.py:58          self._spinner.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY}; background: transparent;")
+  [GRANDFATHERED] ui/widgets/loading_overlay.py:68          self._text_label.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; background: transparent;")
+  [GRANDFATHERED] ui/widgets/loading_overlay.py:78          self._progress_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; background: transparent;")
+  [GRANDFATHERED] ui/widgets/service_timeline_widget.py:193          dot.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/service_timeline_widget.py:275              line.setStyleSheet(f"background-color: {LINE_COLOR};")
+  [GRANDFATHERED] ui/widgets/sidebar.py:175          self._monogram.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/sidebar.py:413              text_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/sidebar.py:416          frame.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/sidebar.py:431              text_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/sidebar.py:434          frame.setStyleSheet("background: transparent; border: none;")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:211              lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:248          self._status_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:261          self._canvas_frame.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/signature_pad.py:333          self._status_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:378                  self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:384                  self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:401              self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:418              self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+  [GRANDFATHERED] ui/widgets/signature_pad.py:430          self._status_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [GRANDFATHERED] ui/widgets/stat_card.py:69          self._label_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/stat_card.py:78          self._value_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/stat_card.py:89              dot.setStyleSheet(f"background: {dot_color}; border-radius: 4px;")
+  [GRANDFATHERED] ui/widgets/stat_card.py:104          self._value_lbl.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/stat_card.py:121              dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
+  [GRANDFATHERED] ui/widgets/sync_status.py:95          self.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/topbar.py:103          self._back_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
+  [GRANDFATHERED] ui/widgets/topbar.py:122          self._recent_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
+  [GRANDFATHERED] ui/widgets/topbar.py:135          sep_before.setStyleSheet(f"background: {COLOR_BORDER_SUBTLE}; max-width: 1px; min-width: 1px;")
+  [GRANDFATHERED] ui/widgets/topbar.py:141          self._fuel_dot.setStyleSheet(
+  [GRANDFATHERED] ui/widgets/topbar.py:180          self._report_issue_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
+  [GRANDFATHERED] ui/widgets/topbar.py:202          sep.setStyleSheet(f"background: {BORDER_DEFAULT};")
+  [GRANDFATHERED] ui/widgets/topbar.py:219              self._fuel_dot.setStyleSheet(f"background: {DANGER}; border-radius: 4px;")
+  [GRANDFATHERED] ui/widgets/topbar.py:221              self._fuel_dot.setStyleSheet(f"background: {SUCCESS}; border-radius: 4px;")
+  [GRANDFATHERED] ui/widgets/trip_card.py:67      accent_bar.setStyleSheet(
+  [NEW          ] ui/widgets/trip_card.py:343          self._truck_lbl.setStyleSheet(f"color: {plate_color};")
+  [NEW          ] ui/widgets/trip_card.py:372          self._both_lbl.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY};")
+  [NEW          ] ui/widgets/trip_card.py:395          self._driver_lbl.setStyleSheet(f"color: {driver_color};")
+  [NEW          ] ui/widgets/trip_card.py:464          live_dot.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+  [NEW          ] ui/widgets/trip_card.py:469          self._live_speed.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
+  [NEW          ] ui/widgets/trip_card.py:514              self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [NEW          ] ui/widgets/trip_card.py:541              self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [NEW          ] ui/widgets/trip_card.py:567                  self._date_lbl.setStyleSheet(f"color: {self.DELAYED_COLOR};")
+  [NEW          ] ui/widgets/trip_card.py:607                  self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [NEW          ] ui/widgets/trip_card.py:618                  self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+  [NEW          ] ui/widgets/trip_card.py:725          self._error_lbl.setStyleSheet(
+  [NEW          ] ui/widgets/trip_card.py:762          frame.setStyleSheet(
+  [NEW          ] ui/widgets/trip_card.py:792          self.setStyleSheet(
+  [NEW          ] ui/widgets/trip_card.py:799              self._content_widget.setStyleSheet(
+  [NEW          ] ui/widgets/trip_card.py:840          menu.setStyleSheet(
+
+stale baseline entries for inline_qss (141):
+--------------------------------------------
+    ui/components.py:209              self.setStyleSheet(
+    ui/components.py:325              icon_container.setStyleSheet(
+    ui/components.py:343          self._title_lbl.setStyleSheet(
+    ui/components.py:369              self._primary_lbl.setStyleSheet(
+    ui/components.py:379              self._secondary_lbl.setStyleSheet(
+    ui/components.py:413          self.setStyleSheet(f"""
+    ui/components.py:471      container.setStyleSheet("background: transparent;")
+    ui/components.py:477      line.setStyleSheet(f"background: {BORDER_FAINT};")
+    ui/components.py:482      lbl.setStyleSheet(
+    ui/components.py:513          val.setStyleSheet(f"color: {value_color};")
+    ui/components.py:557              icon_container.setStyleSheet(
+    ui/components.py:576          lbl.setStyleSheet(
+    ui/components.py:583          val.setStyleSheet(
+    ui/components.py:600              trend_lbl.setStyleSheet(
+    ui/components.py:694          self.setStyleSheet(sheet)
+    ui/components.py:739              title_lbl.setStyleSheet(
+    ui/components.py:749              sub_lbl.setStyleSheet(
+    ui/components.py:802      search.setStyleSheet(f"""
+    ui/components.py:944      btn.setStyleSheet(sheet)
+    ui/components.py:1062          self.setStyleSheet(f"""
+    ui/components.py:1074          self._text_lbl.setStyleSheet(f"""
+    ui/components.py:1111          self.setStyleSheet(f"""
+    ui/components.py:1196          self.setStyleSheet(f"""
+    ui/components.py:1207          self._thumb.setStyleSheet(f"""
+    ui/views/analytics/client_tab.py:237              val.setStyleSheet(val.styleSheet() + " line-height: 1.3;")
+    ui/views/automation_view/automation_view.py:111          self.setStyleSheet(
+    ui/views/automation_view/automation_view.py:144              self.setStyleSheet(
+    ui/views/automation_view/automation_view.py:150          self.setStyleSheet(
+    ui/views/automation_view/automation_view.py:156          self.setStyleSheet(
+    ui/views/automation_view/automation_view.py:180          self.setStyleSheet(
+    ui/views/automation_view/automation_view.py:196          self._status_dot.setStyleSheet(f"color: {_RUN_STATUS_COLORS.get(run.get('status', 'imported'), TEXT_MUTED)};")
+    ui/views/automation_view/automation_view.py:227          self._status_dot.setStyleSheet(
+    ui/views/automation_view/automation_view.py:337          self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
+    ui/views/automation_view/automation_view.py:344          self._simple_status.setStyleSheet(f"color: {ACCENT_TEXT};")
+    ui/views/automation_view/automation_view.py:351          self._candidates_box.setStyleSheet(f"color: {ACCENT};")
+    ui/views/automation_view/automation_view.py:377          self._related_label.setStyleSheet(f"color: {TEXT_MUTED};")
+    ui/views/automation_view/automation_view.py:435          self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
+    ui/views/automation_view/automation_view.py:495          self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
+    ui/views/automation_view/automation_view.py:535                  self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
+    ui/views/automation_view/automation_view.py:826          header.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
+    ui/views/automation_view/automation_view.py:838          mode_row.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
+    ui/views/automation_view/automation_view.py:986              card.setStyleSheet(
+    ui/views/cmr_form_view/cmr_form.py:343          sub_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 10px;")
+    ui/views/cmr_form_view/cmr_form.py:617          self._progress_bar.setStyleSheet(f"""
+    ui/views/fleet_tracking_view.py:199          panel.setStyleSheet(
+    ui/views/fleet_tracking_view.py:228          icon_lbl.setStyleSheet(f"font-size: 64px; color: {COLOR_TEXT_TERTIARY};")
+    ui/views/fleet_tracking_view.py:236          title_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+    ui/views/fleet_tracking_view.py:245          hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/views/fleet_tracking_view.py:448          panel.setStyleSheet(
+    ui/views/fleet_tracking_view.py:456          lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/views/fleet_tracking_view.py:493          err.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border: none;")
+    ui/views/fleet_tracking_view.py:499          lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/views/fleet_tracking_view.py:547          self._updated_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/views/fleet_tracking_view.py:606          line.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
+    ui/views/fleet_tracking_view.py:682          name_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+    ui/views/fleet_tracking_view.py:704              row_f.setStyleSheet("background-color: transparent;")
+    ui/views/fleet_tracking_view.py:711              label_w.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/views/fleet_tracking_view.py:717              value_w.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+    ui/views/fleet_tracking_view.py:739              action_row.setStyleSheet("background-color: transparent;")
+    ui/views/freight_exchange/connect_view.py:88          self._error_label.setStyleSheet(f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/freight_exchange/connect_view.py:219                      self._expiry_label.setStyleSheet(f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/freight_exchange/connect_view.py:221                      self._expiry_label.setStyleSheet(f"color: {COLOR_WARNING_TEXT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/freight_exchange/connect_view.py:223                      self._expiry_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/freight_exchange/connect_view.py:226                  self._expiry_label.setStyleSheet(f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_BOLD};")
+    ui/views/overview_view.py:556                  val_lbl.setStyleSheet(f"color: {color};")
+    ui/views/overview_view.py:768              title_lbl.setStyleSheet(
+    ui/views/overview_view.py:777                  ts_lbl.setStyleSheet(
+    ui/views/overview_view.py:786              more.setStyleSheet(f"color: {ACCENT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+    ui/views/overview_view.py:833              idx.setStyleSheet(
+    ui/views/overview_view.py:841              plate_lbl.setStyleSheet(
+    ui/views/overview_view.py:847              rev_lbl.setStyleSheet(
+    ui/views/overview_view.py:912              date_lbl.setStyleSheet(f"font-size: {FONT_SIZE_SM}px; color: {COLOR_TEXT_TERTIARY};")
+    ui/views/overview_view.py:918              plate_lbl.setStyleSheet(
+    ui/views/overview_view.py:926              client_lbl.setStyleSheet(f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};")
+    ui/views/overview_view.py:931              profit_lbl.setStyleSheet(
+    ui/views/route_planner_view.py:115      label.setStyleSheet(
+    ui/views/route_planner_view.py:121      line.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
+    ui/views/route_planner_view.py:142      pill.setStyleSheet(f"""
+    ui/views/route_planner_view.py:154      val_lbl.setStyleSheet(
+    ui/views/route_planner_view.py:158      lbl_w.setStyleSheet(
+    ui/views/route_planner_view.py:180          dot.setStyleSheet(f"""
+    ui/views/route_planner_view.py:200              remove_btn.setStyleSheet(f"""
+    ui/views/route_planner_view.py:235      chip.setStyleSheet(f"""
+    ui/views/route_planner_view.py:245      lbl.setStyleSheet(
+    ui/views/route_planner_view.py:250      remove.setStyleSheet(f"""
+    ui/views/route_planner_view.py:484          panel.setStyleSheet(f"""
+    ui/views/route_planner_view.py:559          panel.setStyleSheet(
+    ui/views/route_planner_view.py:567          ph_label.setStyleSheet(
+    ui/views/route_planner_view.py:661          err.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border: none;")
+    ui/views/route_planner_view.py:667          lbl.setStyleSheet(
+    ui/views/route_planner_view.py:708          header.setStyleSheet(f"""
+    ui/views/route_planner_view.py:759          add_stop_btn.setStyleSheet(f"""
+    ui/views/route_planner_view.py:790          truck_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+    ui/views/route_planner_view.py:811          self._truck_refresh_btn.setStyleSheet(f"""
+    ui/views/route_planner_view.py:831          profile_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+    ui/views/route_planner_view.py:845          countries_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+    ui/views/route_planner_view.py:856          add_country_btn.setStyleSheet(f"""
+    ui/views/route_planner_view.py:908          self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/route_planner_view.py:929          loading_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/route_planner_view.py:941          self.route_summary_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+    ui/views/route_planner_view.py:983          self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+    ui/views/route_planner_view.py:988          self._explanation_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px;")
+    ui/views/route_planner_view.py:1378              self._empty_error_label.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/route_planner_view.py:1410              self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/route_planner_view.py:1416              self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
+    ui/views/route_planner_view.py:1534          self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+    ui/views/route_planner_view.py:1557              self._summary_text.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT}; font-size: {FONT_SIZE_SM}px;")
+    ui/views/route_planner_view.py:1567              self._summary_text.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_SM}px;")
+    ui/views/route_planner_view.py:1663              self._summary_text.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT};")
+    ui/views/route_planner_view.py:1666          self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+    ui/views/route_planner_view.py:1762              self._summary_text.setStyleSheet(
+    ui/views/route_planner_view.py:1770              self._summary_text.setStyleSheet(
+    ui/views/tacho_import_view.py:154          self._drop_zone.setStyleSheet(
+    ui/views/tacho_import_view.py:171          drop_icon.setStyleSheet(f"font-size: 28px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;")
+    ui/views/tacho_import_view.py:177          drop_hint.setStyleSheet(
+    ui/views/tacho_import_view.py:186          drop_sub.setStyleSheet(
+    ui/views/tacho_import_view.py:199          steps.setStyleSheet(f"padding: {SP['2']}px; color: {COLOR_TEXT_TERTIARY};")
+    ui/views/tacho_import_view.py:217          self._btn_vehicle.setStyleSheet(
+    ui/views/tacho_import_view.py:247              self._drop_zone.setStyleSheet(
+    ui/views/tacho_import_view.py:256          self._drop_zone.setStyleSheet(
+    ui/views/tacho_import_view.py:268          self._drop_zone.setStyleSheet(
+    ui/views/tacho_import_view.py:311          self._result_violations.setStyleSheet(
+    ui/views/tacho_import_view.py:551          self._result_icon.setStyleSheet(
+    ui/views/tacho_import_view.py:599          self._result_icon.setStyleSheet(
+    ui/widgets/trip_card.py:313          self._btn_docs.setStyleSheet(
+    ui/widgets/trip_card.py:349          self._truck_lbl.setStyleSheet(f"color: {plate_color};")
+    ui/widgets/trip_card.py:378          self._both_lbl.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY};")
+    ui/widgets/trip_card.py:401          self._driver_lbl.setStyleSheet(f"color: {driver_color};")
+    ui/widgets/trip_card.py:470          live_dot.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+    ui/widgets/trip_card.py:475          self._live_speed.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
+    ui/widgets/trip_card.py:520              self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/widgets/trip_card.py:545              self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/widgets/trip_card.py:569                  self._date_lbl.setStyleSheet(f"color: {self.DELAYED_COLOR};")
+    ui/widgets/trip_card.py:609                  self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/widgets/trip_card.py:620                  self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+    ui/widgets/trip_card.py:721          self._error_lbl.setStyleSheet(
+    ui/widgets/trip_card.py:756          frame.setStyleSheet(
+    ui/widgets/trip_card.py:764          alert_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+    ui/widgets/trip_card.py:787          self.setStyleSheet(
+    ui/widgets/trip_card.py:794              self._content_widget.setStyleSheet(
+    ui/widgets/trip_card.py:835          menu.setStyleSheet(
+
+raw_hex_colors  (44 current)
+----------------------------
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:17  Design tokens (indigo primary #6366F1):
+  [GRANDFATHERED] ui/copilot/widgets/guided_overlay_widget.py:112  HIGHLIGHT_RING_COLOR = COLOR_ACCENT_PRIMARY  # #6366F1
+  [GRANDFATHERED] ui/copilot/widgets/insight_queue.py:47      "critical": {"bg": COLOR_ERROR_DEFAULT, "fg": "#FFFFFF"},
+  [GRANDFATHERED] ui/copilot/widgets/insight_queue.py:48      "high":     {"bg": COLOR_WARNING_DEFAULT, "fg": "#000000"},
+  [GRANDFATHERED] ui/copilot/widgets/insight_queue.py:49      "medium":   {"bg": COLOR_INFO_DEFAULT,    "fg": "#FFFFFF"},
+  [GRANDFATHERED] ui/copilot/widgets/insight_queue.py:50      "low":      {"bg": COLOR_NEUTRAL_DEFAULT, "fg": "#FFFFFF"},
+  [GRANDFATHERED] ui/delegates/alert_card_delegate.py:48      Severity.CRITICAL: QColor("#ef4444"),
+  [GRANDFATHERED] ui/delegates/alert_card_delegate.py:49      Severity.WARNING: QColor("#f59e0b"),
+  [GRANDFATHERED] ui/delegates/alert_card_delegate.py:50      Severity.INFO: QColor("#3b82f6"),
+  [GRANDFATHERED] ui/views/admin_panel_view.py:54      "error": "#ef4444",
+  [GRANDFATHERED] ui/views/admin_panel_view.py:55      "unavailable": "#6b7280",
+  [GRANDFATHERED] ui/views/admin_panel_view.py:56      "warning": "#f59e0b",
+  [GRANDFATHERED] ui/views/analytics/financial_tab.py:200                      "#F97316",
+  [GRANDFATHERED] ui/views/api_dashboard_view.py:32      "offline": "color: #ef4444; font-weight: bold;",
+  [GRANDFATHERED] ui/views/api_dashboard_view.py:33      "unknown": "color: #6b7280; font-style: italic;",
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:490                  '<div style="padding:8px;margin-bottom:12px;border:1px dashed #555;'
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:491                  'border-radius:6px;color:#888;font-style:italic;font-size:11px;'
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:499                  '<div style="padding:8px;margin-bottom:12px;border:1px dashed #555;'
+  [GRANDFATHERED] ui/views/automail/editor_panel.py:500                  'border-radius:6px;color:#888;font-style:italic;font-size:11px;'
+  [GRANDFATHERED] ui/views/dashboard.py:1001              QScrollBar::handle:vertical { background: #38383F; border-radius: 2px; min-height: 30px; }
+  [GRANDFATHERED] ui/views/maintenance_analytics_view.py:46      "#6366f1", COLOR_SUCCESS_DEFAULT, COLOR_WARNING_DEFAULT, COLOR_ERROR_DEFAULT,
+  [GRANDFATHERED] ui/views/maintenance_analytics_view.py:47      COLOR_INFO_DEFAULT, "#a855f7", "#06b6d4", "#ec4899",
+  [NEW          ] ui/views/overview_view.py:826                  1: "#F59E0B",  # gold
+  [NEW          ] ui/views/overview_view.py:827                  2: "#9CA3AF",  # silver
+  [NEW          ] ui/views/overview_view.py:828                  3: "#B45309",  # bronze
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1458                  self._preview_webview_cache.page().setBackgroundColor(QColor("#f5f5f0"))
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1515      color: #222;
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1516      background: #f5f5f0;
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1521      background: #fff; padding: 32px 28px;
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1526      height: 3px; background: #6366f1; margin: 8px 0 16px 0;
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1529      font-size: 20px; color: #6366f1; text-align: center;
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1533      font-size: 10px; color: #888; text-align: center;
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1537    .meta b {{ color: #444; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1539    .section-title {{ font-size: 10px; color: #6366f1; font-weight: bold; margin: 0 0 4px 0; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1541    .party {{ flex: 1; border: 1px solid #ddd; border-radius: 4px; padding: 8px; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1542    .party b {{ font-size: 10px; color: #6366f1; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1547    table.financial .total {{ font-weight: bold; font-size: 13px; color: #6366f1; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1548    table.financial .total-line {{ border-top: 2px solid #6366f1; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1549    .words {{ font-style: italic; color: #555; font-size: 10px; margin: 6px 0; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1554    .sig-block .line {{ border-top: 1px solid #333; width: 140px; margin: 4px 0; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1555    .footer {{ font-size: 8px; color: #999; text-align: center; border-top: 1px solid #ddd; padding-top: 6px; margin-top: 12px; }}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1579        {'<p style="color:#bbb;font-size:9px">' + t("receipt.received_from_placeholder", "—") + '</p>' if not (self._received_from_name or self._received_from_address or self._received_from_vat or self._received_from_reg) else ''}
+  [GRANDFATHERED] ui/views/receipt_editor/editor_form.py:1605      {'<tr><td colspan="2" style="color:#999;font-size:9px;text-align:center;padding-top:4px">' + t("receipt.amount_hint", "Introduceti suma mai jos") + '</td></tr>' if self._amount == 0 and self._total == 0 else ''}
+  [GRANDFATHERED] ui/views/settings_view/settings_fields.py:42  DEFAULT_BRAND_COLOR = "#6366f1"
+
+stale baseline entries for raw_hex_colors (3):
+----------------------------------------------
+    ui/views/overview_view.py:829                  1: "#F59E0B",  # gold
+    ui/views/overview_view.py:830                  2: "#9CA3AF",  # silver
+    ui/views/overview_view.py:831                  3: "#B45309",  # bronze
+
+sub_10px_fonts  (0 current)
+---------------------------
+  (none)
+
+role_inventory  (186 current)
+-----------------------------
+  [GRANDFATHERED unstyled ] ui/app_shell.py:68          self.view_container.setProperty("role", "view-container")
+  [GRANDFATHERED unstyled ] ui/copilot/widgets/insight_queue.py:201          review_btn.setProperty("variant", "primary")
+  [GRANDFATHERED unstyled ] ui/copilot/widgets/observability_panel.py:299          refresh_btn.setProperty("variant", "primary")
+  [GRANDFATHERED unstyled ] ui/dialogs/dispatch_detail_panel.py:266              value_lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/dialogs/login_dialog.py:220          self._email_display.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/form_utils.py:89          self._label.setProperty("role", "field-label")
+  [GRANDFATHERED unstyled ] ui/form_utils.py:111              self._helper_label.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/main_window.py:1162          title.setProperty("role", "heading")
+  [GRANDFATHERED unstyled ] ui/main_window.py:1167          msg.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/main_window.py:1187          title.setProperty("role", "heading")
+  [GRANDFATHERED unstyled ] ui/main_window.py:1195          msg.setProperty("role", "muted")
+  [NEW           dead     ] ui/theme_engine.py:478          QLabel[fontRole="h1"] {{
+  [NEW           dead     ] ui/theme_engine.py:493          QLabel[fontRole="hero"] {{
+  [NEW           dead     ] ui/theme_engine.py:504          QLabel[fontRole="mono_lg"] {{
+  [NEW           dead     ] ui/theme_engine.py:510          QLabel[fontRole="mono_xl"] {{
+  [NEW           dead     ] ui/theme_engine.py:522          QLabel[fontRole="kpi-title"] {{
+  [NEW           dead     ] ui/theme_engine.py:529          QLabel[fontRole="kpi-value"] {{
+  [NEW           dead     ] ui/theme_engine.py:536          QLabel[class="page-title"] {{
+  [NEW           dead     ] ui/theme_engine.py:542          QLabel[class="section-title"] {{
+  [NEW           dead     ] ui/theme_engine.py:550          QLabel[class="field-label"] {{
+  [NEW           dead     ] ui/theme_engine.py:557          QLabel[class="kpi-value"] {{
+  [NEW           dead     ] ui/theme_engine.py:564          QLabel[class="kpi-label"] {{
+  [NEW           dead     ] ui/theme_engine.py:621          QPushButton[variant="danger"] {{
+  [NEW           dead     ] ui/theme_engine.py:627          QPushButton[variant="danger"]:hover {{
+  [NEW           dead     ] ui/theme_engine.py:975          QLineEdit[validation="success"], QPlainTextEdit[validation="success"] {{
+  [NEW           dead     ] ui/theme_engine.py:1562          QFrame[role="input"] {{
+  [NEW           dead     ] ui/theme_engine.py:1574          QFrame[role="accent-bar"] {{
+  [NEW           dead     ] ui/theme_engine.py:1598          QFrame[role="chip-critical"] {{
+  [NEW           dead     ] ui/theme_engine.py:1606          QFrame[role="chip-warning"] {{
+  [NEW           dead     ] ui/theme_engine.py:1614          QFrame[role="chip-info"] {{
+  [NEW           dead     ] ui/theme_engine.py:1622          QFrame[role="chip-success"] {{
+  [NEW           dead     ] ui/theme_engine.py:1630          QFrame[role="chip-neutral"] {{
+  [NEW           dead     ] ui/theme_engine.py:1812          QDialog[modal="true"] {{
+  [NEW           dead     ] ui/theme_engine.py:1844          QFrame[role="nav-panel"] {{
+  [NEW           dead     ] ui/theme_engine.py:1850          QFrame[role="nav-top-section"] {{
+  [NEW           dead     ] ui/theme_engine.py:1877          QFrame[role="nav-accent"] {{
+  [NEW           dead     ] ui/theme_engine.py:1884          QFrame[role="nav-item"][state="active"] QFrame[role="nav-accent"] {{
+  [NEW           dead     ] ui/theme_engine.py:1888          QLabel[role="nav-icon"] {{
+  [NEW           dead     ] ui/theme_engine.py:1895          QFrame[role="nav-item"][state="active"] QLabel[role="nav-icon"] {{
+  [NEW           dead     ] ui/theme_engine.py:1918          QFrame[role="nav-monogram"] {{
+  [NEW           dead     ] ui/theme_engine.py:1972          QFrame[role="top-bar-divider"] {{
+  [NEW           dead     ] ui/theme_engine.py:1978          QLabel[role="fuel-status"] {{
+  [NEW           dead     ] ui/theme_engine.py:1992          QLabel[role="bell"] {{
+  [NEW           dead     ] ui/theme_engine.py:1998          QLabel[role="bell"][alert="true"] {{
+  [NEW           dead     ] ui/theme_engine.py:2135          QFrame#stat-card[hovered="true"] {{
+  [NEW           dead     ] ui/theme_engine.py:2212          QPushButton[tabRole="tab-button"][tabActive="true"] {{
+  [NEW           dead     ] ui/theme_engine.py:2232          QWidget[role="kanban-column-header"] QLabel[class="kanban-column-title"] {{
+  [NEW           dead     ] ui/theme_engine.py:2238          QWidget[role="kanban-column-header"] QLabel[class="kanban-column-count"] {{
+  [NEW           dead     ] ui/theme_engine.py:2243          QScrollArea[class="kanban-columns-container"] {{
+  [NEW           dead     ] ui/theme_engine.py:3057          QLabel[role="pill-value"] {{
+  [GRANDFATHERED unstyled ] ui/views/admin_panel_view.py:81      val_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/admin_panel_view.py:177          self._tab_widget.setProperty("role", "admin-panel-tabs")
+  [GRANDFATHERED unstyled ] ui/views/automail_view.py:71          self.setProperty("role", "automail-placeholder")
+  [NEW           unstyled ] ui/views/automation_view/automation_view.py:187          self._title.setProperty("fontRole", "body_bold")
+  [NEW           unstyled ] ui/views/automation_view/automation_view.py:342          self._simple_status.setProperty("fontRole", "body_bold")
+  [NEW           unstyled ] ui/views/automation_view/automation_view.py:851          mode_label.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/client_workspace/client_details.py:108          self._label.setProperty("role", "field-label")
+  [GRANDFATHERED unstyled ] ui/views/client_workspace/client_details.py:116          self._value_lbl.setProperty("role", "body")
+  [GRANDFATHERED unstyled ] ui/views/client_workspace/client_details.py:735              name_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/client_workspace/client_workspace.py:210          self._tabs.setProperty("role", "client-workspace-tabs")
+  [GRANDFATHERED unstyled ] ui/views/client_workspace/client_workspace.py:324          self._client_tabs.setProperty("role", "client-detail-tabs")
+  [GRANDFATHERED unstyled ] ui/views/client_workspace/client_workspace.py:1037          source_lbl.setProperty("fontRole", "body_bold")
+  [NEW           unstyled ] ui/views/cmr_form_view/cmr_form.py:679              self._role_consignor_btn.setProperty("variant", "primary")
+  [NEW           unstyled ] ui/views/cmr_form_view/cmr_form.py:683              self._role_consignee_btn.setProperty("variant", "primary")
+  [GRANDFATHERED unstyled ] ui/views/country_exclusions_panel.py:92          self._header_label.setProperty("role", "section-title")
+  [GRANDFATHERED unstyled ] ui/views/country_exclusions_panel.py:100          self._count_label.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/views/dashboard.py:1070          truck_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/dashboard.py:1165              btn.setProperty("variant", "primary" if is_active else "secondary")
+  [GRANDFATHERED unstyled ] ui/views/dispatch_board/board_state.py:106          container.setProperty("role", "kanban-columns-container")
+  [GRANDFATHERED unstyled ] ui/views/dispatch_board/dispatch_board.py:309          self._bulk_toolbar.setProperty("role", "bulk-toolbar")
+  [GRANDFATHERED unstyled ] ui/views/dispatch_board/dispatch_board.py:369          columns_container.setProperty("role", "kanban-columns-container")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:96          self.setProperty("active", "true" if active else "false")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:145          self.setProperty("role", "doc-row")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:172          self._icon_label.setProperty("role", "doc-icon")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:192          title_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:193          title_lbl.setProperty("role", "doc-title")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:217          meta_lbl.setProperty("role", "doc-meta")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:235                  chip.setProperty("role", "tag-chip")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:485          self._tab_widget.setProperty("role", "document-center-tabs")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:740          self._sidebar.setProperty("role", "sidebar")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:758          self._filter_toggle.setProperty("role", "filter-toggle")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:902          self._center_panel.setProperty("role", "center-panel")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:973          self._list_scroll.setProperty("role", "doc-list-scroll")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:991          self._page_label.setProperty("role", "page-label")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1014          self._detail_panel.setProperty("role", "detail-sidebar")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1213              select_lbl.setProperty("role", "detail-placeholder")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1224          title_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1266              chip.setProperty("role", "tag-chip")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1267              chip.setProperty("removable", "true")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1396              none_lbl.setProperty("role", "detail-placeholder")
+  [GRANDFATHERED unstyled ] ui/views/document_center/document_center.py:1654              info.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/driver_manager.py:608          self._tacho_container.setProperty("role", "tacho-detail")
+  [GRANDFATHERED unstyled ] ui/views/driver_manager.py:1271          summary_frame.setProperty("role", "tacho-summary")
+  [GRANDFATHERED unstyled ] ui/views/driver_manager.py:1353                  row_frame.setProperty("role", "tacho-violation-row")
+  [GRANDFATHERED unstyled ] ui/views/driver_manager.py:1381          chip.setProperty("role", "tacho-chip")
+  [GRANDFATHERED unstyled ] ui/views/driver_manager.py:1391          val.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/editor_base.py:141          lbl.setProperty("fontRole", "body-bold" if bold else "body")
+  [GRANDFATHERED unstyled ] ui/views/fleet_tab/fleet_tab.py:820                  title_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/views/fleet_tab/fleet_tab.py:1134              lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:302          self._tab_widget.setProperty("role", "generators-tabs")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:924          self._cmr_status_lbl.setProperty("role", "success")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:1072          self._cmr_status_lbl.setProperty("role", "warning")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:1120                          self._cmr_status_lbl.setProperty("role", "danger")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:1160                  self._cmr_status_lbl.setProperty("role", "success")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:1181              status_lbl.setProperty("role", "success")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:1241                  status_lbl.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/views/generators_view.py:1247                  status_lbl.setProperty("role", "success")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:589              lbl.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:591              lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:710          meta_card.setProperty("role", "card-inner")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:719          self._inv_num_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:723          self._issue_date_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:727          self._due_date_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:731          self._payment_terms_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:865          self._truck_plate_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:869          self._driver_name_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:873          self._distance_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:1024          self._color_swatch.setProperty("role", "color-swatch")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/editor_form.py:1165          self._bottom_bar.setProperty("role", "bottom-bar")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:305          self._subtotal_lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:313          self._tax_lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:321          self._discount_lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:329          self._grand_lbl.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:335          canvas_totals_card.setProperty("role", "card-inner")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:344          self._canvas_subtotal.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:352          self._canvas_tax.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:360          self._canvas_discount.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:367          self._canvas_grand_label.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/invoice_editor/line_items.py:370          self._canvas_grand.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/maintenance_hub.py:135          lbl.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/editor_form.py:476              lbl.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/editor_form.py:478              lbl.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/editor_form.py:520          self._pf_number_value.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/editor_form.py:745          self._bottom_bar.setProperty("role", "bottom-bar")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/line_items.py:162          self._canvas_subtotal_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/line_items.py:169          self._canvas_tax_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/line_items.py:176          self._canvas_discount_label.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/proforma_editor/line_items.py:183          self._canvas_grand_label.setProperty("fontRole", "body-bold")
+  [GRANDFATHERED unstyled ] ui/views/receipt_editor/editor_form.py:1948              badge.setProperty("role", "tag-chip")
+  [GRANDFATHERED unstyled ] ui/views/route_history_view.py:233          self._route_info.setProperty("role", "secondary")
+  [GRANDFATHERED unstyled ] ui/views/route_history_view.py:239          self._stats_text.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/views/settings_view/settings_fields.py:344          swatch.setProperty("role", "colour-swatch")
+  [GRANDFATHERED unstyled ] ui/views/settings_view/settings_view.py:594          dialog.setProperty("role", "dialog")
+  [NEW           unstyled ] ui/views/tacho_import_view.py:270          self._result_icon.setProperty("fontRole", "result-icon")
+  [NEW           unstyled ] ui/views/tacho_import_view.py:275          self._result_msg.setProperty("fontRole", "body")
+  [GRANDFATHERED unstyled ] ui/views/upload_integration.py:104          self._status_label.setProperty("role", "status-label")
+  [GRANDFATHERED unstyled ] ui/views/upload_integration.py:247          title_lbl.setProperty("fontRole", "body_bold")
+  [GRANDFATHERED unstyled ] ui/widgets/__init__.py:185          self.label.setProperty("role", "section-title")
+  [GRANDFATHERED unstyled ] ui/widgets/__init__.py:227          self.title_label.setProperty("role", "kpi-label")
+  [GRANDFATHERED unstyled ] ui/widgets/__init__.py:233          self.value_label.setProperty("role", "kpi-value")
+  [GRANDFATHERED unstyled ] ui/widgets/__init__.py:348      label.setProperty("role", "field-label")
+  [GRANDFATHERED unstyled ] ui/widgets/__init__.py:357          helper.setProperty("role", "muted")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:77          self.setProperty("role", "alert-panel")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:120          header.setProperty("role", "alert-panel-header")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:128          title.setProperty("fontRole", "alert-panel-title")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:136              clear_btn.setProperty("role", "alert-panel-clear")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:143          close_btn.setProperty("role", "alert-panel-close")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:154          scroll.setProperty("role", "alert-panel-scroll")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:160          content.setProperty("role", "alert-panel-list")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:168              empty.setProperty("fontRole", "alert-panel-empty")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:188          row.setProperty("role", "alert-row")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:201          chip.setProperty("role", "alert-chip")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:214          text_widget.setProperty("role", "alert-row-text")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:221          title_label.setProperty("fontRole", "alert-title")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:226          time_label.setProperty("fontRole", "alert-time")
+  [GRANDFATHERED unstyled ] ui/widgets/alert_panel.py:233          chevron.setProperty("role", "alert-chevron")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:60          self.setProperty("role", "assignment-row")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:82          dot.setProperty("role", "availability-dot")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:97          text_widget.setProperty("role", "assignment-row-text")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:191          self.setProperty("role", "assignment-dropdown")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:236          header.setProperty("role", "assignment-dropdown-header")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:249          close_btn.setProperty("role", "assignment-dropdown-close")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:260          self._scroll.setProperty("role", "assignment-dropdown-scroll")
+  [GRANDFATHERED unstyled ] ui/widgets/assignment_dropdown.py:267          self._content.setProperty("role", "assignment-dropdown-list")
+  [GRANDFATHERED unstyled ] ui/widgets/dispatch_tabs.py:60          self._tab_bar.setProperty("role", "tab-bar")
+  [GRANDFATHERED unstyled ] ui/widgets/dispatch_tabs.py:72          separator.setProperty("role", "tab-separator")
+  [GRANDFATHERED unstyled ] ui/widgets/dispatch_tabs.py:78          self._stack.setProperty("role", "tab-stack")
+  [GRANDFATHERED unstyled ] ui/widgets/fuel_panel.py:145          self.setProperty("role", "fuel-panel")
+  [GRANDFATHERED unstyled ] ui/widgets/fuel_panel.py:162          header.setProperty("role", "fuel-panel-header")
+  [GRANDFATHERED unstyled ] ui/widgets/fuel_panel.py:180          self._toggle_btn.setProperty("role", "fuel-toggle")
+  [GRANDFATHERED unstyled ] ui/widgets/fuel_panel.py:192          self._body.setProperty("role", "fuel-panel-body")
+  [GRANDFATHERED unstyled ] ui/widgets/kanban_column.py:172          self._title_label.setProperty("fontRole", "kanban-column-title")
+  [GRANDFATHERED unstyled ] ui/widgets/kanban_column.py:176          self._count_label.setProperty("fontRole", "kanban-column-count")
+  [GRANDFATHERED unstyled ] ui/widgets/kanban_column.py:194          scroll_content.setProperty("role", "kanban-column-scroll")
+  [GRANDFATHERED unstyled ] ui/widgets/kanban_column.py:206          self._loading_label.setProperty("fontRole", "kanban-column-loading")
+  [GRANDFATHERED unstyled ] ui/widgets/kanban_column.py:219          self._error_label.setProperty("fontRole", "kanban-column-error")
+
+stale baseline entries for role_inventory (55):
+-----------------------------------------------
+    ui/theme_engine.py:473          QLabel[fontRole="h1"] {{
+    ui/theme_engine.py:488          QLabel[fontRole="hero"] {{
+    ui/theme_engine.py:499          QLabel[fontRole="mono_lg"] {{
+    ui/theme_engine.py:505          QLabel[fontRole="mono_xl"] {{
+    ui/theme_engine.py:517          QLabel[fontRole="kpi-title"] {{
+    ui/theme_engine.py:524          QLabel[fontRole="kpi-value"] {{
+    ui/theme_engine.py:531          QLabel[class="page-title"] {{
+    ui/theme_engine.py:537          QLabel[class="section-title"] {{
+    ui/theme_engine.py:545          QLabel[class="field-label"] {{
+    ui/theme_engine.py:552          QLabel[class="kpi-value"] {{
+    ui/theme_engine.py:559          QLabel[class="kpi-label"] {{
+    ui/theme_engine.py:616          QPushButton[variant="danger"] {{
+    ui/theme_engine.py:622          QPushButton[variant="danger"]:hover {{
+    ui/theme_engine.py:695          QPushButton[compact="true"][size="sm"] {{
+    ui/theme_engine.py:705          QPushButton[compact="true"][size="sm"]:hover {{
+    ui/theme_engine.py:709          QPushButton[compact="true"][size="sm"]:pressed {{
+    ui/theme_engine.py:715          QPushButton[compact="true"][variant="secondary"][size="sm"] {{
+    ui/theme_engine.py:725          QPushButton[compact="true"][variant="secondary"][size="sm"]:hover {{
+    ui/theme_engine.py:970          QLineEdit[validation="success"], QPlainTextEdit[validation="success"] {{
+    ui/theme_engine.py:1557          QFrame[role="input"] {{
+    ui/theme_engine.py:1569          QFrame[role="accent-bar"] {{
+    ui/theme_engine.py:1593          QFrame[role="chip-critical"] {{
+    ui/theme_engine.py:1601          QFrame[role="chip-warning"] {{
+    ui/theme_engine.py:1609          QFrame[role="chip-info"] {{
+    ui/theme_engine.py:1617          QFrame[role="chip-success"] {{
+    ui/theme_engine.py:1625          QFrame[role="chip-neutral"] {{
+    ui/theme_engine.py:1807          QDialog[modal="true"] {{
+    ui/theme_engine.py:1839          QFrame[role="nav-panel"] {{
+    ui/theme_engine.py:1845          QFrame[role="nav-top-section"] {{
+    ui/theme_engine.py:1872          QFrame[role="nav-accent"] {{
+    ui/theme_engine.py:1879          QFrame[role="nav-item"][state="active"] QFrame[role="nav-accent"] {{
+    ui/theme_engine.py:1883          QLabel[role="nav-icon"] {{
+    ui/theme_engine.py:1890          QFrame[role="nav-item"][state="active"] QLabel[role="nav-icon"] {{
+    ui/theme_engine.py:1913          QFrame[role="nav-monogram"] {{
+    ui/theme_engine.py:1967          QFrame[role="top-bar-divider"] {{
+    ui/theme_engine.py:1973          QLabel[role="fuel-status"] {{
+    ui/theme_engine.py:1987          QLabel[role="bell"] {{
+    ui/theme_engine.py:1993          QLabel[role="bell"][alert="true"] {{
+    ui/theme_engine.py:2130          QFrame#stat-card[hovered="true"] {{
+    ui/theme_engine.py:2207          QPushButton[tabRole="tab-button"][tabActive="true"] {{
+    ui/theme_engine.py:2227          QWidget[role="kanban-column-header"] QLabel[class="kanban-column-title"] {{
+    ui/theme_engine.py:2233          QWidget[role="kanban-column-header"] QLabel[class="kanban-column-count"] {{
+    ui/theme_engine.py:2238          QScrollArea[class="kanban-columns-container"] {{
+    ui/views/automation_view/automation_view.py:191          self._title.setProperty("fontRole", "body_bold")
+    ui/views/automation_view/automation_view.py:335          self._fields_box.setProperty("fontRole", "body")
+    ui/views/automation_view/automation_view.py:343          self._simple_status.setProperty("fontRole", "body_bold")
+    ui/views/automation_view/automation_view.py:843          mode_label.setProperty("fontRole", "body_bold")
+    ui/views/cmr_form_view/cmr_form.py:342          sub_lbl.setProperty("role", "muted")
+    ui/views/cmr_form_view/cmr_form.py:689              self._role_consignor_btn.setProperty("variant", "primary")
+    ui/views/cmr_form_view/cmr_form.py:693              self._role_consignee_btn.setProperty("variant", "primary")
+    ui/views/fleet_tracking_view.py:241          hint_lbl.setProperty("fontRole", "body")
+    ui/views/route_planner_view.py:972          self._create_trip_btn.setProperty("size", "sm")
+    ui/views/route_planner_view.py:1492          gmaps_btn.setProperty("size", "sm")
+    ui/views/tacho_import_view.py:291          self._result_icon.setProperty("fontRole", "result-icon")
+    ui/views/tacho_import_view.py:296          self._result_msg.setProperty("fontRole", "body")
+
+Warnings (9 total, non-blocking -- never fail the gate):
+--------------------------------------------------------
+    [fixed_geometry] ui/widgets/dispatch_search_bar.py:118              dot.setFixedSize(_DOT_SIZE, _DOT_SIZE)
+    [fixed_geometry] ui/widgets/sidebar.py:173          self._monogram.setFixedSize(MONOGRAM_SIZE, MONOGRAM_SIZE)
+    [fixed_geometry] ui/widgets/signature_pad.py:77          self.setFixedSize(PAD_WIDTH, PAD_HEIGHT)
+    [fixed_geometry] ui/widgets/signature_pad.py:260          self._canvas_frame.setFixedSize(PAD_WIDTH + 2, PAD_HEIGHT + 2)
+    [fixed_geometry] ui/widgets/topbar.py:131          sep_before.setFixedSize(1, _SEP_HEIGHT)
+    [fixed_geometry] ui/widgets/topbar.py:140          self._fuel_dot.setFixedSize(FUEL_DOT_SIZE, FUEL_DOT_SIZE)
+    [fixed_geometry] ui/widgets/topbar.py:199          sep.setFixedSize(1, _SEP_HEIGHT_SM)
+    [type-mismatch(fontRole)] ui/views/automail/config_panel.py:397          self._biz_hours_cb.setProperty("fontRole", "small")
+    [type-mismatch(fontRole)] ui/views/automail/config_panel.py:421          self._skip_weekends_cb.setProperty("fontRole", "small")
+
+Gate: PASS -- report only (baseline ui_style_gate_baseline.json)

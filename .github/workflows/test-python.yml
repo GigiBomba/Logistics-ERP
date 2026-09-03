@@ -14,6 +14,10 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    # Hung jobs should fail fast instead of burning a default 6h runner.
+    # Linux jobs are sharded (half the suite each) -> 30 min; Windows/macOS
+    # run the full unsharded matrix job -> 45 min.
+    timeout-minutes: ${{ matrix.shard && 30 || 45 }}
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +83,14 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             pyproject.toml
+
+      # UI Style Gate (Phase 1 Lane C) — pure stdlib, runs once per
+      # pipeline (ubuntu/3.11) before the slow dependency install so it
+      # fails fast on new ui/ style violations.
+      - name: UI Style Gate (Phase 1 Lane C)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: python tools/ui_style_gate.py
+        shell: bash
 
       - name: Install dependencies
         run: |

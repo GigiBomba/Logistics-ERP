@@ -205,9 +205,15 @@ class TestCurrencyInvoiceFlow:
             },
         }
 
-        with patch("requests.get", return_value=mock_response) as mock_get:
+        # refresh_if_stale() now schedules a background refresh via _spawn (worker
+        # thread). Patch _spawn to run the refresh synchronously so the assertions
+        # below are deterministic and the requests.get mock stays in scope for it.
+        with patch.object(ExchangeRateService, "_spawn",
+                          side_effect=lambda _name, target, *a, **k: target()) as mock_spawn, \
+             patch("requests.get", return_value=mock_response) as mock_get:
             result = svc.refresh_if_stale()
             assert result is True
+            mock_spawn.assert_called_once()  # staleness detection scheduled a refresh
             mock_get.assert_called_once()
 
         # Verify rates were updated

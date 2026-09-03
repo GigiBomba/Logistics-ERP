@@ -100,7 +100,10 @@ def test_predict_next_service_km_overdue(service):
 def test_predict_next_service_date_based(service):
     from datetime import datetime, timedelta
     future_date = (datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d")
-    past_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+    # 200 days back is clearly more than 6 calendar months in the past even
+    # across the longest month spans (6 calendar months ≈ 181–184 days), so
+    # due_dt = last_done + 6 calendar months is always before "now".
+    past_date = (datetime.now() - timedelta(days=200)).strftime("%Y-%m-%d")
     service._fleet_repo.get_maintenance_schedule.return_value = {
         "last_done_km": None, "last_done_date": past_date,
         "interval_km": None, "interval_months": 6,

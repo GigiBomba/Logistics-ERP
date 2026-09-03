@@ -27,17 +27,27 @@ from ui.components import _Btn
 from ui.design_tokens import (
     BORDER_DEFAULT,
     BTN_HEIGHT_SM,
-    COLOR_ACCENT_PRIMARY,
     COLOR_BORDER_SUBTLE,
     COLOR_TEXT_SECONDARY,
     DANGER,
-    FONT_MONO,
-    FONT_SIZE_LG,
-    FONT_SIZE_SM,
+    SP,
     SUCCESS,
     TEXT_MUTED,
     TOPBAR_HEIGHT,
 )
+
+# Fuel-status dot diameter. KEPT fixed on purpose: it is a tiny decorative
+# 8px circle (border-radius 4 = half of 8) next to the fuel-status label.
+# A QLabel's sizeHint (≈13x15) exceeds 8px, so a pure minimums conversion
+# would visibly inflate it. Intentional decorative geometry (Phase 2).
+FUEL_DOT_SIZE = 8
+
+# Vertical hairline separators in the top bar. KEPT fixed on purpose: a 1px
+# divider must stay 1px wide and its height is a fixed decorative band — a
+# minimums conversion would let it stretch to the full 44px bar height.
+# Intentional decorative geometry (Phase 2).
+_SEP_HEIGHT = 20      # separator before the fuel dot
+_SEP_HEIGHT_SM = 16   # separator before the clock
 
 class TopBar(QFrame):
     """44px top bar with clock, alert bell, fuel status, and navigation controls."""
@@ -76,13 +86,20 @@ class TopBar(QFrame):
         # Top row
         row = QWidget()
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(20, 0, 16, 0)
-        row_layout.setSpacing(8)
+        row_layout.setContentsMargins(SP["5"], 0, SP["4"], 0)
+        row_layout.setSpacing(SP["2"])
 
         # Back button (hidden until nav stack has history)
         self._back_btn = _Btn()
         self._back_btn.setIcon(qta.icon("fa5s.arrow-left", color=COLOR_TEXT_SECONDARY))
-        self._back_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
+        # Compact square icon button: width stays a hard cap (square click
+        # target in the 44px bar); height is a minimum floor. Intentional
+        # icon-button geometry (Phase 2).
+        self._back_btn.setFixedWidth(BTN_HEIGHT_SM)
+        self._back_btn.setMinimumHeight(BTN_HEIGHT_SM)
+        # Height/padding sheet KEPT: the global theme has no small-ghost
+        # icon-button role (QPushButton min-height is 38px), so this sheet is
+        # the only thing keeping the button at 28px. Stays grandfathered.
         self._back_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
         self._back_btn.setAccessibleName("Go back")
         self._back_btn.setToolTip(t("nav.back", default="Back (Alt+Left)"))
@@ -100,6 +117,8 @@ class TopBar(QFrame):
         self._recent_btn.setProperty("variant", "ghost")
         self._recent_btn.setCursor(Qt.PointingHandCursor)
         self._recent_btn.setFixedHeight(BTN_HEIGHT_SM)
+        # Height/padding sheet KEPT: same rationale as the back button — no
+        # global compact-ghost button role exists. Stays grandfathered.
         self._recent_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
         self._recent_btn.setVisible(False)
         row_layout.addWidget(self._recent_btn)
@@ -109,13 +128,16 @@ class TopBar(QFrame):
         # Subtle vertical separator before the right section
         sep_before = QFrame()
         sep_before.setFrameShape(QFrame.VLine)
-        sep_before.setFixedSize(1, 20)
+        sep_before.setFixedSize(1, _SEP_HEIGHT)
+        # Sheet KEPT: the theme only ships horizontal divider roles
+        # (QFrame[role="divider"] / top-bar-divider constrain HEIGHT to 1px),
+        # no vertical 1px-wide equivalent. Stays grandfathered.
         sep_before.setStyleSheet(f"background: {COLOR_BORDER_SUBTLE}; max-width: 1px; min-width: 1px;")
         row_layout.addWidget(sep_before)
 
         # Fuel status dot
         self._fuel_dot = QLabel()
-        self._fuel_dot.setFixedSize(8, 8)
+        self._fuel_dot.setFixedSize(FUEL_DOT_SIZE, FUEL_DOT_SIZE)
         self._fuel_dot.setStyleSheet(
             f"background: {DANGER}; border-radius: 4px;"
         )
@@ -126,7 +148,7 @@ class TopBar(QFrame):
         alert_widget = QWidget()
         alert_layout = QHBoxLayout(alert_widget)
         alert_layout.setContentsMargins(0, 0, 0, 0)
-        alert_layout.setSpacing(4)
+        alert_layout.setSpacing(SP["1"])
 
         self._bell = QLabel()
         self._bell.setPixmap(qta.icon("fa5s.bell", color=TEXT_MUTED).pixmap(16, 16))
@@ -137,11 +159,9 @@ class TopBar(QFrame):
         alert_layout.addWidget(self._bell)
 
         self._badge = QLabel("")
-        self._badge.setStyleSheet(
-            f"background: {DANGER}; color: white; border-radius: 8px; "
-            f"font-size: 10px; font-weight: 600; min-width: 16px; max-width: 16px; "
-            f"min-height: 16px; max-height: 16px; qproperty-alignment: AlignCenter;"
-        )
+        # Theme role="badge" (error-red pill, 18px, centered) replaces the
+        # inline sheet; the count itself is updated dynamically elsewhere.
+        self._badge.setProperty("role", "badge")
         self._badge.hide()
         alert_layout.addWidget(self._badge)
 
@@ -152,7 +172,11 @@ class TopBar(QFrame):
         self._report_issue_btn.setIcon(
             qta.icon("fa5s.bug", color=TEXT_MUTED),
         )
-        self._report_issue_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
+        # Compact square icon button (same rationale as the back button).
+        self._report_issue_btn.setFixedWidth(BTN_HEIGHT_SM)
+        self._report_issue_btn.setMinimumHeight(BTN_HEIGHT_SM)
+        # Height/padding sheet KEPT: same rationale as the back button — no
+        # global compact-ghost button role exists. Stays grandfathered.
         self._report_issue_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
         self._report_issue_btn.setAccessibleName("Report Issue")
         self._report_issue_btn.setToolTip(
@@ -172,16 +196,16 @@ class TopBar(QFrame):
 
         # Separator
         sep = QFrame()
-        sep.setFixedSize(1, 16)
+        sep.setFixedSize(1, _SEP_HEIGHT_SM)
+        # Sheet KEPT: no vertical 1px divider role in the global theme (same
+        # rationale as the separator before the fuel dot). Stays grandfathered.
         sep.setStyleSheet(f"background: {BORDER_DEFAULT};")
         row_layout.addWidget(sep)
 
         # Clock
         self._clock = QLabel("")
         self._clock.setAccessibleName("Current time")
-        self._clock.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_SM}px; background: transparent;"
-        )
+        self._clock.setProperty("role", "clock")
         row_layout.addWidget(self._clock)
 
         layout.addWidget(row)

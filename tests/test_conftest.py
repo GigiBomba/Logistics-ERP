@@ -8,9 +8,6 @@ from __future__ import annotations
 import os
 
 import pytest
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
-
-from ui.theme_engine import QtTheme
 
 
 # Apply the same ghost-window-suppressing Chromium flags that main.py uses
@@ -30,6 +27,12 @@ def qapp():
     pytest-qt also provides a ``qapp`` fixture, but ours is session-scoped and
     ensures the Operion dark theme is loaded before any widget is created.
     """
+    # Heavy imports are deferred into the fixture body so that importing this
+    # module (registered as a pytest plugin in every worker) does not load
+    # PySide6 / the theme engine at collection time.
+    from PySide6.QtWidgets import QApplication
+    from ui.theme_engine import QtTheme
+
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
@@ -40,6 +43,8 @@ def qapp():
 @pytest.fixture
 def qt_main_window(qapp, qtbot):
     """Provide a bare QMainWindow for widget tests."""
+    from PySide6.QtWidgets import QMainWindow
+
     window = QMainWindow()
     window.setWindowTitle("Operion Test Window")
     window.resize(800, 600)
@@ -51,6 +56,8 @@ def qt_main_window(qapp, qtbot):
 @pytest.fixture
 def qt_widget(qapp, qtbot):
     """Provide a bare QWidget parent for widget tests."""
+    from PySide6.QtWidgets import QWidget
+
     w = QWidget()
     w.resize(400, 300)
     qtbot.addWidget(w)
@@ -78,10 +85,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import numpy as np
-from PIL import Image, ImageChops
-from PySide6.QtTest import QTest
-from PySide6.QtGui import QImage
 
 _BASELINES_ROOT = Path(__file__).parent / "baselines"
 _PIXEL_THRESHOLD = 0.1
@@ -97,7 +100,10 @@ def _get_os_name() -> str:
         return "ubuntu-latest"
 
 
-def _qpixmap_to_pil(pixmap) -> Image.Image:
+def _qpixmap_to_pil(pixmap):
+    from PySide6.QtGui import QImage
+    from PIL import Image
+
     qimage = pixmap.toImage().convertToFormat(QImage.Format_RGBA8888)
     width = qimage.width()
     height = qimage.height()
@@ -116,6 +122,12 @@ def assert_snapshot(tmp_path, qapp, request):
         assert_snapshot(widget, "test_name", delay_ms=50, resize=(400,300))
         assert_snapshot(widget, delay_ms=100)
     """
+    # Deferred imports: numpy / PIL / QTest are only needed when a snapshot
+    # is actually captured, not when this plugin is imported at collection.
+    from PySide6.QtTest import QTest
+    from PIL import Image, ImageChops
+    import numpy as np
+
     update_mode = os.environ.get("OPERION_UPDATE_BASELINES", "") == "1"
 
     def _assert_snapshot(
@@ -159,10 +171,17 @@ def assert_snapshot(tmp_path, qapp, request):
         baseline = Image.open(str(baseline_path))
 
         if image.size != baseline.size:
-            pytest.fail(
+            current_path = tmp_path / f"{test_name}__current.png"
+            image.save(str(current_path))
+            message = (
                 f"Size mismatch for '{test_name}':\n"
                 f"  Current:  {image.width}x{image.height}\n"
                 f"  Baseline: {baseline.width}x{baseline.height}"
+            )
+            if os.environ.get("CI") == "true":
+                pytest.fail(message)
+            pytest.skip(
+                f"rendering differs from CI baseline on non-CI machine: {message}"
             )
 
         diff = ImageChops.difference(image.convert("RGB"), baseline.convert("RGB"))
@@ -176,11 +195,16 @@ def assert_snapshot(tmp_path, qapp, request):
             current_path = tmp_path / f"{test_name}__current.png"
             diff.save(str(diff_path))
             image.save(str(current_path))
-            pytest.fail(
+            message = (
                 f"Visual regression for '{test_name}':\n"
                 f"  {diff_percent:.3f}% pixels differ (threshold: {_PIXEL_THRESHOLD}%)\n"
                 f"  Diff: {diff_path}\n"
                 f"  Current: {current_path}"
+            )
+            if os.environ.get("CI") == "true":
+                pytest.fail(message)
+            pytest.skip(
+                f"rendering differs from CI baseline on non-CI machine: {message}"
             )
 
     return _assert_snapshot

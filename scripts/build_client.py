@@ -89,8 +89,6 @@ HIDDEN_IMPORTS: List[str] = [
     "plotly",
     "choreographer",
     "folium",
-    "geocoder",
-    "pandas",
     "numpy",
     "requests",
     "urllib3",

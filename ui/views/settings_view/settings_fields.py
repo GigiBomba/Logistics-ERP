@@ -849,7 +849,13 @@ class SettingsFieldsMixin:
 
         from services.preferences import get_ai_api_key
         self._ai_api_key = StyledLineEdit(
-            text=get_ai_api_key("qwen", self.prefs.get_setting("qwen_api_key", "") if self.prefs else "") or "",
+            # Display-only resolution — never log a missing-key ERROR here
+            # (Ollama mode needs no key; the field is just a text input).
+            text=get_ai_api_key(
+                "qwen",
+                self.prefs.get_setting("qwen_api_key", "") if self.prefs else "",
+                log_missing=False,
+            ) or "",
             echoMode=StyledLineEdit.EchoMode.Password,
             placeholder=t("settings.field_api_key_placeholder", default="Bearer token for API auth"),
         )

@@ -27,12 +27,10 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_BG_ELEVATED,
     COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_TERTIARY,
 )
-from ui.components import PageTitle
+from ui.components import EmptyState, PageTitle
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +76,13 @@ class _PlaceholderPanel(QFrame):
         )
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        lbl = QLabel(label, self)
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 12px;")
-        layout.addWidget(lbl)
+        empty = EmptyState(
+            self,
+            icon_name="mdi6.tools",
+            title=label,
+            subtitle=t("automail.coming_soon", default="Coming soon"),
+        )
+        layout.addWidget(empty)
 
 
 class QtAutoMailView(QWidget):
@@ -180,13 +181,13 @@ class QtAutoMailView(QWidget):
 
         # Placeholders until real panels are built
         self._config_placeholder = _PlaceholderPanel(
-            self._splitter, t("automail.config_placeholder", "Automation Config\n(will appear here)")
+            self._splitter, t("automail.config_placeholder", "Automation Config")
         )
         self._timeline_placeholder = _PlaceholderPanel(
-            self._splitter, t("automail.timeline_placeholder", "Reminder Timeline\n(will appear here)")
+            self._splitter, t("automail.timeline_placeholder", "Reminder Timeline")
         )
         self._editor_placeholder = _PlaceholderPanel(
-            self._splitter, t("automail.editor_placeholder", "Email Editor\n(will appear here)")
+            self._splitter, t("automail.editor_placeholder", "Email Editor")
         )
 
         self._splitter.addWidget(self._config_placeholder)

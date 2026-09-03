@@ -25,7 +25,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import PyJWTError as JWTError
 
-from backend.config import BackendSettings
+from backend.config import get_settings
 from backend.dependencies import get_db, set_request_user_context
 from backend.errors import ErrorCode
 from backend.security import decode_access_token
@@ -52,7 +52,7 @@ async def get_current_user(
     Raises:
         HTTPException (401): If the token is missing, expired, or invalid.
     """
-    settings = BackendSettings()
+    settings = get_settings()
 
     try:
         payload: Dict[str, Any] = decode_access_token(token)

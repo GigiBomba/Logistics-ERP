@@ -31,6 +31,8 @@ class AlertType(str, Enum):
     DOCUMENT_EXPIRY = "document_expiry"
     CONTRACT_EXPIRY = "contract_expiry"
     POLICY_VIOLATION = "policy_violation"
+    COPILOT_CIRCUIT_BREAKER = "copilot_circuit_breaker"
+    COPILOT_TOOL_COMPLETED = "copilot_tool_completed"
 
 
 class Severity(str, Enum):
@@ -55,6 +57,8 @@ _alert_types_display = {
     AlertType.DRIVER_HOURS_DAILY: "Driver Hours Daily",
     AlertType.DOCUMENT_EXPIRY: "Document Expiry",
     AlertType.CONTRACT_EXPIRY: "Contract Expiry",
+    AlertType.COPILOT_CIRCUIT_BREAKER: "Co-Pilot Circuit Breaker",
+    AlertType.COPILOT_TOOL_COMPLETED: "Co-Pilot Task Completed",
 }
 
 

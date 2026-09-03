@@ -147,9 +147,11 @@ class TestFreightProviderSettingsEmpty:
     def test_empty_state_has_title(self, dialog):
         labels = dialog._empty_container.findChildren(QLabel)
         texts = [l.text() for l in labels]
-        # When translations are not loaded, t() returns the key itself.
+        # The title key is "freight.connection.no_providers" — with translations
+        # loaded t() resolves it to real copy ("No providers connected"); without
+        # them it falls back to the key itself. Both contain "providers".
         combined = " ".join(texts)
-        assert "no_providers" in combined
+        assert "providers" in combined.lower()
 
 
 # ── Test: Provider List Display ─────────────────────────────────────────

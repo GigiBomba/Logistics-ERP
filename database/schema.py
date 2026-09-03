@@ -1207,7 +1207,8 @@ INDEX_GPS_TELEMETRY_UNIQUE = (
 # ── Copilot tables (SQLite mirror of the Alembic copilot_* migrations) ──
 # Column contract mirrors the Alembic revisions:
 #   d4e5f6a7b8c4 (copilot_audit_log), e5f6a7b8c9d5 (conversation_summary),
-#   f6a7b8c9d0e6 (copilot_reasoning_graphs), a7b8c9d0e1f7 (copilot_insights)
+#   f6a7b8c9d0e6 (copilot_reasoning_graphs), a7b8c9d0e1f7 (copilot_insights),
+#   i1a2b3c4d5e6 (copilot_autonomy_approvals)
 # using SQLite-friendly types (UUID→TEXT, JSON→TEXT, timestamps→TEXT) and
 # matching the repositories/copilot_repository.py COLUMNS allowlists.
 TABLE_COPILOT_AUDIT_LOG = """
@@ -1303,6 +1304,40 @@ CREATE TABLE IF NOT EXISTS copilot_insights (
 INDEX_COPILOT_INSIGHTS_DEDUP = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
     "ON copilot_insights(company_id, insight_type, payload)"
+)
+
+# Unique (company_id, conversation_id) — makes the reasoning-graph upsert
+# (INSERT ... ON CONFLICT DO UPDATE) a true replace instead of appending a
+# duplicate row per conversation (mirrors the Alembic migration).  Legacy
+# duplicates are removed before this index is built (db_manager dedupes
+# first, mirroring the copilot_insights path).
+INDEX_COPILOT_REASONING_UNIQUE = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_copilot_reasoning_company_conversation "
+    "ON copilot_reasoning_graphs(company_id, conversation_id)"
+)
+
+TABLE_COPILOT_AUTONOMY_APPROVALS = """
+CREATE TABLE IF NOT EXISTS copilot_autonomy_approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    workflow TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+"""
+
+# Unique (company_id, workflow) — the CopilotAutonomyApprovalRepository
+# ON CONFLICT (company_id, workflow) upsert targets this on both SQLite and
+# PostgreSQL (mirrors the Alembic migration i1a2b3c4d5e6).
+INDEX_COPILOT_AUTONOMY_APPROVALS_UNIQUE = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_copilot_autonomy_approvals_company_workflow "
+    "ON copilot_autonomy_approvals(company_id, workflow)"
+)
+INDEX_COPILOT_AUTONOMY_APPROVALS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_copilot_autonomy_approvals_company "
+    "ON copilot_autonomy_approvals(company_id)"
 )
 
 # ── Soft delete: deleted_at for all business tables (P0.7) ───────────

@@ -25,6 +25,11 @@ sharing = [
     "qrcode>=8.0.0",
     "qrcode[pil]>=8.0.0",
 ]
+# Wake-word detection for Enterprise hands-free voice (§3.5, §16).  Kept
+# optional: the desktop app degrades to push-to-talk when it is not installed.
+voice = [
+    "openwakeword>=0.4.0",
+]
 
 # ──────────────────────────────────────────────────────────────
 # Ruff — fast Python linter + formatter (replaces flake8, isort, pyflakes, pycodestyle)
@@ -94,7 +99,12 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = ["--strict-markers", "--tb=short", "-q", "-n", "auto", "--dist=loadscope"]
+# Worker cap for local runs: `-n auto` spawns one worker per CPU core, and
+# every worker imports the full stack (FastAPI backend, PySide6/QApplication,
+# Plotly) — on high-core machines this exhausts RAM/paging file (WinError
+# 1455, MemoryError, collection crashes). CI overrides with its own
+# `-n auto`/sharding flags on the command line, so this cap is local-only.
+addopts = ["--strict-markers", "--tb=short", "-q", "-n", "2", "--dist=loadscope"]
 filterwarnings = [
     "ignore::DeprecationWarning:pytestqt.*",
 ]

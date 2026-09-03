@@ -11,7 +11,7 @@ from __future__ import annotations
 
 
 from typing import Any, Dict
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from datetime import datetime
@@ -78,6 +78,21 @@ def _make_plan(
     )
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_cache():
+    """Quota checks must never depend on live Redis counter state.
+
+    The environment may carry a real ``quota:<company>:<month>`` counter from
+    prior /chat turns — patch the cache to a fresh empty one so the quota
+    assertions are deterministic.
+    """
+    fake = MagicMock()
+    fake.get.return_value = None
+    fake.set.return_value = None
+    with patch("backend.cache.get_cache", return_value=fake):
+        yield fake
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TIER_FEATURES data contract
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +144,67 @@ class TestTierFeaturesContract:
         assert "unknown" not in TIER_FEATURES
         assert "free" not in TIER_FEATURES
         assert "" not in TIER_FEATURES
+
+    def test_help_mode_enabled_on_every_tier(self):
+        """§16/§33.4 — Help Mode access is available on ALL tiers."""
+        for tier in ("pro", "business", "enterprise"):
+            assert TIER_FEATURES[tier].get("help_mode") is True, tier
+
+    def test_pro_has_help_mode_but_no_chat(self):
+        """Pro is the Help-Mode-only tier: help_mode True, chat False."""
+        pro = TIER_FEATURES["pro"]
+        assert pro.get("help_mode") is True
+        assert pro.get("chat") is False
+
+    def test_voice_activation_mobile_keys(self):
+        """§16 — mobile wake-word: enterprise foreground_wake_word, business push_to_talk."""
+        assert TIER_FEATURES["enterprise"].get("voice_activation_mobile") == "foreground_wake_word"
+        assert TIER_FEATURES["business"].get("voice_activation_mobile") == "push_to_talk"
+
+
+class TestRequireAnyFeature:
+    """``require_any_feature`` allows when the tier enables ANY listed feature."""
+
+    @pytest.mark.asyncio
+    async def test_pro_allowed_via_help_mode(self):
+        """Pro lacks chat but has help_mode → the any-of dependency allows."""
+        from backend.copilot.tier_gate import require_any_feature
+
+        dep = require_any_feature("chat", "help_mode")
+        with patch("backend.copilot.tier_gate.check_quota", return_value=True):
+            await dep({"company_id": 1, "subscription_tier": "pro", "is_admin": False, "role": "dispatcher"})
+
+    @pytest.mark.asyncio
+    async def test_tier_with_neither_is_denied(self):
+        """A tier with neither chat nor help_mode → 403."""
+        from fastapi import HTTPException
+        from backend.copilot.tier_gate import require_any_feature
+
+        dep = require_any_feature("chat", "help_mode")
+        with patch("backend.copilot.tier_gate.check_quota", return_value=True):
+            try:
+                await dep({"company_id": 1, "subscription_tier": "unknown", "is_admin": False, "role": "dispatcher"})
+                raise AssertionError("expected 403")
+            except HTTPException as exc:
+                assert exc.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_business_allowed_via_chat(self):
+        """Business has chat → allowed."""
+        from backend.copilot.tier_gate import require_any_feature
+
+        dep = require_any_feature("chat", "help_mode")
+        with patch("backend.copilot.tier_gate.check_quota", return_value=True):
+            await dep({"company_id": 1, "subscription_tier": "business", "is_admin": False, "role": "dispatcher"})
+
+    @pytest.mark.asyncio
+    async def test_enterprise_allowed_via_chat(self):
+        """Enterprise has chat → allowed."""
+        from backend.copilot.tier_gate import require_any_feature
+
+        dep = require_any_feature("chat", "help_mode")
+        with patch("backend.copilot.tier_gate.check_quota", return_value=True):
+            await dep({"company_id": 1, "subscription_tier": "enterprise", "is_admin": False, "role": "dispatcher"})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -464,3 +540,64 @@ class TestRequireFeatureContract:
         (the runtime check happens against the tier config later)."""
         dep = require_feature("time_travel")
         assert callable(dep)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# check_quota call sites — async offload (approved perf fix)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestQuotaAsyncOffload:
+    """check_quota call sites in the async tier-gate dependencies must run
+    through asyncio.to_thread so the synchronous Redis reads never block the
+    event loop.  Behaviour (403/429) is unchanged."""
+
+    @pytest.mark.asyncio
+    async def test_require_feature_offloads_check_quota(self):
+        from backend.copilot.tier_gate import check_quota, require_feature
+
+        dep = require_feature("chat")
+        with patch("asyncio.to_thread", new_callable=AsyncMock, return_value=True) as mock_to_thread:
+            await dep({"company_id": 1, "subscription_tier": "business",
+                       "is_admin": False, "role": "dispatcher"})
+        mock_to_thread.assert_called_once_with(check_quota, 1, "business")
+
+    @pytest.mark.asyncio
+    async def test_require_any_feature_offloads_check_quota(self):
+        from backend.copilot.tier_gate import check_quota, require_any_feature
+
+        dep = require_any_feature("chat", "help_mode")
+        with patch("asyncio.to_thread", new_callable=AsyncMock, return_value=True) as mock_to_thread:
+            await dep({"company_id": 1, "subscription_tier": "business",
+                       "is_admin": False, "role": "dispatcher"})
+        mock_to_thread.assert_called_once_with(check_quota, 1, "business")
+
+    @pytest.mark.asyncio
+    async def test_quota_exceeded_still_returns_429(self):
+        from fastapi import HTTPException
+        from backend.copilot.tier_gate import require_any_feature
+
+        dep = require_any_feature("chat", "help_mode")
+        with patch("backend.copilot.tier_gate.check_quota", return_value=False):
+            try:
+                await dep({"company_id": 1, "subscription_tier": "business",
+                           "is_admin": False, "role": "dispatcher"})
+                raise AssertionError("expected 429")
+            except HTTPException as exc:
+                assert exc.status_code == 429
+                assert exc.detail["message_key"] == "copilot.error.quota_exceeded"
+
+    @pytest.mark.asyncio
+    async def test_feature_denied_still_returns_403(self):
+        from fastapi import HTTPException
+        from backend.copilot.tier_gate import require_feature
+
+        dep = require_feature("chat")
+        with patch("backend.copilot.tier_gate.check_quota", return_value=True):
+            try:
+                await dep({"company_id": 1, "subscription_tier": "pro",
+                           "is_admin": False, "role": "dispatcher"})
+                raise AssertionError("expected 403")
+            except HTTPException as exc:
+                assert exc.status_code == 403
+                assert exc.detail["message_key"] == "copilot.error.feature_not_in_tier"

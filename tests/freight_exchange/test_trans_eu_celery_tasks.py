@@ -158,6 +158,128 @@ class TestProcessFailedWebhooksTask:
                 assert result["processed"] >= 1
 
 
+class TestProcessFailedWebhooksTaskRetryPolicy:
+    """Celery-level retry for trans_eu_process_failed_webhooks.
+
+    Approved fix: max_retries=0 → 3 with a 60s retry delay so a task-level
+    crash (after some rows were already processed/committed) retries promptly
+    instead of waiting for the next 15-minute beat run.  Re-runs must be safe:
+    the SELECT only picks ``status IN ('pending','retrying') AND
+    next_retry_at <= now``, processed rows are committed as ``resolved``, and
+    failed rows advance ``attempt_count``/``next_retry_at`` — so a re-run
+    skips already-handled events.
+    """
+
+    def test_task_retry_policy_configured(self):
+        from backend.celery_app.tasks.trans_eu_tasks import trans_eu_process_failed_webhooks
+        assert trans_eu_process_failed_webhooks.max_retries == 3
+        assert trans_eu_process_failed_webhooks.default_retry_delay == 60
+
+    def test_rerun_is_idempotent_after_partial_failure(self, db, freight_tables):
+        """After a mid-run failure, already-processed rows stay resolved and a
+        re-run only picks up remaining pending/due rows."""
+        now = datetime.now(timezone.utc)
+        for i in range(3):
+            db.conn.execute(
+                "INSERT INTO trans_eu_webhook_events_failed "
+                "(id, company_id, trans_eu_event_id, event_name, payload, "
+                "error_message, error_type, attempt_count, next_retry_at, status, created_at) "
+                "VALUES (?, 1, ?, 'test.event', '{}', "
+                "'error', 'processing', 0, ?, 'pending', ?)",
+                (f"dlq{i + 1}", f"evt_{i + 1}", now.isoformat(), now.isoformat()),
+            )
+        db.conn.commit()
+
+        from backend.celery_app.tasks.trans_eu_tasks import trans_eu_process_failed_webhooks
+
+        # First 2 rows process fine; the 3rd raises (mid-run task failure).
+        call_count = {"n": 0}
+
+        async def fake_process(company_id, event_id, event_name, occurred_at, payload):
+            call_count["n"] += 1
+            if call_count["n"] <= 2:
+                return {"status": "processed", "event_id": event_id}
+            raise RuntimeError("boom after 2 rows")
+
+        service_mock = MagicMock()
+        service_mock.process_webhook = AsyncMock(side_effect=fake_process)
+
+        with patch("backend.celery_app.tasks.trans_eu_tasks.DatabaseManager") as MockDB, \
+                patch(
+                    "services.trans_eu.webhook_ingestion.WebhookIngestionService",
+                    return_value=service_mock,
+                ):
+            MockDB.return_value = db
+            result = trans_eu_process_failed_webhooks()
+
+        assert result["processed"] == 2
+        assert result["total"] == 3
+
+        # Processed rows are committed as resolved; the failing row advanced
+        # attempt_count and got a future next_retry_at (backoff).
+        rows = db.conn.execute(
+            "SELECT id, status, attempt_count, next_retry_at "
+            "FROM trans_eu_webhook_events_failed ORDER BY id",
+        ).fetchall()
+        resolved_ids = sorted(r["id"] for r in rows if r["status"] == "resolved")
+        retrying = [r for r in rows if r["status"] == "retrying"]
+        assert len(resolved_ids) == 2
+        assert len(retrying) == 1
+        failing = retrying[0]
+        assert failing["attempt_count"] == 1
+        assert failing["next_retry_at"] > now.isoformat()
+
+        # Re-run immediately: resolved rows are skipped and the failing row is
+        # not due yet → nothing is reprocessed (idempotent re-run proof).
+        service_mock.process_webhook.reset_mock()
+        call_count["n"] = 0
+        with patch("backend.celery_app.tasks.trans_eu_tasks.DatabaseManager") as MockDB, \
+                patch(
+                    "services.trans_eu.webhook_ingestion.WebhookIngestionService",
+                    return_value=service_mock,
+                ):
+            MockDB.return_value = db
+            result2 = trans_eu_process_failed_webhooks()
+
+        assert result2["processed"] == 0
+        assert result2["total"] == 0
+        assert service_mock.process_webhook.await_count == 0
+
+        # Once the failing row's backoff elapses, the re-run picks up ONLY that
+        # remaining row — the resolved ones are never touched again.
+        past = datetime.fromtimestamp(now.timestamp() - 60, tz=timezone.utc)
+        db.conn.execute(
+            "UPDATE trans_eu_webhook_events_failed SET next_retry_at = ? WHERE id = ?",
+            (past.isoformat(), failing["id"]),
+        )
+        db.conn.commit()
+
+        service_mock.process_webhook.reset_mock()
+        call_count["n"] = 0
+        with patch("backend.celery_app.tasks.trans_eu_tasks.DatabaseManager") as MockDB, \
+                patch(
+                    "services.trans_eu.webhook_ingestion.WebhookIngestionService",
+                    return_value=service_mock,
+                ):
+            MockDB.return_value = db
+            result3 = trans_eu_process_failed_webhooks()
+
+        assert result3["total"] == 1
+        assert result3["processed"] == 1  # the single remaining row was the only one picked
+        assert service_mock.process_webhook.await_count == 1
+        row = db.conn.execute(
+            "SELECT attempt_count, status FROM trans_eu_webhook_events_failed WHERE id = ?",
+            (failing["id"],),
+        ).fetchone()
+        assert row["status"] == "resolved"  # handled once due, not duplicated
+        # All three rows now resolved — the re-run only handled the one remaining row.
+        resolved_count = db.conn.execute(
+            "SELECT COUNT(*) AS n FROM trans_eu_webhook_events_failed "
+            "WHERE status = 'resolved'",
+        ).fetchone()
+        assert resolved_count["n"] == 3
+
+
 class TestHealthCheckTask:
     def test_returns_zero_when_no_connections(self, db):
         """Health check with no Trans.eu connections."""

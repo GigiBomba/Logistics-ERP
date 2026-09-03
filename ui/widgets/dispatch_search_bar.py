@@ -37,6 +37,17 @@ _STATUS_COLORS: dict[str, str] = {
     "Cancelled": COLOR_NEUTRAL_SUBTLE,
 }
 
+# Status-dot diameter. KEPT fixed on purpose: this is a tiny decorative dot
+# next to each filter checkbox. A QLabel's sizeHint (≈13x15) exceeds 8px, so
+# a pure minimums conversion would visibly inflate it — the fixed size is the
+# only way to keep it an 8px circle. Intentional decorative geometry (Phase 2).
+_DOT_SIZE = 8
+
+# Clear (×) button is a compact square icon button: width stays a hard cap
+# (square click target in the search row); height is a minimum floor. The
+# global QPushButton QSS governs the rendered height. Intentional geometry.
+_CLEAR_BTN_SIZE = 28
+
 
 class QtDispatchSearchBar(QFrame):
     """Search + status filter bar above kanban columns.
@@ -104,7 +115,7 @@ class QtDispatchSearchBar(QFrame):
 
             # Colored dot (8px circle)
             dot = QLabel()
-            dot.setFixedSize(8, 8)
+            dot.setFixedSize(_DOT_SIZE, _DOT_SIZE)
             dot.setStyleSheet(
                 f"background-color: {_STATUS_COLORS[status]};"
                 f" border-radius: 4px; border: none;"
@@ -124,7 +135,8 @@ class QtDispatchSearchBar(QFrame):
 
         # Clear button
         clear_btn = ActionButton(parent=row, text="\u2715", variant="ghost")
-        clear_btn.setFixedSize(28, 28)
+        clear_btn.setFixedWidth(_CLEAR_BTN_SIZE)
+        clear_btn.setMinimumHeight(_CLEAR_BTN_SIZE)
         clear_btn.clicked.connect(self._clear)
         row_layout.addWidget(clear_btn)
 

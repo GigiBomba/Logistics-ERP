@@ -13,7 +13,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from backend.config import BackendSettings
+from backend.config import get_settings
 from backend.dependencies_security import get_current_user
 from backend.errors import ErrorCode
 
@@ -78,8 +78,8 @@ async def proxy_support_message(
             },
         )
 
-    # Settings (loaded fresh per-request so env changes are picked up promptly)
-    settings = BackendSettings()
+    # Settings (cached process-global instance; see backend.config.get_settings)
+    settings = get_settings()
 
     # Build the downstream request
     downstream_payload: Dict[str, Any] = {

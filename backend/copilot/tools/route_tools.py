@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
 from backend.copilot.tools.base import BaseTool, ToolExecutionContext
 from backend.copilot.tools.registry import register_tool
+from repositories.route_repository import RouteRepository
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -83,6 +84,23 @@ class RoutePlanMultistopParams(BaseModel):
         None,
         description="List of ISO 3166-1 alpha-2 country codes to exclude from the route.",
     )
+
+
+class RouteListParams(BaseModel):
+    """Input parameters for ``route.list`` (§9.1 Level-0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(50, ge=1, le=200, description="Max routes to return")
+    offset: int = Field(0, ge=0, description="Pagination offset")
+
+
+class RouteGetParams(BaseModel):
+    """Input parameters for ``route.get`` (§9.1 Level-0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    route_id: int = Field(..., gt=0, description="Route ID to fetch")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -539,5 +557,127 @@ class RoutePlanMultistopTool(BaseTool):
             return ToolResult(
                 status="failed",
                 message_key="copilot.route.plan_multistop.error",
+                message_params={"error": str(exc)},
+            )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Tool 4: route.list (§9.1 Level-0)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _scoped_route_repo_call(db, company_id, method_name: str, *args, **kwargs):
+    """Run a RouteRepository method scoped to *company_id* via the tenant context.
+
+    The route repository's list/get methods filter by the ambient tenant
+    context; the tool scopes it explicitly so one company can never read
+    another company's routes.
+    """
+    from database.tenant_context import get_company_id, set_company_context
+
+    prev = get_company_id()
+    set_company_context(company_id)
+    try:
+        return getattr(RouteRepository(db), method_name)(*args, **kwargs)
+    finally:
+        set_company_context(prev)
+
+
+@register_tool
+class RouteListTool(BaseTool):
+    """List the most recent saved routes (route history) for the company."""
+
+    name = "route.list"
+    tool_version = "1.0.0"
+    description = (
+        "List the most recent saved routes for the company — route history "
+        "with distance, duration, stops and totals."
+    )
+    required_permission = "routes:read"
+    confirmation_level = ConfirmationLevel.SAFE
+    supports_undo = False
+    parameters_schema = RouteListParams
+
+    async def validate(self, params: BaseModel, ctx: ToolExecutionContext) -> List[str]:
+        return []
+
+    async def execute(self, params: BaseModel, ctx: ToolExecutionContext) -> ToolResult:
+        p: RouteListParams = params  # type: ignore[assignment]
+        db = ctx.services.get("db")
+        if db is None:
+            return ToolResult(
+                status="unavailable",
+                message_key="copilot.error.no_db",
+                message_params={"tool": self.name},
+            )
+        try:
+            company_id = ctx.services.get("company_id", 0)
+            rows = _scoped_route_repo_call(db, company_id, "get_all", limit=p.limit, offset=p.offset)
+            rows = rows or []
+            return ToolResult(
+                status="success",
+                data={"routes": rows, "total": len(rows)},
+                message_key="copilot.route.list.success",
+                message_params={"total": len(rows)},
+            )
+        except Exception as exc:
+            return ToolResult(
+                status="failed",
+                message_key="copilot.route.list.error",
+                message_params={"error": str(exc)},
+            )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Tool 5: route.get (§9.1 Level-0)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+@register_tool
+class RouteGetTool(BaseTool):
+    """Fetch one saved route by id (route history)."""
+
+    name = "route.get"
+    tool_version = "1.0.0"
+    description = (
+        "Fetch a single saved route by its id — stops, distance, duration "
+        "and estimates."
+    )
+    required_permission = "routes:read"
+    confirmation_level = ConfirmationLevel.SAFE
+    supports_undo = False
+    parameters_schema = RouteGetParams
+
+    async def validate(self, params: BaseModel, ctx: ToolExecutionContext) -> List[str]:
+        return []
+
+    async def execute(self, params: BaseModel, ctx: ToolExecutionContext) -> ToolResult:
+        p: RouteGetParams = params  # type: ignore[assignment]
+        db = ctx.services.get("db")
+        if db is None:
+            return ToolResult(
+                status="unavailable",
+                message_key="copilot.error.no_db",
+                message_params={"tool": self.name},
+            )
+        try:
+            company_id = ctx.services.get("company_id", 0)
+            row = _scoped_route_repo_call(db, company_id, "get_by_id", p.route_id)
+            if not row:
+                return ToolResult(
+                    status="failed",
+                    message_key="copilot.route.not_found",
+                    message_params={"route_id": p.route_id},
+                )
+            return ToolResult(
+                status="success",
+                data={"route": row},
+                message_key="copilot.route.get.success",
+                message_params={"route_id": p.route_id},
+            )
+        except Exception as exc:
+            return ToolResult(
+                status="failed",
+                message_key="copilot.route.get.error",
                 message_params={"error": str(exc)},
             )

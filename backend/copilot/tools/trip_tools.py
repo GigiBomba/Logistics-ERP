@@ -8,11 +8,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
 from backend.copilot.tools.base import BaseTool, ToolExecutionContext
 from backend.copilot.tools.registry import register_tool
+from repositories.trip_repository import TripRepository
 from services.calculator import TripCalculator
 
 logger = logging.getLogger(__name__)
@@ -136,5 +137,138 @@ class CalculateProfitabilityTool(BaseTool):
             message_key="copilot.trip.calculate_profitability.success",
             message_params={},
         )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# trip.list / trip.get (§9.1 Level-0 read tools)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+class TripListParams(BaseModel):
+    """Input parameters for ``trip.list`` (§9.1 Level-0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(50, ge=1, le=200, description="Max trips to return")
+    offset: int = Field(0, ge=0, description="Pagination offset")
+
+
+class TripGetParams(BaseModel):
+    """Input parameters for ``trip.get`` (§9.1 Level-0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trip_id: int = Field(..., gt=0, description="Trip ID to fetch")
+
+
+def _scoped_trip_repo_call(db, scope_company_id, method_name: str, *args, **kwargs):
+    """Run a TripRepository method scoped to *scope_company_id* via the tenant context."""
+    from database.tenant_context import get_company_id, set_company_context
+
+    prev = get_company_id()
+    set_company_context(scope_company_id)
+    try:
+        return getattr(TripRepository(db), method_name)(*args, **kwargs)
+    finally:
+        set_company_context(prev)
+
+
+@register_tool
+class TripListTool(BaseTool):
+    """List recent trips for the company."""
+
+    name = "trip.list"
+    tool_version = "1.0.0"
+    description = (
+        "List the most recent trips for the company — status, dates, "
+        "client, truck and profitability fields."
+    )
+    required_permission = "trips:read"
+    confirmation_level = ConfirmationLevel.SAFE
+    supports_undo = False
+    deprecated = False
+    parameters_schema = TripListParams
+
+    async def validate(self, params: BaseModel, ctx: ToolExecutionContext) -> list[str]:
+        return []
+
+    async def execute(self, params: BaseModel, ctx: ToolExecutionContext) -> ToolResult:
+        p: TripListParams = params  # type: ignore[assignment]
+        db = ctx.services.get("db")
+        if db is None:
+            return ToolResult(
+                status="unavailable",
+                message_key="copilot.error.no_db",
+                message_params={"tool": self.name},
+            )
+        try:
+            company_id = ctx.services.get("company_id", 0)
+            rows = _scoped_trip_repo_call(db, company_id, "get_all", limit=p.limit, offset=p.offset)
+            rows = rows or []
+            return ToolResult(
+                status="success",
+                data={"trips": rows, "total": len(rows)},
+                message_key="copilot.trip.list.success",
+                message_params={"total": len(rows)},
+            )
+        except Exception as exc:
+            logger.exception("trip.list failed")
+            return ToolResult(
+                status="failed",
+                message_key="copilot.trip.list.error",
+                message_params={"error": str(exc)},
+            )
+
+
+@register_tool
+class TripGetTool(BaseTool):
+    """Fetch one trip by id."""
+
+    name = "trip.get"
+    tool_version = "1.0.0"
+    description = (
+        "Fetch a single trip by its id — status, dates, client, truck and "
+        "profitability fields."
+    )
+    required_permission = "trips:read"
+    confirmation_level = ConfirmationLevel.SAFE
+    supports_undo = False
+    deprecated = False
+    parameters_schema = TripGetParams
+
+    async def validate(self, params: BaseModel, ctx: ToolExecutionContext) -> list[str]:
+        return []
+
+    async def execute(self, params: BaseModel, ctx: ToolExecutionContext) -> ToolResult:
+        p: TripGetParams = params  # type: ignore[assignment]
+        db = ctx.services.get("db")
+        if db is None:
+            return ToolResult(
+                status="unavailable",
+                message_key="copilot.error.no_db",
+                message_params={"tool": self.name},
+            )
+        try:
+            company_id = ctx.services.get("company_id", 0)
+            row = _scoped_trip_repo_call(db, company_id, "get_by_id", p.trip_id, company_id=company_id)
+            if not row:
+                return ToolResult(
+                    status="failed",
+                    message_key="copilot.trip.not_found",
+                    message_params={"trip_id": p.trip_id},
+                )
+            return ToolResult(
+                status="success",
+                data={"trip": row},
+                message_key="copilot.trip.get.success",
+                message_params={"trip_id": p.trip_id},
+            )
+        except Exception as exc:
+            logger.exception("trip.get failed")
+            return ToolResult(
+                status="failed",
+                message_key="copilot.trip.get.error",
+                message_params={"error": str(exc)},
+            )
 
 

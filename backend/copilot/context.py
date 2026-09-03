@@ -112,6 +112,39 @@ async def delete_conversation_context(
     cache.delete(_conversation_key(company_id, user_id, conversation_id))
 
 
+async def get_conversation_turns(
+    company_id: int, user_id: int, conversation_id: str
+) -> List[dict]:
+    """Return the turn history for a conversation (empty list when none)."""
+    ctx = await load_conversation_context(company_id, user_id, conversation_id)
+    return list(ctx.turns)
+
+
+async def append_conversation_turn(
+    company_id: int,
+    user_id: int,
+    conversation_id: str,
+    role: str,
+    content: Any,
+) -> ConversationContext:
+    """Append one turn to a conversation's memory store and persist (§11).
+
+    ``role`` is ``"user"`` or ``"assistant"``; ``content`` is stored as-is
+    (the router stores a structured dict for assistant turns).  The turn list
+    is pruned to ``ConversationContext.max_turns`` so it never grows unbounded.
+    """
+    ctx = await load_conversation_context(company_id, user_id, conversation_id)
+    ctx.turns.append({
+        "role": role,
+        "content": content,
+        "timestamp": datetime.utcnow().isoformat(),
+    })
+    if len(ctx.turns) > ctx.max_turns:
+        ctx.turns = ctx.turns[-ctx.max_turns:]
+    await save_conversation_context(company_id, user_id, ctx)
+    return ctx
+
+
 # ── Global Context ─────────────────────────────────────────────────────────
 
 async def build_global_context(

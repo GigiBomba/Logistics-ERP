@@ -29,12 +29,15 @@ class AudioRecorder(QObject):
         recording_started: Emitted when capture begins.
         recording_stopped: Emitted when capture ends.
         audio_ready: Delivers the recorded raw PCM ``bytes`` after stop.
+        chunk_ready: Delivers each raw PCM ``bytes`` chunk as it arrives
+            (streaming mode — used by continuous wake-word monitoring).
         error_occurred: Emitted on device or format errors with a message.
     """
 
     recording_started = Signal()
     recording_stopped = Signal()
     audio_ready = Signal(bytes)
+    chunk_ready = Signal(bytes)
     error_occurred = Signal(str)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
@@ -110,15 +113,24 @@ class AudioRecorder(QObject):
         self.audio_ready.emit(result)
         return result
 
+    def clear_buffer(self) -> None:
+        """Discard accumulated PCM without stopping capture.
+
+        Used by the wake-word monitor so the utterance buffer only ever
+        holds the current in-flight chunk while keyword detection streams.
+        """
+        self._buffer.clear()
+
     # ── Internal ────────────────────────────────────────────────────────
 
     def _on_ready_read(self) -> None:
-        """Accumulate incoming PCM chunks into the internal buffer."""
+        """Accumulate incoming PCM chunks and stream them via ``chunk_ready``."""
         io = self.sender()
         if io is None:
             return
         chunk = io.readAll()
         self._buffer.append(chunk)
+        self.chunk_ready.emit(chunk.data())
 
 
 def _format_name(fmt: QAudioFormat) -> str:

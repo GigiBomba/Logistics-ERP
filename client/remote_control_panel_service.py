@@ -16,7 +16,7 @@ renders empty states instead of crashing.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger("remote_control_panel")
 
@@ -26,15 +26,6 @@ class RemoteControlPanelService:
 
     def __init__(self, api_client) -> None:
         self._api = api_client
-
-    @staticmethod
-    def _query_params(**kwargs: Any) -> dict:
-        """Strip ``None``/empty-string values from query params.
-
-        Mirrors ``ApiClient._clean_params`` without depending on the client
-        instance, so the wrapper keeps a predictable surface for mocks.
-        """
-        return {k: v for k, v in kwargs.items() if v is not None and v != ""}
 
     # ── Alerts ─────────────────────────────────────────────────────────────
 
@@ -49,7 +40,7 @@ class RemoteControlPanelService:
         """
         try:
             resp = self._api._get(
-                "/api/v1/alerts/", params=self._query_params(kind=kind),
+                "/api/v1/alerts/", params=self._api._clean_params(kind=kind),
             )
             return resp.get("items", []) if isinstance(resp, dict) else []
         except Exception:
@@ -114,7 +105,7 @@ class RemoteControlPanelService:
         try:
             resp = self._api._get(
                 "/api/v1/dispatch/driver-hours",
-                params=self._query_params(week_start=week_start),
+                params=self._api._clean_params(week_start=week_start),
             )
             return resp.get("drivers", []) if isinstance(resp, dict) else []
         except Exception:

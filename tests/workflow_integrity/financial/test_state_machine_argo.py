@@ -109,6 +109,8 @@ class TestArgoPlanStateMachine:
             "awaiting_clarification",
             "awaiting_confirmation",
             "executing",
+            "paused",
+            "stopped",
             "summarizing",
             "completed",
             "partially_completed",
@@ -412,12 +414,12 @@ class TestArgoPermissionGates:
         assert tool is not None, "dispatch.create tool must be registered"
         assert _check_tool_permission(tool, "driver") is False
 
-    def test_driver_can_read_vehicle(self):
-        """Driver role should be able to use read-only tools."""
+    def test_driver_cannot_read_vehicle(self):
+        """Driver role has no fleet resource — vehicle.search must be denied."""
         from backend.copilot.tools.registry import get_tool
         tool = get_tool("vehicle.search")
         assert tool is not None, "vehicle.search tool must be registered"
-        assert _check_tool_permission(tool, "driver") is True
+        assert _check_tool_permission(tool, "driver") is False
 
     def test_dispatcher_can_write_dispatch(self):
         """Dispatcher role should be able to write to dispatch resources."""

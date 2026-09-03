@@ -40,8 +40,8 @@ _SEVERITY_COLORS: dict[str, str] = {
 
 _NAV_DESTINATIONS: dict[str, str] = {
     "trip_delay": "dispatch_board",
-    "maintenance": "maintenance_control",
-    "inspection": "maintenance_control",
+    "maintenance": "maintenance",
+    "inspection": "maintenance",
     "insurance": "fleet",
     "overdue_invoice": "invoices",
     "inactive_truck": "fleet",
@@ -199,7 +199,9 @@ class QtAlertPanel(QFrame):
         sev_key = f"alerts.severity_{sev.lower()}"
         chip = QLabel(t(sev_key))
         chip.setProperty("role", "alert-chip")
-        chip.setFixedSize(60, 22)
+        # DPI-safe (Phase 2): floor only, so the chip can widen for long
+        # severity labels at 125-150% Windows scaling instead of clipping.
+        chip.setMinimumSize(60, 22)
         chip.setAlignment(Qt.AlignCenter)
         chip.setStyleSheet(
             f"background-color: {sev_color}; color: {TEXT_WHITE};"

@@ -135,7 +135,9 @@ class QtHistoryView(BaseView):
     def _build_header(self, parent_layout: QVBoxLayout) -> None:
         header = QFrame()
         header.setObjectName("card")
-        header.setFixedHeight(72)
+        # Min-height (not fixed) so a long page title can lay out on one or
+        # two lines without clipping the subtitle below it.
+        header.setMinimumHeight(72)
         hdr_layout = QVBoxLayout(header)
         hdr_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
 
@@ -210,9 +212,12 @@ class QtHistoryView(BaseView):
         self.table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
-        self.table.horizontalHeader().setStretchLastSection(False)
-        for i in range(len(columns)):
-            self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
+        # Interactive sections with a readable minimum — header text is
+        # never elided; columns are resized to fit after data loads.
+        hdr = self.table.horizontalHeader()
+        hdr.setStretchLastSection(False)
+        hdr.setMinimumSectionSize(80)
+        hdr.setSectionResizeMode(QHeaderView.Interactive)
         # Align numeric columns to the right
         for cid in ("distance_km", "gross_per_km", "net_profit"):
             self.table.set_column_alignment(cid, Qt.AlignRight | Qt.AlignVCenter)
@@ -308,6 +313,8 @@ class QtHistoryView(BaseView):
             })
         self.table.set_data(data)
         self.table.restore_column_widths()
+        # Fit every column (header + content) so headers are never elided.
+        self.table.horizontalHeader().resizeSections(QHeaderView.ResizeToContents)
         self._apply_status_colors(data)
         self._apply_profit_colors(data)
         self._count_lbl.setText(f" ({len(trips)} / {self._limit})")
@@ -322,7 +329,9 @@ class QtHistoryView(BaseView):
         col_idx = self.table._column_ids.index("status") if "status" in self.table._column_ids else -1
         if col_idx < 0:
             return
-        for r, row in enumerate(data):
+        # Iterate the table's own (sorted) rows so colors land on the rows
+        # they were computed for.
+        for r, row in enumerate(self.table._data):
             raw = row.get("status", "")
             tag_key = _STATUS_TAG_LOOKUP.get(raw.strip().lower(), "")
             color = STATUS_TAG_KEYS.get(tag_key)
@@ -336,7 +345,9 @@ class QtHistoryView(BaseView):
         col_idx = self.table._column_ids.index("net_profit") if "net_profit" in self.table._column_ids else -1
         if col_idx < 0:
             return
-        for r, row in enumerate(data):
+        # Iterate the table's own (sorted) rows so zero/negative/positive
+        # values get the right color.
+        for r, row in enumerate(self.table._data):
             profit = float(row.get("net_profit", 0) or 0)
             item = self.table.item(r, col_idx)
             if item:

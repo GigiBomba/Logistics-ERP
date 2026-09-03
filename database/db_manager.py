@@ -672,6 +672,12 @@ class DatabaseManager:
             # INSERT OR IGNORE translation still dedups correctly.
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
             "ON copilot_insights(company_id, insight_type, (payload::text))",
+            # Copilot reasoning graphs — one graph per (company_id,
+            # conversation_id) so the repository's ON CONFLICT upsert is a
+            # true replace.  Runs AFTER Alembic so the table (migration
+            # f6a7b8c9d0e6, + the unique index from j2b3c4d5e6f0) exists.
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_copilot_reasoning_company_conversation "
+            "ON copilot_reasoning_graphs(company_id, conversation_id)",
             # R1 (Phase E): id tiebreak watermark column on sync_cursors.
             "ALTER TABLE sync_cursors ADD COLUMN IF NOT EXISTS last_id BIGINT NOT NULL DEFAULT 0",
         ]
@@ -881,6 +887,7 @@ class DatabaseManager:
             # removed (dedupe-before-unique-index), not here.
             S.TABLE_COPILOT_AUDIT_LOG, S.TABLE_CONVERSATION_SUMMARY,
             S.TABLE_COPILOT_REASONING_GRAPHS, S.TABLE_COPILOT_INSIGHTS,
+            S.TABLE_COPILOT_AUTONOMY_APPROVALS,
             # Multi-tenant company_id indexes (single + composite) are created
             # in _run_column_migrations too — their columns only exist after
             # the column migrations run.
@@ -1560,6 +1567,25 @@ class DatabaseManager:
             ("user_id", "ALTER TABLE operation_events ADD COLUMN user_id INTEGER DEFAULT 0"),
         ])
 
+        # ── Copilot audit log: add action/entity tracking columns ────────
+        # Legacy SQLite DBs created before TABLE_COPILOT_AUDIT_LOG gained
+        # these columns (database/schema.py) do NOT receive them from CREATE
+        # TABLE IF NOT EXISTS — that clause is a no-op on existing tables.
+        # copilot_repository.py INSERTs action, entity_type, entity_id,
+        # old_value, new_value, performed_by on every log_action() /
+        # log_step_execution() call, so without this migration they fail with
+        # "table copilot_audit_log has no column named ...".  Column types
+        # mirror schema.py exactly (all nullable TEXT).  _ensure_columns is
+        # idempotent (column-exists check) and runs on every init.
+        self._ensure_columns("copilot_audit_log", [
+            ("action", "ALTER TABLE copilot_audit_log ADD COLUMN action TEXT"),
+            ("entity_type", "ALTER TABLE copilot_audit_log ADD COLUMN entity_type TEXT"),
+            ("entity_id", "ALTER TABLE copilot_audit_log ADD COLUMN entity_id TEXT"),
+            ("old_value", "ALTER TABLE copilot_audit_log ADD COLUMN old_value TEXT"),
+            ("new_value", "ALTER TABLE copilot_audit_log ADD COLUMN new_value TEXT"),
+            ("performed_by", "ALTER TABLE copilot_audit_log ADD COLUMN performed_by TEXT"),
+        ])
+
         # ── Dedupe before unique indexes ─────────────────────────────────
         # A legacy DB may contain duplicate gps_telemetry rows (same
         # truck_id, recorded_at) or copilot_insights rows (same company_id,
@@ -1585,6 +1611,19 @@ class DatabaseManager:
                 )
             except Exception as e:
                 logger.warning("Dedupe copilot_insights failed: %s", e)
+        # Same guard for copilot_reasoning_graphs: a legacy DB may hold
+        # duplicate graphs per (company_id, conversation_id) written before
+        # the unique index existed (the pre-fix upsert APPENDED a row per
+        # re-run).  DELETE duplicates first, then create the unique index.
+        if not self._index_exists("uq_copilot_reasoning_company_conversation"):
+            try:
+                self.conn.execute(
+                    "DELETE FROM copilot_reasoning_graphs WHERE rowid NOT IN "
+                    "(SELECT MIN(rowid) FROM copilot_reasoning_graphs "
+                    "GROUP BY company_id, conversation_id)"
+                )
+            except Exception as e:
+                logger.warning("Dedupe copilot_reasoning_graphs failed: %s", e)
 
         # ── Additional performance indexes ───────────────────────────────
         # These reference columns (month, expiry_date, client_id,
@@ -1596,6 +1635,9 @@ class DatabaseManager:
             S.INDEX_GPS_TRUCK_TIME,
             S.INDEX_GPS_TELEMETRY_UNIQUE,
             S.INDEX_COPILOT_INSIGHTS_DEDUP,
+            S.INDEX_COPILOT_REASONING_UNIQUE,
+            S.INDEX_COPILOT_AUTONOMY_APPROVALS_UNIQUE,
+            S.INDEX_COPILOT_AUTONOMY_APPROVALS_COMPANY,
             S.INDEX_CMR_AUDIT_EVENT_TYPE,
             S.INDEX_EMAIL_LOGS_TRIP,
             S.INDEX_EMAIL_LOGS_STATUS,
@@ -2020,7 +2062,21 @@ class DatabaseManager:
             if not update_of_cols:
                 logger.warning("outbox trigger: %s has no business columns, skipping", table)
                 continue
-            json_args = ", ".join(f"'{c}', OLD.\"{c}\"" for c in json_cols)
+            # json_object() is limited to ~127 function arguments (2 per
+            # column), so a wide table (e.g. trips with 70+ columns after
+            # migrations) would fail with "too many arguments on function
+            # json_object".  Simple chunk-and-merge does NOT work either:
+            # ``||`` string-concatenates JSON texts into invalid JSON
+            # ('{"a":1}{"b":2}') and json_patch drops any column whose
+            # value is NULL.  Instead serialize the whole OLD row through
+            # the aggregate json_group_object(k, v) — always exactly 2
+            # function arguments per call regardless of column count — fed
+            # by a UNION ALL one-row-per-column subquery.  Every column
+            # (including NULLs) ends up in one valid JSON object.
+            pair_rows = " UNION ALL ".join(
+                f"SELECT '{c}' AS k, OLD.\"{c}\" AS v" for c in json_cols
+            )
+            json_expr = f"(SELECT json_group_object(k, v) FROM ({pair_rows}))"
             # DROP first so the embedded json_object column list is rebuilt
             # fresh on every boot (see docstring).
             drop_statements = [
@@ -2048,7 +2104,7 @@ class DatabaseManager:
                     f"AFTER DELETE ON {table} FOR EACH ROW "
                     f"WHEN NOT EXISTS (SELECT 1 FROM sync_meta WHERE key='sync_in_progress' AND value='1') "
                     f"BEGIN INSERT INTO sync_outbox (entity_type, op, local_id, payload_json) "
-                    f"VALUES ('{entity_type}', 'DELETE', OLD.id, json_object({json_args})); END;"
+                    f"VALUES ('{entity_type}', 'DELETE', OLD.id, {json_expr}); END;"
                 ),
             ]
             for stmt in drop_statements + statements:

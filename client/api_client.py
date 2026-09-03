@@ -8,11 +8,16 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from client.auth import Auth
+from client.cache import LocalCache
 from client.config import ClientConfig, get_client_config
 
 logger = logging.getLogger(__name__)
 
 _default_config: Optional[ClientConfig] = None
+
+# Short-TTL cache for the online probe. Company-scoped so concurrent users on
+# the same machine never share a status flag (per-tenant isolation).
+_status_cache = LocalCache(ttl=3)
 
 
 class PdfWithRecord(bytes):
@@ -76,13 +81,40 @@ class ApiClient:
             self._client.headers.pop("Authorization", None)
 
     def is_online(self) -> bool:
-        if self._online is None:
-            try:
-                resp = self._client.get(f"{self._base_url}/api/v1/health/")
-                self._online = resp.status_code == 200
-            except Exception:
-                self._online = False
+        if self._online is not None:
+            return self._online
+        cid = self._resolve_company_id()
+        if cid is not None:
+            cached = _status_cache.get(f"online:{cid}")
+            if cached is not None:
+                self._online = bool(cached)
+                return self._online
+        try:
+            resp = self._client.get(f"{self._base_url}/api/v1/health/")
+            self._online = resp.status_code == 200
+        except Exception:
+            self._online = False
+        if cid is not None:
+            _status_cache.set(f"online:{cid}", self._online)
         return self._online
+
+    def _resolve_company_id(self) -> Optional[int]:
+        """Derive the requesting company id from the auth token JWT claims.
+
+        Returns ``None`` when not authenticated / claim absent so callers can
+        make any cache/feature opt-in per call (never shared across tenants).
+        """
+        auth = getattr(self, "_auth", None)
+        token = getattr(auth, "token", None)
+        if not isinstance(token, str) or not token:
+            return None
+        try:
+            from client.auth import _decode_jwt_payload
+            claims = _decode_jwt_payload(token)
+            cid = claims.get("company_id")
+            return int(cid) if cid else None
+        except Exception:
+            return None
 
     def get(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         """Public GET returning parsed JSON (used by the sync pull lane)."""
@@ -129,14 +161,14 @@ class ApiClient:
             clear_auth()
         return False
 
-    _TRANSIENT_STATUSES = {502, 503, 504}
+    _TRANSIENT_STATUSES = {500, 502, 503, 504}
     _CIRCUIT_BREAKER_THRESHOLD = 5   # consecutive transient failures before opening
     _CIRCUIT_BREAKER_COOLDOWN = 30   # seconds to stay open before half-open probe
 
     def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Make an HTTP request with exponential backoff retry (up to 3 attempts).
 
-        Retries on connection errors AND transient server errors (502, 503, 504).
+        Retries on connection errors AND transient server errors (500, 502, 503, 504).
 
         Includes a circuit breaker: after N consecutive transient failures,
         the client enters an open state and fails fast for a cooldown period
@@ -461,6 +493,16 @@ class ApiClient:
 
     def get_client_dashboard(self, client_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/clients/{client_id}/dashboard")
+
+    def get_dashboards_batch(self, ids) -> Dict[str, Any]:
+        """Fetch dashboard revenue/trip_count for many client ids in one call.
+
+        Additive backend endpoint ``POST /api/v1/clients/dashboard-batch``
+        (company-scoped server-side). Raises on unsupported / error so callers
+        can fall back to per-client requests.
+        """
+        return self._post("/api/v1/clients/dashboard-batch",
+                          json_data={"ids": list(ids)})
 
     def get_client_trips(self, client_id: int, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
         return self._get(f"/api/v1/clients/{client_id}/trips",
@@ -958,6 +1000,17 @@ class ApiClient:
 
     def health_check(self) -> Dict[str, Any]:
         return self._get("/api/v1/health")
+
+    # ── Co-Pilot endpoints ─────────────────────────────────────────────
+
+    def get_copilot_observability(self) -> Dict[str, Any]:
+        """GET /api/v1/copilot/observability — Co-Pilot observability aggregates.
+
+        Read-only; returns tool failure rate, abandonment rate, circuit-breaker
+        trips, confidence distribution and per-phase timings for the calling
+        company (§23.6 dev-toolkit panel).
+        """
+        return self._get("/api/v1/copilot/observability")
 
     # ── User management endpoints ────────────────────────────────────────
 

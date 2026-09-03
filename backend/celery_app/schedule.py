@@ -41,6 +41,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "backend.celery_app.tasks.insight_tasks.driver_hours_forecast_job",
         "schedule": crontab(hour=7, minute=30),
     },
+    "workflow-struggle-daily": {
+        "task": "backend.celery_app.tasks.insight_tasks.workflow_struggle_job",
+        "schedule": crontab(hour=8, minute=0),  # 8 AM daily — §18 workflow abandonment nudge
+    },
     "copilot-retention-daily": {
         "task": "backend.celery_app.tasks.retention_tasks.enforce_copilot_retention",
         "schedule": crontab(hour=4, minute=0),  # 4 AM daily

@@ -1,8 +1,22 @@
 name: Load & Chaos Tests
 
+# Only run on pushes/PRs that touch backend or load/chaos test code.
+# Manual dispatch remains available as an always-on override.
 on:
   push:
+    paths:
+      - "backend/**"
+      - "tests/loadtest/**"
+      - "tests/chaos/**"
+      - "requirements*.txt"
+      - ".github/workflows/loadtest.yml"
   pull_request:
+    paths:
+      - "backend/**"
+      - "tests/loadtest/**"
+      - "tests/chaos/**"
+      - "requirements*.txt"
+      - ".github/workflows/loadtest.yml"
   workflow_dispatch:
 
 jobs:

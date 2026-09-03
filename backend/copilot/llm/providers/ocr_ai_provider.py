@@ -41,6 +41,11 @@ DEFAULT_TIMEOUT_S = 120
 _MAX_TOKENS = 4096
 _TEMPERATURE = 0.2
 
+# Ollama gemma3:4b is now served with a 64k-token context window; the explicit
+# num_ctx overrides Ollama's low default (often 2048), which would otherwise
+# silently truncate the catalog + conversation history fed to the model.
+OLLAMA_NUM_CTX: int = 65536
+
 # Cap on accumulated streaming text to prevent unbounded memory growth.
 _MAX_STREAM_CHARS = 100_000
 
@@ -68,25 +73,25 @@ class OcrAIProvider(LLMProvider):
         self._api_mode = DEFAULT_API_MODE
         self._timeout_s = DEFAULT_TIMEOUT_S
         self._api_key: str = ""
-        self._client: Optional[httpx.AsyncClient] = None
 
     # ── HTTP client ───────────────────────────────────────────────────
 
     def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout_s))
-        return self._client
+        """Return a fresh AsyncClient bound to the *current* event loop.
+
+        The client is deliberately not cached: each utterance runs in its own
+        ``asyncio.run()`` loop, so a cached client would be bound to a dead
+        loop and raise "Event loop is closed" on the next use.  The previous
+        client (if any) is dropped — its connections were already torn down
+        when its loop closed.
+        """
+        return httpx.AsyncClient(timeout=httpx.Timeout(self._timeout_s))
 
     def _auth_headers(self) -> dict[str, str]:
         """Return auth headers for the self-hosted endpoint."""
         if self._api_key:
             return {"Authorization": f"Bearer {self._api_key}"}
         return {}
-
-    async def _close_client(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
 
     # ── Settings management ──────────────────────────────────────────
 
@@ -122,8 +127,6 @@ class OcrAIProvider(LLMProvider):
                     self._timeout_s = int(settings["qwen_timeout_s"])
                 except ValueError:
                     pass
-            # Recreate client so the new timeout takes effect
-            self._client = None
             logger.info(
                 "OcrAIProvider settings updated: endpoint=%s model=%s api_mode=%s",
                 self._endpoint, self.model_id, self._api_mode,
@@ -183,59 +186,83 @@ class OcrAIProvider(LLMProvider):
     async def _generate_openai(self, request: LLMRequest, start: float) -> LLMResponse:
         """Generate via OpenAI-compatible ``/v1/chat/completions``."""
         client = self._get_client()
-        url = self._endpoint.rstrip("/") + "/v1/chat/completions"
+        try:
+            url = self._endpoint.rstrip("/") + "/v1/chat/completions"
 
-        messages = self._build_chat_messages(request.messages)
-        sys_prompt = self._system_prompt(request.messages)
-        if sys_prompt:
-            messages.insert(0, {"role": "system", "content": sys_prompt})
+            messages = self._build_chat_messages(request.messages)
+            sys_prompt = self._system_prompt(request.messages)
+            if sys_prompt:
+                messages.insert(0, {"role": "system", "content": sys_prompt})
 
-        headers = self._auth_headers()
-        payload: Dict[str, Any] = {
-            "model": self.model_id,
-            "messages": messages,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-            "stream": False,
-        }
+            headers = self._auth_headers()
+            # num_ctx is only sent on the native Ollama path (/api/generate); a
+            # generic OpenAI-compatible server may reject unknown keys, so it is
+            # deliberately omitted here.
+            payload: Dict[str, Any] = {
+                "model": self.model_id,
+                "messages": messages,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "stream": False,
+            }
 
-        if request.response_format == "json":
-            payload["response_format"] = {"type": "json_object"}
+            if request.response_format == "json":
+                payload["response_format"] = {"type": "json_object"}
 
-        response = await client.post(url, json=payload, headers=headers)
-        latency_ms = int((time.monotonic() - start) * 1000)
+            # Defensive guard: only ever send `tools` when this endpoint actually
+            # supports tool calling AND the request carries tools.  Today
+            # ``supports_tool_calling`` is False (Gemma 3:4B tool support via this
+            # endpoint is unverified) so the payload never contains "tools" — this
+            # guard keeps that invariant even if the flag is flipped later.
+            if self.supports_tool_calling and request.tools:
+                payload["tools"] = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.parameters_json_schema,
+                        },
+                    }
+                    for tool in request.tools
+                ]
 
-        if response.status_code != 200:
-            logger.warning(
-                "OcrAIProvider OpenAI-compat returned HTTP %d: %s",
-                response.status_code, response.text[:300],
-            )
+            response = await client.post(url, json=payload, headers=headers)
+            latency_ms = int((time.monotonic() - start) * 1000)
+
+            if response.status_code != 200:
+                logger.warning(
+                    "OcrAIProvider OpenAI-compat returned HTTP %d: %s",
+                    response.status_code, response.text[:300],
+                )
+                return LLMResponse(
+                    content="", latency_ms=latency_ms,
+                    provider_id=self.provider_id, model_id=self.model_id,
+                    finish_reason="error",
+                )
+
+            data = response.json()
+            choice = data.get("choices", [{}])[0]
+            content = choice.get("message", {}).get("content", "")
+            finish = choice.get("finish_reason", "stop")
+
+            finish_reason: Literal["stop", "tool_call", "max_tokens", "error"] = "stop"
+            if finish == "length":
+                finish_reason = "max_tokens"
+            elif finish == "tool_calls":
+                finish_reason = "tool_call"
+
             return LLMResponse(
-                content="", latency_ms=latency_ms,
-                provider_id=self.provider_id, model_id=self.model_id,
-                finish_reason="error",
+                content=content or "",
+                latency_ms=latency_ms,
+                input_tokens=data.get("usage", {}).get("prompt_tokens", 0),
+                output_tokens=data.get("usage", {}).get("completion_tokens", 0),
+                provider_id=self.provider_id,
+                model_id=self.model_id,
+                finish_reason=finish_reason,
             )
-
-        data = response.json()
-        choice = data.get("choices", [{}])[0]
-        content = choice.get("message", {}).get("content", "")
-        finish = choice.get("finish_reason", "stop")
-
-        finish_reason: Literal["stop", "tool_call", "max_tokens", "error"] = "stop"
-        if finish == "length":
-            finish_reason = "max_tokens"
-        elif finish == "tool_calls":
-            finish_reason = "tool_call"
-
-        return LLMResponse(
-            content=content or "",
-            latency_ms=latency_ms,
-            input_tokens=data.get("usage", {}).get("prompt_tokens", 0),
-            output_tokens=data.get("usage", {}).get("completion_tokens", 0),
-            provider_id=self.provider_id,
-            model_id=self.model_id,
-            finish_reason=finish_reason,
-        )
+        finally:
+            await client.aclose()
 
     async def _generate_ollama(self, request: LLMRequest, start: float) -> LLMResponse:
         """Generate via Ollama ``/api/generate``.
@@ -245,53 +272,57 @@ class OcrAIProvider(LLMProvider):
         structured message list.
         """
         client = self._get_client()
-        url = self._endpoint.rstrip("/") + "/api/generate"
+        try:
+            url = self._endpoint.rstrip("/") + "/api/generate"
 
-        headers = self._auth_headers()
-        prompt_parts: List[str] = []
-        sys_prompt = self._system_prompt(request.messages)
-        if sys_prompt:
-            prompt_parts.append(f"System: {sys_prompt}")
-        for msg in request.messages:
-            if msg.role in ("user", "assistant"):
-                prompt_parts.append(f"{msg.role}: {msg.content}")
-        prompt = "\n".join(prompt_parts)
+            headers = self._auth_headers()
+            prompt_parts: List[str] = []
+            sys_prompt = self._system_prompt(request.messages)
+            if sys_prompt:
+                prompt_parts.append(f"System: {sys_prompt}")
+            for msg in request.messages:
+                if msg.role in ("user", "assistant"):
+                    prompt_parts.append(f"{msg.role}: {msg.content}")
+            prompt = "\n".join(prompt_parts)
 
-        payload = {
-            "model": self.model_id,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": request.temperature,
-                "num_predict": request.max_tokens,
-            },
-        }
+            payload = {
+                "model": self.model_id,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": request.temperature,
+                    "num_predict": request.max_tokens,
+                    "num_ctx": OLLAMA_NUM_CTX,
+                },
+            }
 
-        response = await client.post(url, json=payload, headers=headers)
-        latency_ms = int((time.monotonic() - start) * 1000)
+            response = await client.post(url, json=payload, headers=headers)
+            latency_ms = int((time.monotonic() - start) * 1000)
 
-        if response.status_code != 200:
-            logger.warning(
-                "OcrAIProvider Ollama returned HTTP %d: %s",
-                response.status_code, response.text[:300],
-            )
+            if response.status_code != 200:
+                logger.warning(
+                    "OcrAIProvider Ollama returned HTTP %d: %s",
+                    response.status_code, response.text[:300],
+                )
+                return LLMResponse(
+                    content="", latency_ms=latency_ms,
+                    provider_id=self.provider_id, model_id=self.model_id,
+                    finish_reason="error",
+                )
+
+            data = response.json()
+            content = data.get("response", "")
+
             return LLMResponse(
-                content="", latency_ms=latency_ms,
-                provider_id=self.provider_id, model_id=self.model_id,
-                finish_reason="error",
+                content=content,
+                latency_ms=latency_ms,
+                input_tokens=0,
+                output_tokens=data.get("eval_count", 0),
+                provider_id=self.provider_id,
+                model_id=self.model_id,
             )
-
-        data = response.json()
-        content = data.get("response", "")
-
-        return LLMResponse(
-            content=content,
-            latency_ms=latency_ms,
-            input_tokens=0,
-            output_tokens=data.get("eval_count", 0),
-            provider_id=self.provider_id,
-            model_id=self.model_id,
-        )
+        finally:
+            await client.aclose()
 
     async def stream(self, request: LLMRequest) -> AsyncIterator[str]:
         """Generate a completion (streaming). Yields content chunks."""
@@ -309,100 +340,107 @@ class OcrAIProvider(LLMProvider):
     async def _stream_openai(self, request: LLMRequest) -> AsyncIterator[str]:
         """Stream via OpenAI-compatible ``/v1/chat/completions`` with SSE."""
         client = self._get_client()
-        url = self._endpoint.rstrip("/") + "/v1/chat/completions"
+        try:
+            url = self._endpoint.rstrip("/") + "/v1/chat/completions"
 
-        messages = self._build_chat_messages(request.messages)
-        sys_prompt = self._system_prompt(request.messages)
-        if sys_prompt:
-            messages.insert(0, {"role": "system", "content": sys_prompt})
+            messages = self._build_chat_messages(request.messages)
+            sys_prompt = self._system_prompt(request.messages)
+            if sys_prompt:
+                messages.insert(0, {"role": "system", "content": sys_prompt})
 
-        headers = self._auth_headers()
-        payload: Dict[str, Any] = {
-            "model": self.model_id,
-            "messages": messages,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-            "stream": True,
-        }
+            headers = self._auth_headers()
+            payload: Dict[str, Any] = {
+                "model": self.model_id,
+                "messages": messages,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "stream": True,
+            }
 
-        async with client.stream("POST", url, json=payload, headers=headers) as response:
-            if response.status_code != 200:
-                logger.warning(
-                    "OcrAIProvider stream (OpenAI) returned HTTP %d",
-                    response.status_code,
-                )
-                return
+            async with client.stream("POST", url, json=payload, headers=headers) as response:
+                if response.status_code != 200:
+                    logger.warning(
+                        "OcrAIProvider stream (OpenAI) returned HTTP %d",
+                        response.status_code,
+                    )
+                    return
 
-            total_chars = 0
-            async for line in response.aiter_lines():
-                if not line or not line.startswith("data:"):
-                    continue
-                data_str = line[5:].strip()
-                if data_str == "[DONE]":
-                    break
-                try:
-                    obj = json.loads(data_str)
-                except json.JSONDecodeError:
-                    continue
-                delta = obj.get("choices", [{}])[0].get("delta", {})
-                chunk = delta.get("content", "")
-                if chunk:
-                    yield chunk
-                    total_chars += len(chunk)
-                    if total_chars > _MAX_STREAM_CHARS:
-                        logger.warning("OcrAIProvider stream capped at %d chars", _MAX_STREAM_CHARS)
+                total_chars = 0
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
                         break
+                    try:
+                        obj = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = obj.get("choices", [{}])[0].get("delta", {})
+                    chunk = delta.get("content", "")
+                    if chunk:
+                        yield chunk
+                        total_chars += len(chunk)
+                        if total_chars > _MAX_STREAM_CHARS:
+                            logger.warning("OcrAIProvider stream capped at %d chars", _MAX_STREAM_CHARS)
+                            break
+        finally:
+            await client.aclose()
 
     async def _stream_ollama(self, request: LLMRequest) -> AsyncIterator[str]:
         """Stream via Ollama ``/api/generate`` with NDJSON streaming."""
         client = self._get_client()
-        url = self._endpoint.rstrip("/") + "/api/generate"
+        try:
+            url = self._endpoint.rstrip("/") + "/api/generate"
 
-        headers = self._auth_headers()
-        prompt_parts: List[str] = []
-        sys_prompt = self._system_prompt(request.messages)
-        if sys_prompt:
-            prompt_parts.append(f"System: {sys_prompt}")
-        for msg in request.messages:
-            if msg.role in ("user", "assistant"):
-                prompt_parts.append(f"{msg.role}: {msg.content}")
-        prompt = "\n".join(prompt_parts)
+            headers = self._auth_headers()
+            prompt_parts: List[str] = []
+            sys_prompt = self._system_prompt(request.messages)
+            if sys_prompt:
+                prompt_parts.append(f"System: {sys_prompt}")
+            for msg in request.messages:
+                if msg.role in ("user", "assistant"):
+                    prompt_parts.append(f"{msg.role}: {msg.content}")
+            prompt = "\n".join(prompt_parts)
 
-        payload = {
-            "model": self.model_id,
-            "prompt": prompt,
-            "stream": True,
-            "options": {
-                "temperature": request.temperature,
-                "num_predict": request.max_tokens,
-            },
-        }
+            payload = {
+                "model": self.model_id,
+                "prompt": prompt,
+                "stream": True,
+                "options": {
+                    "temperature": request.temperature,
+                    "num_predict": request.max_tokens,
+                    "num_ctx": OLLAMA_NUM_CTX,
+                },
+            }
 
-        async with client.stream("POST", url, json=payload, headers=headers) as response:
-            if response.status_code != 200:
-                logger.warning(
-                    "OcrAIProvider stream (Ollama) returned HTTP %d",
-                    response.status_code,
-                )
-                return
+            async with client.stream("POST", url, json=payload, headers=headers) as response:
+                if response.status_code != 200:
+                    logger.warning(
+                        "OcrAIProvider stream (Ollama) returned HTTP %d",
+                        response.status_code,
+                    )
+                    return
 
-            total_chars = 0
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                chunk = obj.get("response", "")
-                if chunk:
-                    yield chunk
-                    total_chars += len(chunk)
-                    if total_chars > _MAX_STREAM_CHARS:
-                        logger.warning("OcrAIProvider stream capped at %d chars", _MAX_STREAM_CHARS)
+                total_chars = 0
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    chunk = obj.get("response", "")
+                    if chunk:
+                        yield chunk
+                        total_chars += len(chunk)
+                        if total_chars > _MAX_STREAM_CHARS:
+                            logger.warning("OcrAIProvider stream capped at %d chars", _MAX_STREAM_CHARS)
+                            break
+                    if obj.get("done"):
                         break
-                if obj.get("done"):
-                    break
+        finally:
+            await client.aclose()
 
     async def count_tokens(self, messages: List[LLMMessage]) -> int:
         """Approximate token count.
@@ -420,8 +458,8 @@ class OcrAIProvider(LLMProvider):
         endpoint. Returns ``"healthy"`` on HTTP 200, ``"degraded"`` on
         other responses, and ``"down"`` on connection errors.
         """
+        client = self._get_client()
         try:
-            client = self._get_client()
             if self._api_mode == "openai":
                 url = self._endpoint.rstrip("/") + "/v1/chat/completions"
                 payload: Dict[str, Any] = {
@@ -448,3 +486,5 @@ class OcrAIProvider(LLMProvider):
         except Exception as exc:
             logger.debug("OcrAIProvider health_check failed: %s", exc)
             return "down"
+        finally:
+            await client.aclose()

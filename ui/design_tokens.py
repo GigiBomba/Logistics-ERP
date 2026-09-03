@@ -121,18 +121,20 @@ RADIUS_XL  = 12
 RADIUS_PILL = 100
 
 # === STATUS BADGE MAP ===
-# (label, text_color, bg_color)
+# (i18n_key, text_color, bg_color)
+# The label element is an i18n key (see status.* keys in data/translations).
+# Consumers must resolve it via t() — see ui/components.py StatusBadge.
 STATUS_STYLES = {
-    "delivered":   ("Livrat",      COLOR_SUCCESS_TEXT, COLOR_SUCCESS_SUBTLE),
-    "planned":     ("Planificat",  COLOR_ACCENT_PRIMARY, COLOR_ACCENT_SUBTLE),
-    "in_progress": ("În curs",     COLOR_WARNING_TEXT, COLOR_WARNING_SUBTLE),
-    "in_transit":  ("În curs",     COLOR_WARNING_TEXT, COLOR_WARNING_SUBTLE),
-    "cancelled":   ("Anulat",      COLOR_NEUTRAL_TEXT, COLOR_NEUTRAL_SUBTLE),
-    "overdue":     ("Restant",     COLOR_ERROR_TEXT, COLOR_ERROR_SUBTLE),
-    "maintenance": ("Mentenanță",  COLOR_INFO_TEXT, COLOR_INFO_SUBTLE),
-    "loading":     ("Se încarcă",  COLOR_TEXT_TERTIARY, COLOR_BG_OVERLAY),
-    "invoiced":    ("Facturat",    COLOR_INFO_TEXT, COLOR_INFO_SUBTLE),
-    "paid":        ("Plătit",      COLOR_SUCCESS_TEXT, COLOR_SUCCESS_SUBTLE),
+    "delivered":   ("status.delivered",   COLOR_SUCCESS_TEXT, COLOR_SUCCESS_SUBTLE),
+    "planned":     ("status.planned",     COLOR_ACCENT_PRIMARY, COLOR_ACCENT_SUBTLE),
+    "in_progress": ("status.in_progress", COLOR_WARNING_TEXT, COLOR_WARNING_SUBTLE),
+    "in_transit":  ("status.in_transit",  COLOR_WARNING_TEXT, COLOR_WARNING_SUBTLE),
+    "cancelled":   ("status.cancelled",   COLOR_NEUTRAL_TEXT, COLOR_NEUTRAL_SUBTLE),
+    "overdue":     ("status.overdue",     COLOR_ERROR_TEXT, COLOR_ERROR_SUBTLE),
+    "maintenance": ("status.maintenance", COLOR_INFO_TEXT, COLOR_INFO_SUBTLE),
+    "loading":     ("status.loading",     COLOR_TEXT_TERTIARY, COLOR_BG_OVERLAY),
+    "invoiced":    ("status.invoiced",    COLOR_INFO_TEXT, COLOR_INFO_SUBTLE),
+    "paid":        ("status.paid",        COLOR_SUCCESS_TEXT, COLOR_SUCCESS_SUBTLE),
 }
 
 # === UNIFIED STATUS COLORS (single source of truth) ===
@@ -239,8 +241,11 @@ INFO_DIM    = COLOR_INFO_SUBTLE
 INFO_TEXT   = COLOR_INFO_TEXT
 
 # Typography (legacy)
-FONT_FAMILY = "Inter"
-FONT_MONO   = "Consolas"
+# Unified with the global theme engine families (theme_engine.FONT_FAMILIES):
+# one sans family ("IBM Plex Sans") and one mono family ("IBM Plex Mono")
+# everywhere. These feed plotly / QFont / inline-stylesheet consumers.
+FONT_FAMILY = "IBM Plex Sans"
+FONT_MONO   = "IBM Plex Mono"
 
 FONT_SIZES = {
     "display": FONT_SIZE_XL,
@@ -287,3 +292,13 @@ BTN_HEIGHT        = 32
 BTN_HEIGHT_SM     = 28
 BTN_HEIGHT_MD     = 32
 BTN_HEIGHT_LG     = 38
+
+# === WINDOW / SHELL GEOMETRY ===
+# The responsive audit concluded 1024x600 is not viable for the core screens
+# (kanban, invoices, fleet), so the minimum window size is 1280x720.
+WINDOW_MIN_WIDTH  = 1280
+WINDOW_MIN_HEIGHT = 720
+# Preferred initial size when the primary screen can accommodate it; otherwise
+# the window sizes to ~80% of the available geometry (clamped to the minimum).
+WINDOW_INITIAL_WIDTH  = 1440
+WINDOW_INITIAL_HEIGHT = 900

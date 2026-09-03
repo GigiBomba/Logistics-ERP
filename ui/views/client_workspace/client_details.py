@@ -27,6 +27,7 @@ import qtawesome as qta
 from services.i18n import t
 from ui.components import (
     Btn,
+    EmptyState,
     KPICard,
     SectionTitle,
 )
@@ -38,7 +39,10 @@ from ui.design_tokens import (
     COLOR_BORDER_MEDIUM,
     COLOR_BORDER_SUBTLE,
     COLOR_ERROR_TEXT,
+    COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
     FONT_SIZE_BASE,
     FONT_SIZE_SM,
     RADIUS_SM,
@@ -356,10 +360,21 @@ class _QtClientDetailsTab(QWidget):
 
     def _build(self, service, client_id: int) -> None:
         """Fetch dashboard data and build all sections."""
-        dash = service.get_client_dashboard(client_id)
+        try:
+            dash = service.get_client_dashboard(client_id)
+        except Exception:
+            logger.exception("Failed to load client dashboard (client_id=%s)", client_id)
+            self._show_error_state(service, client_id)
+            return
         client = dash.get("client", {})
         contacts = dash.get("contacts", [])
         tags = dash.get("tags", [])
+
+        if not client:
+            # Client record could not be resolved — show an honest empty
+            # state instead of a wall of zeroed fields / blank space.
+            self._show_no_client_state(service, client_id)
+            return
 
         # Build into the content layout as before
         self._build_profile_section(client, dash, service)
@@ -379,6 +394,46 @@ class _QtClientDetailsTab(QWidget):
 
         # Wrap all built widgets in a container and cache it
         self._cache_current(client_id)
+
+    # ------------------------------------------------------------------
+    # Error / no-data states
+    # ------------------------------------------------------------------
+
+    def _show_error_state(self, service, client_id: int) -> None:
+        """Show a retryable error state instead of a stuck skeleton."""
+        self._clear_content()
+        cl = self._content.layout()
+        if cl is None:
+            return
+        empty = EmptyState(
+            self._content,
+            icon_name="mdi6.alert-circle-outline",
+            title=t("client.details_error_title", default="Could not load client details"),
+            subtitle=t("client.details_error_desc", default="Something went wrong while loading this client."),
+            cta_button=Btn(
+                self._content,
+                text=t("common.retry", default="Retry"),
+                variant="primary",
+                command=lambda: self.refresh(service, client_id),
+            ),
+        )
+        cl.addWidget(empty)
+        cl.addStretch()
+
+    def _show_no_client_state(self, service, client_id: int) -> None:
+        """Show a muted empty state when the client record has no data."""
+        self._clear_content()
+        cl = self._content.layout()
+        if cl is None:
+            return
+        empty = EmptyState(
+            self._content,
+            icon_name="mdi6.account-outline",
+            title=t("client.details_empty_title", default="No client data"),
+            subtitle=t("client.details_empty_desc", default="This client has no profile data yet."),
+        )
+        cl.addWidget(empty)
+        cl.addStretch()
 
     def _cache_current(self, client_id: int) -> None:
         """Move all widgets from content layout into a cached container."""

@@ -9,11 +9,35 @@ Blueprint: §9
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict
 
 from backend.copilot.schemas import ConfirmationLevel, SessionContext, ToolResult
+
+
+# ── Fan-out result cap (§23.3) ────────────────────────────────────────────
+# A single tool call may never return unbounded rows.  Fan-out tools
+# (freight searches, live positions, vehicle lists) cap their result lists to
+# the top MAX_RESULTS and surface the truncation in the ToolResult data.
+MAX_RESULTS: int = 100
+
+
+def cap_result_list(
+    items: List[Any],
+    max_results: Optional[int] = None,
+) -> Tuple[List[Any], int, bool]:
+    """Cap a fan-out result list to the top *max_results* rows.
+
+    Returns ``(capped_items, total_before_cap, truncated)``.  Callers embed
+    ``total_before_cap`` and the ``truncated`` flag in their ToolResult data so
+    the client can paginate and the guardrail stays visible (§23.3).
+    """
+    total = len(items)
+    limit = max_results if max_results is not None else MAX_RESULTS
+    if total <= limit:
+        return items, total, False
+    return items[:limit], total, True
 
 
 class ToolExecutionContext(BaseModel):
@@ -45,6 +69,11 @@ class BaseTool(ABC):
     required_permission: str           # e.g. "dispatch:write" — must exist in the existing RBAC permission table
     confirmation_level: ConfirmationLevel
     supports_undo: bool = False
+    supports_pause: bool = False       # §13 — tool can be safely paused between invocations
+    supports_resume: bool = False      # §13 — tool execution can be resumed after a pause
+    long_running: bool = False         # §13 — heavy tool: dispatched to Celery when a broker is
+                                       # available (inline fallback in local desktop mode); emits
+                                       # WS type:"progress" + a completion notification.
     deprecated: bool = False           # see §9.2: deprecated tools still execute but are excluded from new plans
     parameters_schema: Type[BaseModel]  # strict Pydantic model, no **kwargs
 

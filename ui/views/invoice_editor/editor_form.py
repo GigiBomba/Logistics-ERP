@@ -66,6 +66,7 @@ from ui.widgets import (
     StyledTextEdit,
     field,
 )
+from ui.widgets.flow_layout import FlowLayout
 
 _logger = logging.getLogger(__name__)
 
@@ -235,8 +236,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._client_label.setText(t("invoice_editor.select_client"))
         self._trip_label.setText(t("invoice_editor.select_trip"))
         self._auto_btn.setText(t("invoice_editor.auto_fill"))
-        self._cb_client.setText(t("invoice.radio_client_invoice"))
-        self._cb_internal.setText(t("invoice.radio_internal_invoice"))
+        self._client_mode_lbl.setText(t("invoice.radio_client_invoice"))
+        self._internal_mode_lbl.setText(t("invoice.radio_internal_invoice"))
         self._refresh_btn.setText("\U0001F504")
 
         # Financial panel
@@ -263,6 +264,9 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         # Canvas / preview section headers
         self._from_header.setText(t("invoice_editor.from").upper())
         self._bill_to_header.setText(t("invoice_editor.bill_to").upper())
+        no_client_lbl = getattr(self, "_no_client_lbl", None)
+        if no_client_lbl is not None:
+            no_client_lbl.setText(t("invoice_editor.no_client", default="No client selected"))
         # Guarded: the section header is created lazily in
         # _build_trip_details_section() — the i18n listener can fire before
         # the widget exists (registration happens in __init__ before _build_ui).
@@ -400,10 +404,17 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
     def _build_top_bar(self) -> None:
         self._top_bar = QFrame(self)
         self._top_bar.setProperty("role", "top-bar")
-        self._top_bar.setFixedHeight(56)
+        # Two rows: selector/action row + invoice-mode checkbox row.  The
+        # taller bar gives the mode labels room to wrap so the full text
+        # ("Client Invoice (Total price only)", …) is never elided.
+        self._top_bar.setFixedHeight(84)
 
-        layout = QHBoxLayout(self._top_bar)
-        layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        outer = QVBoxLayout(self._top_bar)
+        outer.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        outer.setSpacing(SP["2"])
+
+        # Row 1: selectors + actions
+        layout = QHBoxLayout()
         layout.setSpacing(SP["3"])
 
         # Client selector
@@ -432,16 +443,6 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._auto_btn.clicked.connect(self._auto_fill_all)
         layout.addWidget(self._auto_btn)
 
-        # Mode checkboxes
-        self._cb_client = StyledCheckBox(text=t("invoice.radio_client_invoice"))
-        self._cb_client.setChecked(True)
-        self._cb_client.toggled.connect(lambda checked: self._on_mode_changed("client", checked))
-        layout.addWidget(self._cb_client)
-
-        self._cb_internal = StyledCheckBox(text=t("invoice.radio_internal_invoice"))
-        self._cb_internal.toggled.connect(lambda checked: self._on_mode_changed("internal", checked))
-        layout.addWidget(self._cb_internal)
-
         # Refresh button
         self._refresh_btn = Btn(self._top_bar, "\U0001F504",
                                  variant="ghost")
@@ -450,6 +451,32 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         layout.addWidget(self._refresh_btn)
 
         layout.addStretch()
+        outer.addLayout(layout)
+
+        # Row 2: invoice-mode checkboxes — text lives in word-wrapped QLabels
+        # next to each checkbox so long labels fit at any window width.
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(SP["3"])
+
+        self._cb_client = StyledCheckBox()
+        self._cb_client.setChecked(True)
+        self._cb_client.toggled.connect(lambda checked: self._on_mode_changed("client", checked))
+        self._client_mode_lbl = QLabel(t("invoice.radio_client_invoice"))
+        self._client_mode_lbl.setProperty("fontRole", "label")
+        self._client_mode_lbl.setWordWrap(True)
+        mode_row.addWidget(self._cb_client)
+        mode_row.addWidget(self._client_mode_lbl, 1)
+
+        self._cb_internal = StyledCheckBox()
+        self._cb_internal.toggled.connect(lambda checked: self._on_mode_changed("internal", checked))
+        self._internal_mode_lbl = QLabel(t("invoice.radio_internal_invoice"))
+        self._internal_mode_lbl.setProperty("fontRole", "label")
+        self._internal_mode_lbl.setWordWrap(True)
+        mode_row.addWidget(self._cb_internal)
+        mode_row.addWidget(self._internal_mode_lbl, 1)
+
+        mode_row.addStretch()
+        outer.addLayout(mode_row)
 
     # ── View Header ──────────────────────────────────────────────────────────
 
@@ -531,6 +558,12 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._bill_to_header.setProperty("fontRole", "section")
         to_layout.addWidget(self._bill_to_header)
 
+        # Muted placeholder shown until a client/bill-to is selected —
+        # otherwise the card renders as a header with an empty body.
+        self._no_client_lbl = QLabel(t("invoice_editor.no_client", default="No client selected"))
+        self._no_client_lbl.setProperty("fontRole", "muted")
+        to_layout.addWidget(self._no_client_lbl)
+
         self._c_client_name = self._make_canvas_label(to_card, "", bold=True)
         to_layout.addWidget(self._c_client_name)
         self._c_client_vat = self._make_canvas_label(to_card, "")
@@ -572,6 +605,20 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._c_client_addr.setText(self._client_address)
         self._c_client_phone.setText(self._client_phone)
         self._c_client_email.setText(self._client_email)
+
+        # Toggle the "No client selected" placeholder in the Bill To card.
+        no_client = getattr(self, "_no_client_lbl", None)
+        if no_client is not None:
+            has_client = bool(self._client_name)
+            no_client.setVisible(not has_client)
+            for lbl in (
+                self._c_client_name,
+                self._c_client_vat,
+                self._c_client_addr,
+                self._c_client_phone,
+                self._c_client_email,
+            ):
+                lbl.setVisible(has_client)
 
         self._truck_plate_label.setText(self._truck_plate)
         self._driver_name_label.setText(self._driver_name)
@@ -1116,11 +1163,13 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
     def _build_bottom_bar(self) -> None:
         self._bottom_bar = QFrame(self)
         self._bottom_bar.setProperty("role", "bottom-bar")
-        self._bottom_bar.setFixedHeight(52)
+        # A flow layout wraps the action buttons onto additional rows when the
+        # window is narrow, so labels (Generate PDF / Load Draft / Export JSON…)
+        # are never elided.
+        self._bottom_bar.setMinimumHeight(52)
 
-        layout = QHBoxLayout(self._bottom_bar)
+        layout = FlowLayout(self._bottom_bar, margin=0, spacing=SP["2"])
         layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
-        layout.setSpacing(SP["2"])
 
         actions = [
             ("\U0001F50D " + t("invoice_editor.preview_pdf"), self._preview_pdf, "secondary"),
@@ -1159,8 +1208,6 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._export_json_btn = Btn(self._bottom_bar, actions[6][0],
                                              command=actions[6][1], variant=actions[6][2])
         layout.addWidget(self._export_json_btn)
-
-        layout.addStretch()
 
     # ══════════════════════════════════════════════════════════════════════════
     # DATA LOADING

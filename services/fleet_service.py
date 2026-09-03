@@ -93,8 +93,11 @@ def _repo_dict_to_vehicle_result(row: Optional[dict]) -> Optional[VehicleResult]
     kwargs.setdefault("current_location", None)
     kwargs.setdefault("created_at", None)
 
-    # Ensure string fields are never None (Pydantic v2 rejects None for str)
-    for str_field in ("vin",):
+    # Ensure non-optional string fields are never None (Pydantic v2 rejects
+    # None for str). Covers every non-optional str field of VehicleResult that
+    # is mapped from repo columns: vin, brand, model, status — plus plate, which
+    # can be NULL in legacy rows returned by find_available.
+    for str_field in ("vin", "brand", "model", "status", "plate"):
         if kwargs.get(str_field) is None:
             kwargs[str_field] = ""
 

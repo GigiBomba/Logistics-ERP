@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 # this module MUST NOT be included in router.py until that helper is implemented,
 # otherwise create_app() raises ImportError at startup (concurrent-agent work-in-progress).
 from backend.api.v1.auth import _consume_mfa_session, _issue_tokens
-from backend.config import BackendSettings
+from backend.config import get_settings
 from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user
 from backend.errors import ErrorCode
@@ -85,7 +85,7 @@ class MFABackupCodeRequest(BaseModel):
 
 
 def _encryption_key() -> str:
-    settings = BackendSettings()
+    settings = get_settings()
     return settings.mfa_secret_encryption_key or settings.jwt_secret_key
 
 
@@ -193,7 +193,7 @@ async def mfa_enroll(
     until the code is confirmed via POST /confirm.
     """
     _reject_admin(current_user)
-    settings = BackendSettings()
+    settings = get_settings()
 
     async for db in get_db():
         row = db.conn.execute(
@@ -231,7 +231,7 @@ async def mfa_confirm(
     hashes, and returns the plaintext codes exactly once.
     """
     _reject_admin(current_user)
-    settings = BackendSettings()
+    settings = get_settings()
 
     async for db in get_db():
         row = db.conn.execute(
@@ -333,7 +333,7 @@ async def mfa_verify(
     token pair (access token in the body, refresh token in an httpOnly
     cookie) exactly like a non-MFA login.
     """
-    settings = BackendSettings()
+    settings = get_settings()
     session = _consume_mfa_session(body.mfa_session_token)
     if session is None:
         raise _problem(401, ErrorCode.MFA_SESSION_INVALID, "Invalid or expired MFA session.")

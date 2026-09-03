@@ -56,7 +56,7 @@ class TestConfidenceFormula:
 class TestThresholdBoundaries:
     """§10 requires testing at each boundary: 0.549, 0.55, 0.849, 0.85."""
 
-    def test_below_medium_is_low(self, subtests):
+    def test_below_medium_is_low(self):
         assert confidence_bucket(0.549) == "low"
         assert needs_clarification(0.549) is True
         assert needs_recap(0.549) is False

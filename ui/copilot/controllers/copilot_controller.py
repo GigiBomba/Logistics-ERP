@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,7 @@ from PySide6.QtCore import QObject, QTimer, Signal, QUrl
 from PySide6.QtWebSockets import QWebSocket
 
 from client.remote_copilot import RemoteCopilotService
+from services.i18n import get_language, t
 from ui.copilot.models import (
     CoPilotResponse,
     ExecutionPlan,
@@ -139,6 +141,7 @@ class CoPilotController(QObject):
     error_occurred = Signal(str)           # user-facing error message key
     ws_connected = Signal()                # WebSocket connected
     ws_disconnected = Signal()             # WebSocket disconnected
+    tts_audio_ready = Signal(object)       # synthesized TTS bytes → GUI-thread playback
 
     def __init__(
         self,
@@ -179,6 +182,16 @@ class CoPilotController(QObject):
         # STT (lazy — loaded on first voice use)
         self._stt_provider: Any = None
 
+        # TTS output (lazy — provider/player loaded on first voice-mode response)
+        self._tts_provider: Any = None
+        self._tts_player: Any = None
+        self._voice_mode_active: bool = False
+        self.tts_audio_ready.connect(self._on_tts_audio_ready)
+
+        # Wake word (lazy — engine loaded on first Enterprise wake-word use)
+        self._wake_word_provider: Any = None
+        self._wake_word_enabled: bool = False
+
         # Dismissed insights (client-side tracking)
         self._dismissed_insights: set[str] = set()
 
@@ -207,13 +220,13 @@ class CoPilotController(QObject):
     async def send_utterance(
         self,
         text: str,
-        language: str = "en",
+        language: Optional[str] = None,
     ) -> CoPilotResponse:
         """Send a user utterance to the Co-Pilot backend.
 
         Args:
             text: The natural-language utterance.
-            language: ISO language code (default ``"en"``).
+            language: ISO language code (defaults to the active UI language).
 
         Returns:
             A parsed ``CoPilotResponse`` dataclass.
@@ -223,6 +236,7 @@ class CoPilotController(QObject):
             ``timeline_updated`` with the deserialised timeline list.
             ``error_occurred`` on failure.
         """
+        language = language or get_language()
         try:
             chat_kwargs: dict[str, Any] = {
                 "utterance": text,
@@ -240,6 +254,7 @@ class CoPilotController(QObject):
             self.new_turn.emit(raw)
             self.timeline_updated.emit([s.__dict__ for s in response.timeline])
             self._publish_event("copilot.turn.completed", {"conversation_id": self._conversation_id})
+            self._schedule_speech(response, language)
             return response
         except Exception as exc:
             logger.exception("send_utterance failed")
@@ -249,13 +264,14 @@ class CoPilotController(QObject):
     async def send_voice(
         self,
         audio_data: bytes,
-        language: str = "en",
+        language: Optional[str] = None,
     ) -> CoPilotResponse:
         """Transcribe audio locally (Whisper) then submit to voice endpoint.
 
         Args:
             audio_data: Raw audio bytes (WAV, MP3, etc.).
-            language: Optional language hint for the STT engine.
+            language: Optional language hint for the STT engine (defaults to
+                the active UI language).
 
         Returns:
             A parsed ``CoPilotResponse`` dataclass.
@@ -265,6 +281,7 @@ class CoPilotController(QObject):
             ``timeline_updated`` with the deserialised timeline list.
             ``error_occurred`` on failure (including if STT unavailable).
         """
+        language = language or get_language()
         try:
             transcript, stt_error = self._transcribe_audio(audio_data, language)
             if stt_error:
@@ -291,6 +308,7 @@ class CoPilotController(QObject):
             self.new_turn.emit(raw)
             self.timeline_updated.emit([s.__dict__ for s in response.timeline])
             self._publish_event("copilot.voice.completed", {"conversation_id": self._conversation_id})
+            self._schedule_speech(response, language)
             return response
         except Exception as exc:
             logger.exception("send_voice failed")
@@ -611,6 +629,208 @@ class CoPilotController(QObject):
         """
         self._dismissed_insights.add(insight_id)
         logger.info("Insight dismissed (client-side): %s", insight_id)
+
+    # ── TTS response output (voice mode, opt-in) ──────────────────────
+
+    def set_voice_mode_active(self, active: bool) -> None:
+        """Enable/disable TTS response output (voice-mode opt-in).
+
+        Called by the UI when the user selects/reverts a voice mode.  When
+        inactive, responses are never synthesized — TTS is strictly opt-in.
+        """
+        self._voice_mode_active = bool(active)
+        logger.info("CoPilot TTS voice output %s", "enabled" if active else "disabled")
+
+    def _schedule_speech(self, response: CoPilotResponse, language: str) -> None:
+        """Fire-and-forget TTS synthesis + playback when voice mode is active.
+
+        Runs on a daemon thread so neither the GUI thread nor the response
+        path is ever blocked.  Failures are logged and swallowed — TTS output
+        must never break the chat experience.
+        """
+        if not getattr(self, "_voice_mode_active", False):
+            return
+        text = self._resolve_speakable_text(response)
+        if not text.strip():
+            return
+
+        def _run() -> None:
+            try:
+                provider = self._load_tts_provider()
+                if provider is None:
+                    logger.info("TTS provider not available — skipping speech output")
+                    return
+                from backend.copilot.voice.tts import TTSRequest
+                audio = asyncio.run(
+                    provider.synthesize(TTSRequest(text=text, language=language))
+                )
+                if not audio:
+                    logger.warning("TTS synthesis returned no audio — skipping playback")
+                    return
+                # Queued signal → the TTSPlayer slot runs on the GUI thread.
+                self.tts_audio_ready.emit(audio)
+            except Exception as exc:
+                logger.error("TTS synthesis failed: %s", exc)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _resolve_speakable_text(self, response: CoPilotResponse) -> str:
+        """Resolve the response's summary/clarification into speakable text.
+
+        Mirrors the panel's display formatting for the summary and clarification
+        parts (TTS never speaks raw i18n keys or the execution timeline).
+        """
+        parts: list[str] = []
+        summary_key = response.summary_key
+        if summary_key:
+            if summary_key == "copilot.summary.llm_chat":
+                # Verbatim passthrough — the LLM answer may contain {, } or
+                # newlines that str.format() would mangle or crash on.
+                answer = (response.summary_params or {}).get("answer")
+                if isinstance(answer, str) and answer.strip():
+                    parts.append(answer)
+            else:
+                summary_text = t(summary_key, **response.summary_params)
+                if summary_text and summary_text != summary_key:
+                    parts.append(summary_text)
+        clarification_key = response.clarification_question_key
+        if clarification_key:
+            clarification_text = t(clarification_key, **response.clarification_params)
+            if clarification_text and clarification_text != clarification_key:
+                parts.append(clarification_text)
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _load_tts_provider() -> Any:
+        """Conditionally import and instantiate the Piper TTS provider.
+
+        Returns the provider instance, or ``None`` if the ``piper-tts``
+        package is not installed (TTS output is then skipped silently).
+        """
+        try:
+            from backend.copilot.voice.providers.piper_tts import PiperTTSProvider
+            return PiperTTSProvider()
+        except ImportError:
+            logger.info("piper-tts not installed — TTS output disabled")
+            return None
+        except Exception as exc:
+            logger.error("Failed to initialise Piper TTS provider: %s", exc)
+            return None
+
+    def _on_tts_audio_ready(self, audio: bytes) -> None:
+        """Play synthesized TTS audio on the GUI thread (Qt slot).
+
+        ``TTSPlayer.play_audio`` stops any in-flight utterance first, so
+        responses never overlap.
+        """
+        try:
+            player = getattr(self, "_tts_player", None)
+            if player is None:
+                from ui.copilot.tts_player import TTSPlayer
+                player = TTSPlayer(self)
+                self._tts_player = player
+            player.play_audio(audio)
+        except Exception as exc:
+            logger.error("TTS playback failed: %s", exc)
+
+    @property
+    def tts_playing(self) -> bool:
+        """Whether TTS audio is currently being played.
+
+        Used by the panel to keep the wake word disarmed while the assistant
+        is still speaking (no capture can overlap TTS playback).
+        """
+        player = getattr(self, "_tts_player", None)
+        if player is None:
+            return False
+        try:
+            state = player._player.playbackState()
+            return int(state) == 1  # QMediaPlayer.PlaybackState.PlayingState
+        except Exception:
+            return False
+
+    # ── Wake-word monitoring (Enterprise hands-free voice) ────────────
+
+    def set_wake_word_enabled(self, enabled: bool) -> None:
+        """Enable/disable wake-word monitoring (Enterprise voice mode).
+
+        The panel owns the mic/state machine; this flag tells the controller
+        whether the wake-word engine may be consulted for streamed audio.
+        """
+        self._wake_word_enabled = bool(enabled)
+        logger.info("CoPilot wake word %s", "enabled" if enabled else "disabled")
+
+    @property
+    def wake_word_available(self) -> bool:
+        """Whether a wake-word engine is usable (lazy-loads the provider).
+
+        When the optional engine dependency is missing this returns
+        ``False`` so the UI can fall back to push-to-talk silently.
+        """
+        provider = getattr(self, "_wake_word_provider", None)
+        if provider is None:
+            provider = self._load_wake_word_provider()
+            self._wake_word_provider = provider
+        if provider is None:
+            return False
+        try:
+            return bool(provider.available)
+        except Exception as exc:
+            logger.error("Wake-word availability check failed: %s", exc)
+            return False
+
+    def process_wake_word_audio(self, audio: bytes) -> bool:
+        """Feed a streamed PCM chunk to the wake-word engine.
+
+        Args:
+            audio: 16 kHz mono Int16 PCM bytes (the AudioRecorder format).
+
+        Returns:
+            ``True`` when the wake word is detected.  Never raises — any
+            engine error is logged and reported as ``False`` so the chat
+            flow (and push-to-talk) is never affected.
+        """
+        provider = getattr(self, "_wake_word_provider", None)
+        if provider is None:
+            provider = self._load_wake_word_provider()
+            self._wake_word_provider = provider
+        if provider is None or not getattr(self, "_wake_word_enabled", False):
+            return False
+        try:
+            from backend.copilot.voice.wake_word import WakeWordRequest
+            result = provider.process(WakeWordRequest(audio=audio))
+            return bool(result and result.detected)
+        except Exception as exc:
+            logger.error("Wake-word processing failed: %s", exc)
+            return False
+
+    def reset_wake_word(self) -> None:
+        """Clear the wake-word engine's streaming state after a trigger."""
+        provider = getattr(self, "_wake_word_provider", None)
+        if provider is None:
+            return
+        try:
+            provider.reset()
+        except Exception as exc:
+            logger.debug("Wake-word reset failed: %s", exc)
+
+    @staticmethod
+    def _load_wake_word_provider() -> Any:
+        """Conditionally import and instantiate the wake-word engine.
+
+        Returns the provider instance, or ``None`` when the optional engine
+        package is not installed (wake word is then disabled and the panel
+        falls back to push-to-talk).
+        """
+        try:
+            from backend.copilot.voice.wake_word import OpenWakeWordProvider
+            return OpenWakeWordProvider()
+        except ImportError:
+            logger.info("Wake-word engine not installed — wake word disabled")
+            return None
+        except Exception as exc:
+            logger.error("Failed to initialise wake-word engine: %s", exc)
+            return None
 
     # ── Internal helpers ─────────────────────────────────────────────
 

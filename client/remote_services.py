@@ -17,9 +17,35 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+from client.cache import LocalCache
+
 logger = logging.getLogger("remote_services")
+
+# Short-TTL cache for the dashboard-revenue hot path. Keys are ALWAYS
+# company-scoped (see ``_resolve_company_id``) so tenants never share data.
+_client_cache = LocalCache(ttl=60)
+
+
+def _resolve_company_id(api_client) -> Optional[int]:
+    """Derive the requesting company id from the ApiClient's auth token.
+
+    Returns ``None`` when not authenticated / claim absent so callers can make
+    caching opt-in per call. Keys built from this value are tenant-scoped.
+    """
+    auth = getattr(api_client, "_auth", None)
+    token = getattr(auth, "token", None)
+    if not isinstance(token, str) or not token:
+        return None
+    try:
+        from client.auth import _decode_jwt_payload
+        claims = _decode_jwt_payload(token)
+        cid = claims.get("company_id")
+        return int(cid) if cid else None
+    except Exception:
+        return None
 
 
 class RemoteFleetService:
@@ -166,6 +192,17 @@ class RemoteClientService:
         self._api._put(f"/api/v1/clients/{client_id}", json_data=kwargs)
 
     def get_all_with_revenue(self, include_inactive: bool = False) -> list:
+        # Company-scoped short-TTL cache: a repeated call within TTL serves the
+        # full enriched result without any network traffic. When no company id
+        # is available the cache is simply bypassed (opt-in per call).
+        cid = _resolve_company_id(self._api)
+        cache_key = None
+        if cid is not None:
+            cache_key = f"clients_with_revenue:{cid}:{1 if include_inactive else 0}"
+            cached = _client_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
         # Page through the API (backend caps page_size at 200) up to the
         # local LIMIT 500 parity cap, then enrich each client with its
         # dashboard revenue/trip_count. The backend does not truly slice the
@@ -183,11 +220,11 @@ class RemoteClientService:
                 break
             added = 0
             for c in items:
-                cid = c.get("id")
-                if cid is not None and cid in seen_ids:
+                cid_ = c.get("id")
+                if cid_ is not None and cid_ in seen_ids:
                     continue
-                if cid is not None:
-                    seen_ids.add(cid)
+                if cid_ is not None:
+                    seen_ids.add(cid_)
                 all_clients.append(c)
                 added += 1
             if added == 0:
@@ -196,15 +233,49 @@ class RemoteClientService:
             if len(items) < page_size:
                 break
             page += 1
+
+        self._attach_revenue(all_clients)
+
+        if cache_key is not None:
+            _client_cache.set(cache_key, all_clients)
+        return all_clients
+
+    def _attach_revenue(self, all_clients: list) -> None:
+        """Enrich clients with dashboard revenue/trip_count.
+
+        Prefers the additive batch endpoint (1 call) and falls back to bounded
+        parallel per-client dashboard fetches on error / not-supported.
+        """
+        ids = [c.get("id") for c in all_clients if c.get("id")]
+        if not ids:
+            return
+        dash_by_id: dict = {}
+        batch_ok = False
+        try:
+            resp = self._api.get_dashboards_batch(ids)
+            if isinstance(resp, dict) and isinstance(resp.get("items"), list):
+                for item in resp["items"]:
+                    if isinstance(item, dict) and item.get("id") is not None:
+                        dash_by_id[item["id"]] = item
+                batch_ok = True
+        except Exception:
+            logger.debug("dashboard batch unavailable - falling back to per-client", exc_info=True)
+
+        if not batch_ok:
+            def _fetch(cid_: int):
+                return cid_, self.get_client_dashboard(cid_)
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                for cid_, dash in ex.map(_fetch, ids):
+                    dash_by_id[cid_] = dash
+
         for c in all_clients:
-            cid = c.get("id")
-            if cid:
-                dash = self.get_client_dashboard(cid)
+            cid_ = c.get("id")
+            if cid_:
+                dash = dash_by_id.get(cid_) or {}
                 # The backend dashboard exposes total_revenue/total_trips;
                 # fall back to the short keys so both shapes are handled.
                 c["revenue"] = dash.get("revenue", dash.get("total_revenue", 0))
                 c["trip_count"] = dash.get("trip_count", dash.get("total_trips", 0))
-        return all_clients
 
     def get_client_dashboard(self, client_id: int) -> dict:
         try:

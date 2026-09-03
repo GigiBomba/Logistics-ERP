@@ -121,7 +121,9 @@ class TestWindowExpiry:
         assert client.get("/").status_code == 200
         assert client.get("/").status_code == 429
 
-        # Wait for window to expire
+        # Wait for window to expire. KEEP: the middleware's in-memory window
+        # is wall-clock based (time.time()), so real elapsed time is required;
+        # an event wait would not advance the window.
         time.sleep(1.1)
 
         # Should be allowed again
@@ -133,12 +135,15 @@ class TestWindowExpiry:
         app = _build_app(max_requests=2, window_seconds=2)
         client = TestClient(app)
         assert client.get("/").status_code == 200
+        # KEEP: wall-clock wait required so the 1st request ages inside the
+        # 2s window (middleware uses time.time()).
         time.sleep(1)
         assert client.get("/").status_code == 200
         # Both requests are within the 2s window -> 3rd should be blocked
         assert client.get("/").status_code == 429
 
         # After 1 more second, the first request (at t=0) falls out of the 2s window
+        # KEEP: wall-clock wait required for the window to actually slide.
         time.sleep(1.1)
         assert client.get("/").status_code == 200
 
@@ -163,7 +168,8 @@ class TestCustomParameters:
             assert client.get("/").status_code == 200
         assert client.get("/").status_code == 429
 
-        # Wait 3 seconds for window to fully clear
+        # Wait 3 seconds for window to fully clear.
+        # KEEP: wall-clock wait required — the 3s window is time.time()-based.
         time.sleep(3.1)
         assert client.get("/").status_code == 200
 

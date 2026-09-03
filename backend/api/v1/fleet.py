@@ -131,7 +131,7 @@ def ingest_gps_ping(
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
-    key = f"gps:live:{ping.truck_id}"
+    key = f"gps:live:{company_id}:{ping.truck_id}"
     cache.set(key, ping.model_dump(), ttl=120)
     cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
     return {"status": "accepted"}
@@ -150,7 +150,7 @@ def get_live_position(
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
-    data = cache.get(f"gps:live:{truck_id}")
+    data = cache.get(f"gps:live:{company_id}:{truck_id}")
     if data:
         return GpsPosition(
             truck_id=data["truck_id"],
@@ -180,7 +180,7 @@ def ingest_gps_batch(
         raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
     for ping in pings.root:
-        key = f"gps:live:{ping.truck_id}"
+        key = f"gps:live:{company_id}:{ping.truck_id}"
         cache.set(key, ping.model_dump(), ttl=120)
         cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
     return {"status": "accepted", "count": len(pings.root)}

@@ -84,9 +84,8 @@ class TestFleetTrackingViewA11y:
         view.shutdown()
 
     def test_view_has_accessible_description(self, qt_widget, qtbot):
-        """Gap: fleet tracking has no accessibleDescription yet."""
+        """Regression: fleet tracking exposes a non-empty accessibleDescription."""
         view = self._make_view(qt_widget, qtbot)
-        # Currently empty; this test will FAIL until description is added.
         assert_accessible_description_not_empty(view)
         view.shutdown()
 

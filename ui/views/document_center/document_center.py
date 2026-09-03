@@ -48,8 +48,9 @@ from services.operations.event_bus import (
     PROFORMA_CREATED,
     RECEIPT_CREATED,
 )
-from ui.components import Btn, EmptyState, FieldLabel
+from ui.components import Btn, EmptyState, FieldLabel, IconButton
 from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
     COLOR_BG_BASE,
     COLOR_BG_OVERLAY,
     COLOR_BORDER_MEDIUM,
@@ -73,7 +74,15 @@ PAGE_SIZE = 20
 
 
 class _CategoryButton(QPushButton):
-    """A flat category button in the sidebar."""
+    """A flat category button in the sidebar.
+
+    Renders through the global ``QPushButton[variant="ghost"]`` selector so
+    inactive categories use the app's standard secondary/ghost button language
+    (transparent background, muted label, hover overlay).  The active category
+    carries the app's nav-item active idiom — overlay background + accent left
+    border + accent text — via a minimal inline sheet, because the global theme
+    has no selector for the custom ``category-btn``/``active`` properties.
+    """
 
     def __init__(
         self,
@@ -85,9 +94,28 @@ class _CategoryButton(QPushButton):
         super().__init__(text, parent)
         self.setProperty("category-btn", "true")
         self.setProperty("active", "true" if active else "false")
+        self.setProperty("variant", "ghost")
         self.setFlat(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Size the button to its label so the text never clips at narrow
+        # widths, and expose the full label via tooltip as a fallback.
+        # (QSS renders button text bold, so leave generous padding.)
+        self.setMinimumWidth(self.fontMetrics().horizontalAdvance(text) + 36)
+        self.setToolTip(text)
+        if active:
+            self.setStyleSheet(
+                'QPushButton[category-btn="true"][active="true"] {'
+                f"    background-color: {COLOR_BG_OVERLAY};"
+                f"    border-left: 3px solid {COLOR_ACCENT_PRIMARY};"
+                f"    color: {COLOR_ACCENT_PRIMARY};"
+                "}"
+                'QPushButton[category-btn="true"][active="true"]:hover {'
+                f"    background-color: {COLOR_BG_OVERLAY};"
+                f"    color: {COLOR_ACCENT_PRIMARY};"
+                f"    border-left: 3px solid {COLOR_ACCENT_PRIMARY};"
+                "}"
+            )
         if command:
             self.clicked.connect(command)
 
@@ -159,10 +187,12 @@ class _DocRow(QFrame):
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
 
-        title_text = doc.get("title", doc.get("file_name", ""))[:70]
+        title_text = doc.get("title", doc.get("file_name", ""))
         title_lbl = QLabel(title_text, info_col)
         title_lbl.setProperty("fontRole", "body_bold")
         title_lbl.setProperty("role", "doc-title")
+        title_lbl.setWordWrap(True)
+        title_lbl.setToolTip(title_text)
         info_layout.addWidget(title_lbl)
 
         meta_parts: list[str] = []
@@ -185,6 +215,8 @@ class _DocRow(QFrame):
         meta_lbl = QLabel("  ".join(meta_parts), info_col)
         meta_lbl.setProperty("fontRole", "small")
         meta_lbl.setProperty("role", "doc-meta")
+        meta_lbl.setWordWrap(True)
+        meta_lbl.setToolTip("  ".join(meta_parts))
         info_layout.addWidget(meta_lbl)
 
         # Tags
@@ -207,37 +239,29 @@ class _DocRow(QFrame):
 
         layout.addWidget(info_col, 1)
 
-        # ── Action buttons ────────────────────────────────────────────────
+        # ── Action buttons (icon-only with tooltips so they never clip) ──
         actions = QWidget(self)
+        actions.setMinimumWidth(96)
         actions_layout = QHBoxLayout(actions)
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(2)
 
-        view_btn = Btn(
-            actions, text=t("docs.view"), command=lambda: on_open(doc),
-            variant="secondary", size="md",
+        view_btn = IconButton(
+            actions, icon_name="fa5s.eye", tooltip=t("docs.view"),
+            variant="ghost", size=28, command=lambda: on_open(doc),
         )
-        view_btn.setMinimumWidth(80)
-        view_btn.setFixedHeight(32)
-        view_btn.adjustSize()
         actions_layout.addWidget(view_btn)
 
-        email_btn = Btn(
-            actions, text=t("docs.email"), command=lambda: on_email(doc),
-            variant="secondary", size="md",
+        email_btn = IconButton(
+            actions, icon_name="fa5s.envelope", tooltip=t("docs.email"),
+            variant="ghost", size=28, command=lambda: on_email(doc),
         )
-        email_btn.setMinimumWidth(80)
-        email_btn.setFixedHeight(32)
-        email_btn.adjustSize()
         actions_layout.addWidget(email_btn)
 
-        del_btn = Btn(
-            actions, text=t("docs.delete"), command=lambda: on_delete(doc),
-            variant="ghost",
+        del_btn = IconButton(
+            actions, icon_name="fa5s.trash", tooltip=t("docs.delete"),
+            variant="danger", size=28, command=lambda: on_delete(doc),
         )
-        del_btn.setMinimumWidth(80)
-        del_btn.setFixedHeight(32)
-        del_btn.adjustSize()
         actions_layout.addWidget(del_btn)
 
         layout.addWidget(actions)
@@ -477,6 +501,16 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._build_detail_sidebar()
         self._documents_layout.addWidget(self._detail_panel, 30)
         self._tab_widget.addTab(self._documents_page, "")
+
+        # ── Narrow-window guard ─────────────────────────────────────────
+        # Give the three panels sensible minimum widths so the 1024px
+        # layout does not crush the list/detail content.  The centre list
+        # and detail scroll areas already get horizontal scrollbars when
+        # their contents are wider than the panels.
+        self._sidebar.setMinimumWidth(170)
+        self._center_panel.setMinimumWidth(420)
+        self._detail_panel.setMinimumWidth(300)
+        self._documents_page.setMinimumWidth(920)
 
         # ── Tab 2: Automation ───────────────────────────────────────────
         self._automation_page = QWidget()
@@ -1538,9 +1572,11 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     dlg = QDialog(parent)
     dlg.setWindowTitle(t("docs.entity_documents_title", title=title) if title else t("docs.entity_documents_default"))
     dlg.setMinimumSize(650, 500)
+    # The global sheet gives QDialog an elevated surface; this modal deliberately
+    # blends with the app base background instead (QLabel color is already the
+    # global default, so only the dialog background override is kept).
     dlg.setStyleSheet(
         f"QDialog {{ background-color: {COLOR_BG_BASE}; }}"
-        f"QLabel {{ color: {COLOR_TEXT_PRIMARY}; }}"
     )
 
     layout = QVBoxLayout(dlg)
@@ -1549,7 +1585,6 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
 
     # ── Header ────────────────────────────────────────────────────────────
     header = QFrame()
-    header.setStyleSheet("QFrame { background: transparent; }")
     header_layout = QHBoxLayout(header)
     header_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -1565,11 +1600,7 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.NoFrame)
-    scroll.setStyleSheet(
-        f"QScrollArea {{ background-color: {COLOR_BG_BASE}; border: none; }}"
-    )
     list_container = QWidget()
-    list_container.setStyleSheet(f"QWidget {{ background-color: {COLOR_BG_BASE}; }}")
     list_layout = QVBoxLayout(list_container)
     list_layout.setContentsMargins(0, 0, 0, 0)
     list_layout.setSpacing(SP["2"])

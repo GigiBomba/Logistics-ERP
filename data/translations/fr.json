@@ -50,11 +50,13 @@
             "not_yet_implemented": "The AI Co-Pilot is not yet available. Coming in Phase 1."
         },
         "error": {
+            "model_unreachable": "I couldn't reach the AI model just now. Check your AI settings (Settings → AI Vision) and try again — meanwhile you can use the regular screens.",
             "too_many_steps": "This plan has too many steps. Can you narrow it down?",
             "too_many_graph_nodes": "This request would generate too many reasoning steps. Can you narrow it down?",
             "too_many_tokens": "This request is too complex to process in one turn. Can you break it into smaller parts?",
             "timeout": "The operation timed out. Please try again.",
             "feature_not_in_tier": "This feature is not available on your subscription tier.",
+            "quota_exceeded": "You have exceeded your subscription's monthly usage limit.",
             "unavailable": "The AI Co-Pilot is temporarily unavailable. Please use the standard screens instead.",
             "service_error": "The backend service returned an error.",
             "unexpected": "An unexpected error occurred.",
@@ -64,7 +66,8 @@
             "unknown_analytics_domain": "Unknown analytics domain. Available: financial, fleet, driver, client, route_profitability, trip_status, cost_breakdown, monthly_volume, revenue_quarterly, maintenance, truck_utilization, invoice_aging, overdue, summary.",
             "stt_unavailable": "Voice input is not available because the speech-to-text engine is not installed. Install the 'faster-whisper' package or type your request instead.",
             "stt_failed": "Speech-to-text transcription failed. Please try again or type your request.",
-            "stt_no_speech": "No speech detected. Please try speaking again or type your request instead."
+            "stt_no_speech": "No speech detected. Please try speaking again or type your request instead.",
+            "help_only_tier": "Le mode Aide couvre uniquement la documentation et les guides. Les données en direct et les actions nécessitent un forfait Business ou Enterprise."
         },
         "step": {
             "vehicle_search_done": "Vehicle search completed.",
@@ -135,6 +138,16 @@
                 "generate_pdf_failed": "PDF generation failed.",
                 "generate_excel_ok": "Excel generated successfully.",
                 "generate_excel_failed": "Excel generation failed."
+            },
+            "whatsapp": {
+                "send_ok": "Message WhatsApp envoyé à {recipient}.",
+                "send_failed": "Échec de l'envoi du message WhatsApp à {recipient}."
+            },
+            "progress": {
+                "validating": "Validation de la demande...",
+                "executing": "Exécution en arrière-plan...",
+                "succeeded": "Tâche terminée avec succès.",
+                "failed": "Échec de la tâche."
             }
         },
         "dispatch": {
@@ -248,7 +261,15 @@
             "not_persisted": "Plan history is not yet available.",
             "cancelled": "Plan has been cancelled.",
             "not_found": "Plan with ID {plan_id} not found.",
-            "not_owned": "You do not have access to this plan."
+            "not_owned": "You do not have access to this plan.",
+            "cannot_pause": "Ce plan ne peut pas être mis en pause — ses outils ne la prennent pas en charge.",
+            "cannot_resume": "Ce plan ne peut pas être repris — ses outils ne prennent pas en charge la reprise."
+        },
+        "summary": {
+            "llm_chat": "{answer}",
+            "help": {
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+            }
         },
         "world_model": {
             "overdue_invoices": "There are {count} overdue invoices requiring attention.",
@@ -336,6 +357,11 @@
             "processing_tooltip": "Processing...",
             "wake_word_phase3": "Wake word support coming soon. Switching back to Push to Talk.",
             "recording_error": "Microphone error: {error}"
+        },
+        "whatsapp": {
+            "error": {
+                "not_configured": "WhatsApp n'est pas configuré. Demandez à un administrateur de configurer l'API WhatsApp Business."
+            }
         }
     },
     "app": {
@@ -781,7 +807,7 @@
         "kpi_active_trucks": "Camions actifs",
         "kpi_total_km": "KM total",
         "kpi_avg_consumption": "Consommation moyenne",
-                "kpi_otd": "On-Time Delivery",
+        "kpi_otd": "On-Time Delivery",
         "kpi_maint_alerts": "Alertes entretien",
         "kpi_invoices": "Factures",
         "kpi_cmrs": "CMR",
@@ -1419,7 +1445,12 @@
         "cancelled": "Annulé",
         "invoiced": "Facturé",
         "paid": "Payé",
-        "Archived": "Archivé"
+        "Archived": "Archivé",
+        "in_progress": "En Cours",
+        "overdue": "En Retard",
+        "maintenance": "Maintenance",
+        "unassigned": "Non Assignés",
+        "delayed": "Retardé"
     },
     "common": {
         "all": "Tous",
@@ -1780,7 +1811,7 @@
         "col_provider": "Col Provider",
         "col_type": "Col Type",
         "confirm_delete_msg": "Confirm Delete Msg",
-        "confirm_delete_title": "Confirm Delete Title",
+        "confirm_delete_title": "Confirmer la Suppression",
         "critical_count": "Critical Count",
         "critical_health": "Critical Health",
         "days_left": "Days Left",
@@ -1791,7 +1822,7 @@
         "excellent": "Excellent",
         "export": "Export",
         "export_success": "Export Success",
-        "export_title": "Export Title",
+        "export_title": "Exporter",
         "fair": "Fair",
         "filter_label": "Filter Label",
         "flash_maint_scheduled": "Flash Maint Scheduled",
@@ -1828,7 +1859,7 @@
         "page_info": "Page Info",
         "predictions": "Predictions",
         "predictions_header": "Predictions Header",
-        "predictions_title": "Predictions Title",
+        "predictions_title": "Prévisions",
         "prev": "Prev",
         "refresh": "Refresh",
         "refresh_score": "Refresh Score",
@@ -1836,7 +1867,7 @@
         "schedule_add": "Schedule Add",
         "schedule_delete_confirm": "Schedule Delete Confirm",
         "schedule_delete_prompt": "Schedule Delete Prompt",
-        "schedule_delete_title": "Schedule Delete Title",
+        "schedule_delete_title": "Supprimer le Planning",
         "schedule_due_by": "Schedule Due By",
         "schedule_every_km": "Schedule Every Km",
         "schedule_every_months": "Schedule Every Months",
@@ -1846,8 +1877,8 @@
         "schedule_form_interval_months": "Schedule Form Interval Months",
         "schedule_form_last_date": "Schedule Form Last Date",
         "schedule_form_last_km": "Schedule Form Last Km",
-        "schedule_form_title_add": "Schedule Form Title Add",
-        "schedule_form_title_edit": "Schedule Form Title Edit",
+        "schedule_form_title_add": "Ajouter un Planning",
+        "schedule_form_title_edit": "Modifier le Planning",
         "schedule_last_date": "Schedule Last Date",
         "schedule_last_km": "Schedule Last Km",
         "status_due_soon": "Status Due Soon",
@@ -2521,7 +2552,7 @@
     "automation": {
         "attachments_empty": "Attachments Empty",
         "body_label": "Body:",
-        "browse_title": "Browse Title",
+        "browse_title": "Sélectionnez un ou plusieurs documents à importer",
         "confirm_delete_title": "Delete this pipeline run and its processed file?",
         "continue_to_email": "Continue to Email",
         "copy_run": "Copy path",
@@ -3230,5 +3261,13 @@
         "offline_title": "Offline",
         "offline_message": "Issue reporting is not available in offline mode.",
         "button_tooltip": "Report an Issue"
+    },
+    "alert_card": {
+        "trip_ref": "Trip {trip_id}",
+        "truck_ref": "Truck {truck_id}"
+    },
+    "client_activity": {
+        "trip_line": "Trip: {truck} — {status} / {client} — {distance} km",
+        "invoice_line": "Invoice: {number} — {status} — {amount} EUR ({trip_status})"
     }
 }

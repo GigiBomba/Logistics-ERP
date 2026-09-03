@@ -226,17 +226,29 @@ def _seed_test_data(db_path=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @pytest.fixture(scope="module")
-def app(request):
+def test_db_path(request):
+    """Unique per-module SQLite DB path (shared with the ``app`` fixture).
+
+    Exposed as a module-scoped fixture so tests can query the exact DB file
+    the ``app`` fixture used for this module, instead of re-deriving it from
+    ``os.environ`` / the session-level ``TEST_DB_PATH`` constant (which can
+    diverge from the module's real DB).
+    """
+    module_name = request.module.__name__.replace("tests.security.", "").replace(".", "_")
+    return os.path.join(
+        os.path.dirname(__file__), "..", "..", "data",
+        f"test_security_{module_name}_{uuid.uuid4().hex[:8]}.db",
+    )
+
+
+@pytest.fixture(scope="module")
+def app(request, test_db_path):
     """Create the FastAPI app with test env vars (module-scoped — unique per module)."""
     # Use a unique DB file per module to avoid Windows SQLite file-lock
     # contention between modules.  The prior module's DB file + WAL/SHM
     # are simply abandoned; they will be deleted by _clean_test_db from
     # a fresh process or a manual cleanup.
-    module_name = request.module.__name__.replace("tests.security.", "").replace(".", "_")
-    _db_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "data",
-        f"test_security_{module_name}_{uuid.uuid4().hex[:8]}.db",
-    )
+    _db_path = test_db_path
     os.environ["OPERION_DB_PATH"] = _db_path
 
     os.environ["OPERION_JWT_SECRET_KEY"] = "test-secret-key-32-chars-for-testing-only!!"

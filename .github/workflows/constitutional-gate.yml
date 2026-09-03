@@ -13,6 +13,16 @@ on:
       - "tests/workflow_integrity/telemetry/report_generator.py"
   push:
     branches: [staging, release/*]
+    # Mirror the bronze-tier paths: silver/gold runs only when backend code
+    # or the gate's own inputs changed.
+    paths:
+      - "tests/workflow_integrity/**"
+      - "services/**"
+      - "repositories/**"
+      - "models/**"
+      - "backend/**"
+      - "scripts/constitutional_gate.py"
+      - "tests/workflow_integrity/telemetry/report_generator.py"
 
 # Only one gate runs per event — the highest tier whose trigger matches.
 # A PR always runs BRONZE; staging merge runs SILVER; release branch
@@ -36,6 +46,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -73,6 +85,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -110,6 +124,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -147,6 +163,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |

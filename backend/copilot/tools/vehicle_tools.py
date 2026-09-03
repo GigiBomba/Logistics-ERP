@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
-from backend.copilot.tools.base import BaseTool, ToolExecutionContext
+from backend.copilot.tools.base import BaseTool, ToolExecutionContext, cap_result_list
 from backend.copilot.tools.registry import register_tool
 
 
@@ -34,7 +34,7 @@ class VehicleHealthScoreParams(BaseModel):
 class VehicleSearchTool(BaseTool):
     name = "vehicle.search"
     tool_version = "1.0.0"
-    description = "Search for available vehicles in the fleet by plate, model, status, or fuel type"
+    description = "List or search vehicles/trucks in the fleet. With no filters, returns ALL fleet trucks. Optional filters: plate, model, status, or fuel type."
     required_permission = "fleet:read"
     confirmation_level = ConfirmationLevel.SAFE
     supports_undo = False
@@ -73,9 +73,14 @@ class VehicleSearchTool(BaseTool):
                 )
 
             vehicles = [v.model_dump() for v in (result.data or [])]
+            vehicles, total, truncated = cap_result_list(vehicles)
             return ToolResult(
                 status="success",
-                data={"vehicles": vehicles},
+                data={
+                    "vehicles": vehicles,
+                    "total_results": total,
+                    "truncated": truncated,
+                },
                 message_key="copilot.step.vehicle_search_done",
             )
         except Exception as e:

@@ -17,6 +17,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -40,7 +41,7 @@ from ui.components import (
     Label,
     PageTitle,
 )
-from ui.design_tokens import COLOR_ACCENT_PRIMARY, SP
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_BG_OVERLAY, SP
 from ui.widgets import (
     StyledCheckBox,
     StyledTableWidget,
@@ -99,6 +100,11 @@ class QtRouteHistoryView(QWidget):
         self.sort_dir = "DESC"
         self._preview_token = 0
         self._selected_route_id: int | None = None
+        self._map_error_panel: QFrame | None = None
+        # Fallback timer: if the map preview never finishes loading (nor
+        # fails), switch to the error+retry panel so the map area is never
+        # stuck on an eternal "Loading map…" state.
+        self._map_timeout_timer: QTimer | None = None
 
         self.preview_loaded.connect(self._apply_preview)
         self._build_ui()
@@ -199,19 +205,23 @@ class QtRouteHistoryView(QWidget):
             title=t("route_history.empty_title", "No route history"),
             subtitle=t("route_history.empty_desc", "Completed routes will appear here."),
         )
+        # Enable word wrap so the copy wraps instead of truncating
+        # ("…MPLETED ROUTES WILL APPEAR HERE") in narrow splitter panes.
+        for _lbl in self._history_empty_state.findChildren(QLabel):
+            _lbl.setWordWrap(True)
         self._history_empty_state.setVisible(False)
         table_card_layout.addWidget(self._history_empty_state)
         splitter.addWidget(table_card)
 
         # Right: map preview in a Card
         preview_card = Card(self)
+        self._preview_card = preview_card
         preview_card.setMinimumWidth(280)
         pc_layout = preview_card.layout()
 
-        # Map placeholder (empty state)
-        self._map_placeholder = QLabel(t("route_history.map_loading"))
-        self._map_placeholder.setProperty("role", "muted")
-        self._map_placeholder.setAlignment(Qt.AlignCenter)
+        # Map loading panel (skeleton-style) — replaced lazily by the real
+        # map widget; swapped for an error panel on load failure.
+        self._map_placeholder = self._build_map_loading_panel()
         self._map_placeholder.setMinimumHeight(200)
         pc_layout.addWidget(self._map_placeholder)
 
@@ -421,18 +431,132 @@ class QtRouteHistoryView(QWidget):
         except Exception:
             logger.exception("Map preview render failed")
 
+    def _build_map_loading_panel(self) -> QFrame:
+        """Skeleton-style loading panel shown while the map initialises.
+
+        Painted on a surface (non-black) background so the map area never
+        reads as a black void during the QWebEngineView spin-up.
+        """
+        from ui.skeleton_widgets import SkeletonWidget
+
+        panel = QFrame(self)
+        panel.setStyleSheet(
+            f"background: {COLOR_BG_OVERLAY}; border-radius: 8px;"
+        )
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setAlignment(Qt.AlignCenter)
+        panel_layout.setSpacing(SP["3"])
+
+        lbl = QLabel(t("route_history.map_loading"))
+        lbl.setProperty("fontRole", "muted")
+        lbl.setAlignment(Qt.AlignCenter)
+        panel_layout.addWidget(lbl)
+
+        for _ in range(2):
+            bar = SkeletonWidget(panel, width=200, height=10, rounded=True)
+            panel_layout.addWidget(bar, 0, Qt.AlignCenter)
+
+        return panel
+
+    def _on_map_preview_load_finished(self, ok: bool) -> None:
+        """Handle a failed map render — swap the map for an error panel."""
+        self._stop_map_timeout()
+        if ok:
+            return
+        logger.warning("Route history map preview failed to load")
+        self._show_map_error_state()
+
+    def _show_map_error_state(self) -> None:
+        """Replace the failed map widget with a muted error + retry panel."""
+        if self._map_error_panel is not None:
+            return  # already showing the error state
+        self._stop_map_timeout()
+        if self._map_widget is None:
+            return
+        parent = self._map_widget.parentWidget()
+        layout = parent.layout() if parent is not None else None
+        if layout is not None:
+            layout.removeWidget(self._map_widget)
+        with contextlib.suppress(Exception):
+            self._map_widget._destroy()
+        self._map_widget = None
+
+        err = QFrame(parent if parent is not None else self)
+        err.setStyleSheet(
+            f"background: {COLOR_BG_OVERLAY}; border-radius: 8px;"
+        )
+        el = QVBoxLayout(err)
+        el.setAlignment(Qt.AlignCenter)
+        el.setSpacing(SP["3"])
+
+        lbl = QLabel(t("route_history.map_error", default="Map preview failed to load"))
+        lbl.setProperty("fontRole", "muted")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setWordWrap(True)
+        el.addWidget(lbl)
+
+        retry_btn = Btn(
+            err,
+            t("route_history.map_retry", default="Retry"),
+            variant="secondary",
+            command=self._retry_map_preview,
+        )
+        el.addWidget(retry_btn, 0, Qt.AlignCenter)
+
+        if layout is not None:
+            layout.addWidget(err)
+        self._map_error_panel = err
+
+    def _retry_map_preview(self) -> None:
+        """Remove the error panel and re-create the map widget."""
+        if self._map_error_panel is not None:
+            panel = self._map_error_panel
+            self._map_error_panel = None
+            parent_layout = panel.parentWidget().layout() if panel.parentWidget() else None
+            if parent_layout is not None:
+                parent_layout.removeWidget(panel)
+            panel.deleteLater()
+        self._create_map_widget()
+
     def _create_map_widget(self) -> None:
         try:
             from ui.map.map_widget import MapWidget
-            self._map_widget = MapWidget(self._map_placeholder.parentWidget())
-            self._map_placeholder.parentWidget().layout().replaceWidget(
-                self._map_placeholder, self._map_widget
+            parent = (
+                self._map_placeholder.parentWidget()
+                if self._map_placeholder is not None
+                else self._preview_card
             )
-            self._map_placeholder.hide()
-            self._map_placeholder.deleteLater()
-            self._map_placeholder = None
+            layout = parent.layout()
+            self._map_widget = MapWidget(parent)
+            self._map_widget.loadFinished.connect(self._on_map_preview_load_finished)
+            if self._map_placeholder is not None:
+                layout.replaceWidget(self._map_placeholder, self._map_widget)
+                self._map_placeholder.hide()
+                self._map_placeholder.deleteLater()
+                self._map_placeholder = None
+            else:
+                layout.addWidget(self._map_widget)
+            self._start_map_timeout()
         except Exception:
             logger.exception("Failed to create map preview widget")
+
+    def _start_map_timeout(self) -> None:
+        """Arm the 15 s fallback timer for the map preview load."""
+        if self._map_timeout_timer is None:
+            self._map_timeout_timer = QTimer(self)
+            self._map_timeout_timer.setSingleShot(True)
+            self._map_timeout_timer.timeout.connect(self._on_map_timeout)
+        self._map_timeout_timer.start(15_000)
+
+    def _stop_map_timeout(self) -> None:
+        """Stop the fallback timer (map loaded, errored, or view shutting down)."""
+        if self._map_timeout_timer is not None:
+            self._map_timeout_timer.stop()
+
+    def _on_map_timeout(self) -> None:
+        """The map preview never finished loading — fall back to the error panel."""
+        logger.warning("Route history map preview load timed out — showing error state")
+        self._show_map_error_state()
 
     # ── Density menu ──────────────────────────────────────────────────────
 
@@ -605,6 +729,7 @@ class QtRouteHistoryView(QWidget):
     def shutdown(self) -> None:
         with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
+        self._stop_map_timeout()
         if self._map_widget:
             with contextlib.suppress(Exception):
                 self._map_widget._destroy()

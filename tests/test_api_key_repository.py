@@ -274,6 +274,18 @@ class TestValidateKey:
         assert "datetime('now')" in sql
         assert params == (7,)
 
+    def test_last_used_update_is_throttled_to_60s(self, repo):
+        """The UPDATE only fires when last_used_at is NULL or > 60s old (R7)."""
+        repo._fetchone.return_value = _fake_row(id=7, last_used_at=None)
+
+        repo.validate_key(_make_fake_key())
+
+        sql, params = repo._execute.call_args[0]
+        assert "60 seconds" in sql
+        assert "last_used_at IS NULL" in sql
+        # No extra bound params — throttling lives entirely in the WHERE clause.
+        assert params == (7,)
+
     def test_returns_dict_copy_not_row_object(self, repo):
         """The returned dict is a plain dict (not the original row)."""
         row = _fake_row()
@@ -486,6 +498,22 @@ class TestRevokeKey:
         mock_info.assert_called_once()
         args, _ = mock_info.call_args
         assert 7 == args[1]  # %d arg
+
+    def test_revoke_evicts_middleware_key_cache(self, repo):
+        """Successful revocation evicts the matching cached validation (R7)."""
+        from backend.middleware.auth_middleware import (
+            _VALIDATED_KEY_CACHE,
+            evict_api_key_cache_by_id,
+        )
+
+        _VALIDATED_KEY_CACHE["h1"] = (9999999999.0, {"id": 7, "partner": "p"})
+        repo._execute_with_count.return_value = 1
+
+        try:
+            repo.revoke_key(7)
+            assert "h1" not in _VALIDATED_KEY_CACHE
+        finally:
+            _VALIDATED_KEY_CACHE.clear()
 
 
 # ══════════════════════════════════════════════════════════════════════

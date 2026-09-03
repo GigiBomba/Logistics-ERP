@@ -45,9 +45,29 @@ def set_phase(phase: str) -> None:
 
 # ── Per-phase latency tracking ──────────────────────────────────────────────
 
+def _record_phase_metric(phase_name: str, elapsed_ms: float) -> None:
+    """Record a phase's latency into the shared metrics registry.
+
+    Keyed ``copilot.phase.<PHASE>.count`` / ``copilot.phase.<PHASE>.last_ms``
+    so the dev-toolkit observability panel can render per-phase timings.
+    Guarded: telemetry must never break the pipeline if metrics is missing.
+    """
+    try:
+        from utils.observability import metrics
+        metrics.increment(f"copilot.phase.{phase_name}.count")
+        metrics.gauge(f"copilot.phase.{phase_name}.last_ms", round(elapsed_ms, 2))
+    except Exception:
+        pass
+
+
 class PhaseTimer:
     """Context manager for timing a pipeline phase.
-    
+
+    Records the elapsed time both on the instance (``timer.elapsed_ms``) and
+    into the shared metrics registry (``copilot.phase.<PHASE>.count`` and
+    ``copilot.phase.<PHASE>.last_ms``) so the observability panel can render
+    per-phase latency without parsing logs.
+
     Usage:
         with PhaseTimer("REASONING", conversation_id="conv-123") as timer:
             # do work
@@ -73,6 +93,7 @@ class PhaseTimer:
 
     def __exit__(self, *args) -> None:
         self.elapsed_ms = (time.monotonic() - self.start) * 1000
+        _record_phase_metric(self.phase_name, self.elapsed_ms)
         current_phase.set(self._previous_phase)  # Restore previous
         logger.info(
             "PHASE_END | phase=%s conv=%s elapsed_ms=%.1f",

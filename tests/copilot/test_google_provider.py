@@ -225,18 +225,33 @@ class TestContentBuilding:
         assert contents == [{"role": "user", "parts": [{"text": "Hello"}]}]
 
     def test_multiple_messages_all_roles(self, provider):
-        """All four roles are mapped correctly."""
+        """All four roles are mapped correctly.
+
+        ``role="tool"`` messages become ``functionResponse`` parts (Gemini's
+        required shape for tool results) rather than plain text.
+        """
         contents = provider._build_contents([
             LLMMessage(role="system", content="Be helpful"),
             LLMMessage(role="user", content="Hi"),
             LLMMessage(role="assistant", content="Hello!"),
-            LLMMessage(role="tool", content="{}", tool_call_id="tc_1"),
+            LLMMessage(
+                role="tool",
+                content='{"tool_name": "search", "response": {"hit": 1}}',
+                tool_call_id="tc_1",
+            ),
         ])
         assert contents == [
             {"role": "user", "parts": [{"text": "Be helpful"}]},
             {"role": "user", "parts": [{"text": "Hi"}]},
             {"role": "model", "parts": [{"text": "Hello!"}]},
-            {"role": "user", "parts": [{"text": "{}"}]},
+            {
+                "role": "user",
+                "parts": [{"functionResponse": {
+                    "name": "search",
+                    "response": {"hit": 1},
+                    "id": "tc_1",
+                }}],
+            },
         ]
 
     def test_empty_message_list(self, provider):
@@ -253,6 +268,305 @@ class TestContentBuilding:
         contents = provider._build_contents(messages)
         assert [c["role"] for c in contents] == ["user", "model", "user"]
         assert [c["parts"][0]["text"] for c in contents] == ["1", "2", "3"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3b.  Tool messages → functionResponse parts (native tool-loop plumbing)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestToolFunctionResponse:
+    """role='tool' messages become functionResponse parts, not flattened text.
+
+    Gemini refuses to continue a tool loop when tool results come back as
+    plain text — they must be functionResponse parts tied to the originating
+    function_call.id (forwarded from LLMMessage.tool_call_id).
+    """
+
+    def test_envelope_with_tool_call_id(self, provider):
+        """Envelope content + tool_call_id → name, response, and id."""
+        contents = provider._build_contents([
+            LLMMessage(
+                role="tool",
+                content='{"tool_name": "get_weather", "response": {"temperature": 21}}',
+                tool_call_id="call_abc",
+            ),
+        ])
+        assert contents == [{
+            "role": "user",
+            "parts": [{"functionResponse": {
+                "name": "get_weather",
+                "response": {"temperature": 21},
+                "id": "call_abc",
+            }}],
+        }]
+
+    def test_name_alias_key(self, provider):
+        """``name`` is accepted as an alias for ``tool_name``."""
+        contents = provider._build_contents([
+            LLMMessage(role="tool", content='{"name": "calc", "response": {"sum": 3}}'),
+        ])
+        part = contents[0]["parts"][0]["functionResponse"]
+        assert part["name"] == "calc"
+        assert part["response"] == {"sum": 3}
+        assert "id" not in part
+
+    def test_no_tool_call_id_parses_envelope(self, provider):
+        """Without tool_call_id, name + response are still recovered from the content."""
+        contents = provider._build_contents([
+            LLMMessage(role="tool", content='{"tool_name": "calc", "response": {"sum": 3}}'),
+        ])
+        assert contents == [{
+            "role": "user",
+            "parts": [{"functionResponse": {
+                "name": "calc",
+                "response": {"sum": 3},
+            }}],
+        }]
+
+    def test_plain_text_content_used_as_response(self, provider):
+        """Non-JSON content falls back to the raw string as the response payload."""
+        contents = provider._build_contents([
+            LLMMessage(role="tool", content="42 degrees", tool_call_id="tc_9"),
+        ])
+        part = contents[0]["parts"][0]["functionResponse"]
+        assert part["name"] == ""
+        assert part["response"] == "42 degrees"
+        assert part["id"] == "tc_9"
+
+    def test_json_without_envelope_keys(self, provider):
+        """JSON content without envelope keys is passed through as the response."""
+        contents = provider._build_contents([
+            LLMMessage(role="tool", content='{"temp": 21, "unit": "C"}'),
+        ])
+        part = contents[0]["parts"][0]["functionResponse"]
+        assert part["name"] == ""
+        assert part["response"] == {"temp": 21, "unit": "C"}
+
+    def test_string_response_value(self, provider):
+        """A string response payload survives round-tripping via json.loads."""
+        contents = provider._build_contents([
+            LLMMessage(
+                role="tool",
+                content='{"tool_name": "lookup", "response": "not found"}',
+                tool_call_id="c1",
+            ),
+        ])
+        part = contents[0]["parts"][0]["functionResponse"]
+        assert part["name"] == "lookup"
+        assert part["response"] == "not found"
+        assert part["id"] == "c1"
+
+    def test_tool_message_role_is_user(self, provider):
+        """functionResponse parts are emitted in a user-role content (Gemini requirement)."""
+        contents = provider._build_contents([
+            LLMMessage(role="tool", content='{"tool_name": "x", "response": {}}'),
+        ])
+        assert contents[0]["role"] == "user"
+
+
+class TestNativeToolLoop:
+    """Two-iteration native Gemini tool loop: function_call → functionResponse.
+
+    Iteration 1: the model responds with a function_call part, which generate()
+    parses into LLMResponse.tool_calls.  Iteration 2: the tool result is fed
+    back as a role='tool' message and must appear as a functionResponse part in
+    the outbound request — without this the loop breaks on iteration 2.
+    """
+
+    @pytest.mark.asyncio
+    async def test_two_iteration_tool_loop(self, provider, mock_genai):
+        tool = ToolSpec(
+            name="get_weather",
+            description="Get the weather for a location",
+            parameters_json_schema={
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"],
+            },
+        )
+
+        # ── Iteration 1: model asks for a tool ─────────────────────────────
+        mock_genai["client"].models.generate_content.return_value = _mock_response(
+            candidates=[_mock_candidate(
+                parts=[_mock_part(function_call=_mock_function_call(
+                    "get_weather", {"location": "Berlin"}, call_id="call_abc",
+                ))],
+                finish_reason=_mock_finish_reason("FinishReason.FUNCTION_CALL"),
+            )],
+        )
+        resp_1 = await provider.generate(LLMRequest(
+            messages=[LLMMessage(role="user", content="Weather in Berlin?")],
+            tools=[tool],
+        ))
+        assert len(resp_1.tool_calls) == 1
+        assert resp_1.tool_calls[0]["id"] == "call_abc"
+        assert resp_1.tool_calls[0]["name"] == "get_weather"
+        assert resp_1.finish_reason == "tool_call"
+
+        # ── Iteration 2: feed the tool result back ─────────────────────────
+        mock_genai["client"].models.generate_content.return_value = _mock_response(
+            candidates=[_mock_candidate(parts=[_mock_part(text="It's 21C in Berlin.")])],
+        )
+        resp_2 = await provider.generate(LLMRequest(
+            messages=[
+                LLMMessage(role="user", content="Weather in Berlin?"),
+                LLMMessage(role="assistant", content=""),
+                LLMMessage(
+                    role="tool",
+                    content='{"tool_name": "get_weather", "response": {"temperature": 21, "condition": "sunny"}}',
+                    tool_call_id="call_abc",
+                ),
+            ],
+            tools=[tool],
+            # Even with JSON mode requested, tools + response_mime_type must
+            # never coexist — response_mime_type is dropped.
+            response_format="json",
+        ))
+        assert resp_2.content == "It's 21C in Berlin."
+        assert resp_2.finish_reason == "stop"
+
+        # The outbound request on iteration 2 carries a functionResponse part
+        # tied to the originating call id.
+        _, kwargs = mock_genai["client"].models.generate_content.call_args
+        contents = kwargs["contents"]
+        fr_contents = [
+            c for c in contents
+            if any("functionResponse" in p for p in c["parts"])
+        ]
+        assert len(fr_contents) == 1
+        fr = fr_contents[0]["parts"][0]["functionResponse"]
+        assert fr == {
+            "name": "get_weather",
+            "response": {"temperature": 21, "condition": "sunny"},
+            "id": "call_abc",
+        }
+
+        # tools + response_mime_type never coexist.
+        config = kwargs["config"]
+        assert config.tools is not None
+        assert config.response_mime_type is None
+
+    @pytest.mark.asyncio
+    async def test_tools_with_json_mode_drops_response_mime_type(self, provider, mock_genai):
+        """response_format='json' + tools → tools sent, response_mime_type omitted."""
+        mock_genai["client"].models.generate_content.return_value = _mock_response(
+            candidates=[_mock_candidate(parts=[_mock_part(text="ok")])],
+        )
+        tool = ToolSpec(name="t", description="desc", parameters_json_schema={"type": "object", "properties": {}})
+
+        await provider.generate(LLMRequest(
+            messages=[LLMMessage(role="user", content="Use tool")],
+            tools=[tool],
+            response_format="json",
+        ))
+
+        config = mock_genai["client"].models.generate_content.call_args[1]["config"]
+        assert config.tools is not None
+        assert config.response_mime_type is None
+
+    @pytest.mark.asyncio
+    async def test_json_mode_without_tools_still_sets_mime_type(self, provider, mock_genai):
+        """response_format='json' without tools → response_mime_type is set."""
+        mock_genai["client"].models.generate_content.return_value = _mock_response(
+            candidates=[_mock_candidate(parts=[_mock_part(text='{"k": "v"}')])],
+        )
+
+        await provider.generate(LLMRequest(
+            messages=[LLMMessage(role="user", content="JSON")],
+            response_format="json",
+        ))
+
+        config = mock_genai["client"].models.generate_content.call_args[1]["config"]
+        assert config.tools is None
+        assert config.response_mime_type == "application/json"
+
+
+class TestEnvelopeInterop:
+    """Gate 2 BLOCK fix: real producer output through the real Gemini adapter.
+
+    run_tool_loop (native channel) builds the tool-result message from the REAL
+    ``_result_envelope`` and forwards the originating call id in tool_call_id;
+    GoogleProvider._build_contents must reconstruct a functionResponse with a
+    NON-EMPTY name + id — never the empty-name fallback path.  No envelope here
+    is hand-written: both sides are the real production code.
+    """
+
+    @pytest.mark.asyncio
+    async def test_real_producer_output_through_real_adapter(self, provider):
+        from backend.copilot.llm.base import LLMResponse
+        from backend.copilot.llm.tool_calling import (
+            build_tool_catalog,
+            build_tool_context,
+            run_tool_loop,
+        )
+        from backend.copilot.schemas import GlobalContext
+
+        class RecordingProvider:
+            """Native-channel stand-in that records every request it receives."""
+            provider_id = "google"
+            _api_key = "k"
+            supports_tool_calling = True
+
+            def __init__(self) -> None:
+                self.calls = []
+                self.responses = [
+                    LLMResponse(
+                        content="",
+                        tool_calls=[{"id": "call_abc", "name": "vehicle.search", "arguments": {"query": "x"}}],
+                        finish_reason="tool_call",
+                    ),
+                    LLMResponse(content="done", finish_reason="stop"),
+                ]
+
+            async def generate(self, request):
+                self.calls.append(request)
+                if self.responses:
+                    return self.responses.pop(0)
+                return LLMResponse(content="", finish_reason="error")
+
+        async def fake_execute(plan, services=None, on_step_update=None):
+            plan.steps[0].status = "succeeded"
+            plan.steps[0].result = {
+                "status": "success",
+                "data": {"vehicles": [{"id": 5, "plate": "AB-12-FRU"}], "total_results": 1, "truncated": False},
+                "message_key": "copilot.step.vehicle_search_done",
+            }
+            return plan
+
+        ctx = GlobalContext(company_id=1, user_id=1, role="dispatcher", language="en", timezone="UTC", subscription_tier="business")
+        rp = RecordingProvider()
+        catalog = build_tool_catalog(build_tool_context({"vehicle.search"}))
+
+        with patch("backend.copilot.executor.execute_plan", new=fake_execute):
+            result = await run_tool_loop(
+                "find trucks", "en", None, ctx,
+                {"role": "dispatcher", "user_id": 1, "company_id": 1},
+                catalog, rp, conversation_id="interop",
+            )
+        assert result.final_answer == "done"
+
+        # The iteration-2 request carries the REAL producer envelope + call id.
+        it2_messages = rp.calls[1].messages
+        tool_msgs = [m for m in it2_messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0].tool_call_id == "call_abc"
+        assert "tool_name" in tool_msgs[0].content
+
+        # Pipe the REAL producer output through the REAL Gemini adapter.
+        contents = provider._build_contents(it2_messages)
+        fr_parts = [
+            p["functionResponse"]
+            for c in contents
+            for p in c["parts"]
+            if "functionResponse" in p
+        ]
+        assert len(fr_parts) == 1
+        fr = fr_parts[0]
+        assert fr["name"] == "vehicle.search"  # recovered from the envelope (non-empty)
+        assert fr["id"] == "call_abc"           # forwarded from the originating call
+        assert fr["response"]["status"] == "success"
+        assert fr["response"]["data"]["vehicles"][0]["plate"] == "AB-12-FRU"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1244,3 +1558,281 @@ class TestConfigBuilding:
         config = mock_genai["client"].models.generate_content.call_args[1]["config"]
         assert isinstance(config.max_output_tokens, int)
         assert isinstance(config.temperature, float)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 11.  Real-SDK hermetic tool-schema validation (Phase 4 lane 4C)
+# ═══════════════════════════════════════════════════════════════════════════════
+# The mock-based TestNativeToolLoop never exercises google-genai's pydantic
+# validator, which REJECTS Pydantic model_json_schema() output (observed in
+# production on the native tool channel):
+#
+#   tools.0.Tool.function_declarations.6.parameters.properties.vehicle_id.anyOf.0.exclusiveMinimum
+#     Extra inputs are not permitted
+#   tools.0.callable
+#     Input should be callable
+#
+# These classes construct the REAL ``google.genai.types.GenerateContentConfig``
+# (pure pydantic construction, NO network, NO client) from the FULL real tool
+# catalog so the SDK validator runs on every test run.
+
+
+class TestSchemaSanitizer:
+    """``_sanitize_gemini_schema`` rewrites Pydantic ``model_json_schema()``
+    output into the shape the google-genai SDK ``Schema`` model accepts."""
+
+    def test_exclusive_minimum_integer_maps_to_minimum_plus_one(self, provider):
+        """integer exclusiveMinimum→minimum+1; number exclusiveMinimum→minimum;
+        integer exclusiveMaximum→maximum−1."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "client_id": {"type": "integer", "exclusiveMinimum": 0},
+                "amount": {"type": "number", "exclusiveMinimum": 0},
+                "count": {"type": "integer", "exclusiveMaximum": 10},
+            },
+            "required": ["client_id"],
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        props = out["properties"]
+        assert props["client_id"] == {"type": "integer", "minimum": 1}
+        assert props["amount"] == {"type": "number", "minimum": 0}
+        assert props["count"] == {"type": "integer", "maximum": 9}
+        assert "exclusiveMinimum" not in repr(out)
+        assert "exclusiveMaximum" not in repr(out)
+
+    def test_optional_union_flattened_to_nullable(self, provider):
+        """anyOf=[<type>, {type:'null'}] → single branch + nullable: true."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "vehicle_id": {
+                    "anyOf": [{"type": "integer", "exclusiveMinimum": 0}, {"type": "null"}],
+                    "default": None,
+                },
+            },
+            "required": [],
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        prop = out["properties"]["vehicle_id"]
+        assert prop["type"] == "integer"
+        assert prop["minimum"] == 1
+        assert prop["nullable"] is True
+        assert "anyOf" not in prop and "any_of" not in prop
+
+    def test_renames_sdk_field_names(self, provider):
+        """minLength/maxLength → min_length/max_length; minItems/maxItems →
+        min_items/max_items; additionalProperties is dropped (Gemini's
+        function-declaration schema does not accept it)."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "minLength": 2, "maxLength": 10},
+                "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5},
+            },
+            "additionalProperties": False,
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        assert "additional_properties" not in out and "additionalProperties" not in out
+        assert out["properties"]["code"] == {"type": "string", "min_length": 2, "max_length": 10}
+        assert out["properties"]["tags"]["min_items"] == 1
+        assert out["properties"]["tags"]["max_items"] == 5
+
+    def test_stray_keys_dropped(self, provider):
+        """Unsupported schema keywords (callable/oneOf/allOf/const) are dropped."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "cb": {
+                    "type": "string",
+                    "callable": "x",
+                    "oneOf": [{"type": "string"}],
+                    "allOf": [{"type": "string"}],
+                    "const": "x",
+                },
+                "ok": {"type": "string"},
+            },
+            "required": ["ok"],
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        assert out["properties"]["cb"] == {"type": "string"}
+        assert out["properties"]["ok"] == {"type": "string"}
+        assert out["required"] == ["ok"]
+
+    def test_multi_branch_any_of_kept_as_any_of(self, provider):
+        """anyOf with two real branches survives as the SDK's ``any_of``."""
+        schema = {
+            "type": "object",
+            "properties": {"ref": {"anyOf": [{"type": "string"}, {"type": "integer"}]}},
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        prop = out["properties"]["ref"]
+        assert "any_of" in prop
+        assert [b["type"] for b in prop["any_of"]] == ["string", "integer"]
+        assert "type" not in prop
+
+    def test_nested_items_recursion(self, provider):
+        """Arrays and their item schemas are sanitized recursively."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"qty": {"type": "integer", "exclusiveMinimum": 0}},
+                        "required": ["qty"],
+                    },
+                },
+            },
+            "required": ["rows"],
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        item = out["properties"]["rows"]["items"]
+        assert item["properties"]["qty"] == {"type": "integer", "minimum": 1}
+        assert item["required"] == ["qty"]
+
+    def test_type_title_description_and_required_preserved(self, provider):
+        """Semantic metadata (type/required/title/description) is untouched."""
+        schema = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "integer", "exclusiveMinimum": 0}},
+            "required": ["a", "b"],
+            "title": "X",
+            "description": "desc",
+        }
+        out = provider._sanitize_gemini_schema(schema)
+        assert out["type"] == "object"
+        assert out["required"] == ["a", "b"]
+        assert out["title"] == "X"
+        assert out["description"] == "desc"
+
+
+class TestRealSdkToolCatalogValidation:
+    """Hermetic real-SDK validation of the native tool channel.
+
+    The FULL real tool catalog (every registered tool, no size budget) is
+    converted through the provider and used to construct the REAL
+    ``genai_types.GenerateContentConfig(tools=...)`` — pure pydantic
+    construction, no network, no client — proving the conversion survives the
+    SDK validator on every test run.
+    """
+
+    @staticmethod
+    def _full_real_catalog() -> List[ToolSpec]:
+        from backend.copilot.tools.registry import all_tools
+
+        specs: List[ToolSpec] = []
+        for tool in all_tools():
+            try:
+                schema = tool.parameters_schema.model_json_schema()
+            except Exception:
+                schema = {}
+            specs.append(ToolSpec(
+                name=tool.name,
+                description=tool.description,
+                parameters_json_schema=schema,
+            ))
+        return specs
+
+    def test_full_real_catalog_validates_against_real_sdk(self, provider):
+        """Construct the REAL GenerateContentConfig from the full converted
+        catalog — must not raise a ValidationError."""
+        from google.genai import types as genai_types
+
+        catalog = self._full_real_catalog()
+        assert len(catalog) >= 10, "registry unexpectedly small"
+
+        tools = provider._build_tools(catalog)
+        config = genai_types.GenerateContentConfig(tools=tools)
+
+        decls = config.tools[0].function_declarations
+        assert len(decls) == len(catalog)
+        assert {d.name for d in decls} == {s.name for s in catalog}
+
+    def test_no_rejected_keys_anywhere_in_full_catalog(self, provider):
+        """No SDK-rejected key leaks into the converted Gemini tools."""
+        from google.genai import types as genai_types
+
+        catalog = self._full_real_catalog()
+        tools = provider._build_tools(catalog)
+        dumped = repr(tools)
+        for banned in ("exclusiveMinimum", "exclusiveMaximum", "anyOf",
+                       "additionalProperties", "minLength", "maxLength"):
+            assert banned not in dumped, f"rejected key {banned!r} leaked into Gemini tools"
+
+        config = genai_types.GenerateContentConfig(tools=tools)  # must validate
+        assert config.tools
+
+    def test_exclusive_minimum_bounds_survive_as_minimum(self, provider):
+        """client.payment_summary.client_id: exclusiveMinimum 0 → minimum 1."""
+        from google.genai import types as genai_types
+
+        catalog = self._full_real_catalog()
+        tools = provider._build_tools(catalog)
+        genai_types.GenerateContentConfig(tools=tools)
+
+        decls = {d["name"]: d for d in tools[0]["function_declarations"]}
+        client_id = decls["client.payment_summary"]["parameters"]["properties"]["client_id"]
+        assert client_id["type"] == "integer"
+        assert client_id["minimum"] == 1
+        assert "exclusiveMinimum" not in client_id
+
+    def test_optional_numeric_union_flattened_to_nullable(self, provider):
+        """freight.evaluate_load.vehicle_id: anyOf+exclusiveMinimum → integer,
+        minimum 1, nullable (the exact runtime failure shape)."""
+        from google.genai import types as genai_types
+
+        catalog = self._full_real_catalog()
+        tools = provider._build_tools(catalog)
+        genai_types.GenerateContentConfig(tools=tools)
+
+        decls = {d["name"]: d for d in tools[0]["function_declarations"]}
+        vehicle_id = decls["freight.evaluate_load"]["parameters"]["properties"]["vehicle_id"]
+        assert vehicle_id["type"] == "integer"
+        assert vehicle_id["minimum"] == 1
+        assert vehicle_id.get("nullable") is True
+        assert "anyOf" not in vehicle_id and "any_of" not in vehicle_id
+
+    def test_required_and_types_intact_for_reference_tools(self, provider):
+        """Types and required lists survive for the reference tool shapes."""
+        from google.genai import types as genai_types
+
+        catalog = self._full_real_catalog()
+        tools = provider._build_tools(catalog)
+        genai_types.GenerateContentConfig(tools=tools)
+
+        decls = {d["name"]: d for d in tools[0]["function_declarations"]}
+
+        trip = decls["trip.create"]["parameters"]
+        assert trip["type"] == "object"
+        assert "client_id" in trip["required"]
+        assert trip["properties"]["client_id"]["type"] == "integer"
+
+        dispatch = decls["dispatch.create"]["parameters"]
+        assert "trip_id" in dispatch["required"]
+        assert dispatch["properties"]["trip_id"]["minimum"] == 1
+
+        search = decls["vehicle.search"]["parameters"]
+        assert search["type"] == "object"
+        assert "query" in search["properties"]
+
+    def test_raw_pydantic_schema_is_rejected_without_sanitizer(self, provider):
+        """Guard: the raw model_json_schema() output MUST fail the real SDK
+        validator — proving the sanitizer does real work and this class would
+        catch a regression in it."""
+        from google.genai import types as genai_types
+
+        from backend.copilot.tools.registry import get_tool
+
+        raw_schema = get_tool("freight.evaluate_load").parameters_schema.model_json_schema()
+        raw_tools = [{
+            "function_declarations": [{
+                "name": "freight.evaluate_load",
+                "description": "x",
+                "parameters": raw_schema,
+            }],
+        }]
+        with pytest.raises(Exception) as excinfo:
+            genai_types.GenerateContentConfig(tools=raw_tools)
+        assert "exclusiveMinimum" in str(excinfo.value)

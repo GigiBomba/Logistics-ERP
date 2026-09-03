@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -23,6 +22,7 @@ from services.i18n import t
 from ui.components import Btn
 from ui.design_tokens import COLOR_SUCCESS_DEFAULT, SP
 from ui.widgets import SectionHeader
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +61,6 @@ class _StatusCard(QFrame):
         self._detail.setText(detail)
 
 
-class _ActionButton(QPushButton):
-    def __init__(self, parent: QWidget, text: str, command=None):
-        super().__init__(text, parent)
-        self.setCursor(Qt.PointingHandCursor)
-        if command:
-            self.clicked.connect(command)
-
-
 class QtApiDashboardView(QWidget):
     """Embedded API monitoring dashboard for the Document Center.
 
@@ -85,6 +77,8 @@ class QtApiDashboardView(QWidget):
         super().__init__(parent)
         self.db = db
         self._api = api_client or ApiClient()
+        self._refreshing = False
+        self._status_cards: dict[tuple[int, int], "_StatusCard"] = {}
         self._build_ui()
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_status)
@@ -103,9 +97,15 @@ class QtApiDashboardView(QWidget):
         layout.addLayout(self._status_grid)
 
         actions_row = QHBoxLayout()
-        self._test_btn = Btn(self, "Test API", command=self._test_api, variant="secondary")
+        self._test_btn = Btn(
+            self, t("api.test_api", default="Test API"),
+            command=self._test_api, variant="secondary",
+        )
+        self._refresh_btn = Btn(
+            self, t("common.refresh", default="Refresh"),
+            command=self._refresh_status, variant="secondary",
+        )
         actions_row.addWidget(self._test_btn)
-        self._refresh_btn = Btn(self, "Refresh", command=self._refresh_status, variant="secondary")
         actions_row.addWidget(self._refresh_btn)
         actions_row.addStretch()
         layout.addLayout(actions_row)
@@ -129,40 +129,103 @@ class QtApiDashboardView(QWidget):
         self._refresh_status()
 
     def _refresh_status(self) -> None:
-        while self._status_grid.count():
-            item = self._status_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        """Poll API status off the UI thread; skip if a poll is in flight."""
+        if self._refreshing:
+            return
+        self._refreshing = True
+        WorkerPool.run(
+            fn=self._do_status_check,
+            on_result=self._apply_status,
+            on_error=self._apply_error,
+        )
 
+    def _do_status_check(self) -> dict:
+        """Run the HTTP checks on the worker thread."""
         online = self._api.is_online()
-        status = "online" if online else "offline"
-
-        api_card = _StatusCard(self, "API Server", status,
-                               "https://api.operionerp.xyz" if online else "Unreachable")
-        self._status_grid.addWidget(api_card, 0, 0)
-
+        result: dict = {"online": online}
         if online:
             try:
-                health = self._api.health_check()
-                db_stat = health.get("database", "unknown")
-                db_card = _StatusCard(self, "Database", "online", str(db_stat))
-                self._status_grid.addWidget(db_card, 0, 1)
-
-                ver = health.get("version", "")
-                ver_card = _StatusCard(self, "API Version", "online", f"v{ver}")
-                self._status_grid.addWidget(ver_card, 1, 0)
+                result["health"] = self._api.health_check()
             except Exception as e:
-                err_card = _StatusCard(self, "Error", "offline", str(e))
-                self._status_grid.addWidget(err_card, 0, 1)
+                result["error"] = str(e)
+        return result
 
-        self._add_log(f"API {'ONLINE' if online else 'OFFLINE'}")
+    def _apply_status(self, result: dict) -> None:
+        self._refreshing = False
+        online = bool(result.get("online"))
+        health = result.get("health")
+        error = result.get("error")
+
+        desired: dict[tuple[int, int], tuple[str, str, str]] = {}
+        desired[(0, 0)] = (
+            t("api.server", default="API Server"),
+            "online" if online else "offline",
+            "https://api.operionerp.xyz" if online
+            else t("api.unreachable", default="Unreachable"),
+        )
+        if online and error is None:
+            db_stat = health.get("database", "unknown") if health else "unknown"
+            desired[(0, 1)] = (
+                t("api.database", default="Database"), "online", str(db_stat)
+            )
+            ver = health.get("version", "") if health else ""
+            desired[(1, 0)] = (
+                t("api.version", default="API Version"), "online", f"v{ver}"
+            )
+        elif error is not None:
+            desired[(0, 1)] = (
+                t("api.error", default="Error"), "offline", str(error)
+            )
+
+        self._reconcile_status_cards(desired)
+        self._add_log(
+            t("api.log_status", default="API {state}").format(
+                state=(
+                    t("api.online", default="ONLINE")
+                    if online else t("api.offline", default="OFFLINE")
+                )
+            )
+        )
+
+    def _apply_error(self, msg: str) -> None:
+        self._refreshing = False
+        self._reconcile_status_cards({
+            (0, 0): (
+                t("api.server", default="API Server"), "offline",
+                t("api.unreachable", default="Unreachable"),
+            ),
+            (0, 1): (t("api.error", default="Error"), "offline", msg),
+        })
+        self._add_log(f"{t('api.log_error', default='API error')}: {msg}")
+
+    def _reconcile_status_cards(self, desired: dict) -> None:
+        """Update existing cards in place; only add/remove when needed."""
+        # Remove cards that should no longer be shown.
+        for key in list(self._status_cards):
+            if key not in desired:
+                w = self._status_cards.pop(key)
+                self._status_grid.removeWidget(w)
+                w.deleteLater()
+        # Update existing cards in place; create missing ones.
+        for (row, col), (title, status, detail) in desired.items():
+            card = self._status_cards.get((row, col))
+            if card is None:
+                card = _StatusCard(self, title, status, detail)
+                self._status_cards[(row, col)] = card
+                self._status_grid.addWidget(card, row, col)
+            else:
+                card.update_status(status, detail)
 
     def _test_api(self) -> None:
-        try:
-            health = self._api.health_check()
-            self._add_log(f"Health OK: {health}")
-        except Exception as e:
-            self._add_log(f"Test failed: {e}")
+        WorkerPool.run(
+            fn=self._api.health_check,
+            on_result=lambda h: self._add_log(
+                f"{t('api.health_ok', default='Health OK')}: {h}"
+            ),
+            on_error=lambda msg: self._add_log(
+                f"{t('api.test_failed', default='Test failed')}: {msg}"
+            ),
+        )
 
     def _add_log(self, msg: str) -> None:
         from datetime import datetime

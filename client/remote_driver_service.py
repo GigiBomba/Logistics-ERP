@@ -8,9 +8,16 @@ perform driver CRUD and driver-truck assignment through the API.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+from client.cache import LocalCache
+from client.remote_services import _resolve_company_id
+
 logger = logging.getLogger("remote_driver")
+
+# Short-TTL cache for the driver→plate hot path; keys are company-scoped.
+_driver_cache = LocalCache(ttl=60)
 
 
 class RemoteDriverService:
@@ -77,17 +84,35 @@ class RemoteDriverService:
 
         Mirrors ``DriverTruckAssignmentRepository.get_plates_by_driver_ids``.
         No bulk endpoint exists on the backend, so this composes one
-        ``GET /drivers/{id}/truck-plate`` call per driver id; drivers that
-        have no truck / fail to resolve map to ``""``.
+        ``GET /drivers/{id}/truck-plate`` call per driver id, fetched in
+        parallel with bounded concurrency; drivers that have no truck / fail
+        to resolve map to ``""``. Company-scoped short-TTL cached.
         """
-        result: dict = {}
-        for did in driver_ids or []:
+        ids = list(driver_ids or [])
+        cid = _resolve_company_id(self._api)
+        cache_key = None
+        if cid is not None and ids:
+            cache_key = f"plates:{cid}:{sorted(ids)}"
+            cached = _driver_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        def _fetch(did: int):
             try:
                 resp = self._api.get_driver_truck_plate(did)
                 plate = resp.get("plate", "") if isinstance(resp, dict) else ""
             except Exception:
                 plate = ""
-            result[did] = plate
+            return did, plate
+
+        result: dict = {}
+        if ids:
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                for did, plate in ex.map(_fetch, ids):
+                    result[did] = plate
+
+        if cache_key is not None:
+            _driver_cache.set(cache_key, result)
         return result
 
     def get_active_trucks(self) -> list:

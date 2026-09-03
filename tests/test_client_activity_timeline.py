@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6.QtWidgets import QLabel
 
+from services.i18n import t
 from ui.widgets.client_activity_timeline import QtClientActivityTimeline
 
 
@@ -104,7 +105,10 @@ class TestQtClientActivityTimelineData:
         assert widget.layout().count() == 1
         label = widget.layout().itemAt(0).widget()
         assert isinstance(label, QLabel)
-        assert label.text() == "common.no_activity"
+        # Translations are loaded by reset_singletons, so the label shows the
+        # real string — never the raw "common.no_activity" key.
+        assert label.text() == t("common.no_activity")
+        assert "common.no_activity" not in label.text()
 
     def test_build_limits_to_30_rows(self, qt_widget, qtbot, mock_service):
         many_trips = [

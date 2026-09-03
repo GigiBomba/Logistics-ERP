@@ -126,7 +126,13 @@ class ConversationDisplayWidget(QScrollArea):
         """Scroll the scroll area to the bottom."""
         from PySide6.QtCore import QTimer
 
-        QTimer.singleShot(50, self, self._perform_scroll)
+        # Parented single-shot timer (NOT the ``singleShot(msec, context,
+        # callable)`` overload): parenting to self keeps the C++ timer alive
+        # and guarantees the deferred scroll can't run against a freed object.
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self._perform_scroll)
+        _timer.start(50)
 
     def _perform_scroll(self) -> None:
         """Actually perform the scroll (called via single-shot timer)."""

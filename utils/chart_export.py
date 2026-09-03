@@ -285,7 +285,8 @@ class _RenderEngine:
                 # Chrome on GPU-less environments (Page.loadEventFired never
                 # fires), so the next recycle must drop them.
                 global _SOFTWARE_RENDER_FALLBACK
-                if not _SOFTWARE_RENDER_FALLBACK:
+                first_timeout = not _software_render_mode()
+                if first_timeout:
                     _SOFTWARE_RENDER_FALLBACK = True
                     _log.warning(
                         "Switching to software-rendering Chrome flags for "
@@ -293,8 +294,44 @@ class _RenderEngine:
                         "to force this mode from the start)"
                     )
                 self._needs_recycle.set()
-                if not future.done():
-                    future.set_exception(TimeoutError("Render timed out"))
+                if first_timeout:
+                    _log.warning(
+                        "Retrying render once with software-rendering Chrome flags"
+                    )
+                    # Drop the GPU-killing flags now: _software_render_mode()
+                    # returns True after the flip above, so the recycled
+                    # browser starts with the software-rendering flag set.
+                    await self._recycle_browser()
+                    if self._browser is None:
+                        if not future.done():
+                            future.set_exception(
+                                RuntimeError("Browser unavailable after recycle")
+                            )
+                    else:
+                        retry_req = dict(request)
+                        retry_req["timeout"] = min(
+                            request.get("timeout", 30.0), 30.0,
+                        )
+                        try:
+                            result = await asyncio.wait_for(
+                                self._process(retry_req),
+                                timeout=retry_req["timeout"],
+                            )
+                            if not future.done():
+                                future.set_result(result)
+                            self._render_count += 1
+                            self._zombie_tab_count = 0
+                        except asyncio.TimeoutError:
+                            _log.error("Render retry timed out — giving up")
+                            if not future.done():
+                                future.set_exception(TimeoutError("Render timed out"))
+                        except BaseException as exc:
+                            _log.warning("Render retry failed: %s", exc)
+                            if not future.done():
+                                future.set_exception(exc)
+                else:
+                    if not future.done():
+                        future.set_exception(TimeoutError("Render timed out"))
             except BaseException as exc:
                 _log.warning(
                     "Render failed: %s — scheduling browser recycle",
@@ -487,11 +524,59 @@ class _RenderEngine:
                     ),
                     timeout=_remaining(),
                 )
-                # Wait for page to fully load (subscribe to the event)
-                await asyncio.wait_for(
-                    tab.subscribe_once("Page.loadEventFired"),
-                    timeout=_remaining(),
-                )
+                # Wait for the page to finish loading.  The page is a fast
+                # local file:// URL with plotly.js fully inlined, so the
+                # Page.loadEventFired event can fire before the subscription
+                # below is registered (create_tab navigates as part of
+                # Target.createTarget).  Race the event subscription against a
+                # DOM poll so a missed event can never leave the wait hanging
+                # until the render timeout.  _extract_svg() polls for the SVG
+                # with its own deadline, so proceeding on load-event-only is
+                # safe.
+                load_future = tab.subscribe_once("Page.loadEventFired")
+
+                async def _poll_plotly_svg() -> None:
+                    while True:
+                        try:
+                            result = await asyncio.wait_for(
+                                tab.send_command(
+                                    "Runtime.evaluate",
+                                    params={
+                                        "expression": """
+                                            (function() {
+                                                return document.readyState === 'complete'
+                                                    && !!document.querySelector('.js-plotly-plot svg');
+                                            })()
+                                        """,
+                                        "returnByValue": True,
+                                    },
+                                ),
+                                timeout=min(5.0, _remaining()),
+                            )
+                        except asyncio.TimeoutError:
+                            continue
+                        except Exception:
+                            _log.debug("Load-poll CDP error", exc_info=True)
+                            continue
+                        if (
+                            "result" in result
+                            and "result" in result["result"]
+                            and "value" in result["result"]["result"]
+                        ):
+                            if result["result"]["result"]["value"]:
+                                return
+                        await asyncio.sleep(0.25)
+
+                load_poll_task = asyncio.create_task(_poll_plotly_svg())
+                try:
+                    await asyncio.wait(
+                        {load_future, load_poll_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    load_poll_task.cancel()
+                    if not load_future.done():
+                        load_future.cancel()
 
                 if fmt == "svg":
                     result = await self._extract_svg(tab, width, height, scale, _remaining())
@@ -633,7 +718,7 @@ class _RenderEngine:
         self._loop.call_soon_threadsafe(  # type: ignore[union-attr]
             self._queue.put_nowait, (request, future),
         )
-        result = future.result(timeout=request.get("timeout", 30) + 10)
+        result = future.result(timeout=request.get("timeout", 30) + 70)
         elapsed = _time.perf_counter() - _t0
         _log.debug("Render %s %dx%d completed in %.2fs (total wait)", fmt, w, h, elapsed)
         return result
@@ -680,6 +765,20 @@ def _software_render_mode() -> bool:
     if os.environ.get("OPERION_CHROME_SOFTWARE", "").strip() in ("1", "true", "yes"):
         return True
     return _SOFTWARE_RENDER_FALLBACK
+
+
+def _reset_software_render_fallback() -> None:
+    """Reset the sticky software-rendering fallback flag (test helper).
+
+    ``_SOFTWARE_RENDER_FALLBACK`` is intentionally sticky for the process
+    lifetime in production: once any render times out, every subsequent
+    browser recycle uses the software-rendering flag set.  Tests that flip
+    it (exercising the timeout→retry path) need a way to undo that so
+    later tests — e.g. those asserting the GPU-killing CLI flags are
+    present — see a pristine module state.
+    """
+    global _SOFTWARE_RENDER_FALLBACK
+    _SOFTWARE_RENDER_FALLBACK = False
 
 
 class _SilentChromium:

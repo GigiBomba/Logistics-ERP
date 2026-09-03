@@ -50,6 +50,11 @@ from ui.widgets import ActionButton, StyledLineEdit
 
 logger = logging.getLogger(__name__)
 
+# ── Canvas geometry (INTENTIONAL fixed size) ────────────────────────────────
+# PAD_WIDTH/PAD_HEIGHT define the drawing-surface geometry AND the exported
+# PNG resolution (see _render_to_png — the image is rendered at exactly
+# PAD_WIDTH x PAD_HEIGHT). This is deliberate, not a DPI bug: the capture
+# area is a fixed logical surface. Kept as-is per Phase 2 (DPI-safe dialogs).
 PAD_WIDTH = 260
 PAD_HEIGHT = 80
 
@@ -249,6 +254,9 @@ class QtSignaturePad(QWidget):
         # Wrap the _CanvasWidget in a QFrame to produce a border effect.
         self._canvas_frame = QFrame()
         self._canvas_frame.setFrameShape(QFrame.StyledPanel)
+        # Canvas frame KEPT fixed: the 1px border must exactly wrap the fixed
+        # PAD_WIDTH x PAD_HEIGHT drawing surface (see canvas geometry comment
+        # above) — canvas geometry, intentional (Phase 2).
         self._canvas_frame.setFixedSize(PAD_WIDTH + 2, PAD_HEIGHT + 2)
         self._canvas_frame.setStyleSheet(
             f"background-color: {COLOR_BORDER_SUBTLE};"

@@ -162,7 +162,7 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
                     target._content_widget.setVisible(True)
                     icon = "▼"
                     target._title_btn.setText(f"{icon}  {t(target._title_key).upper()}")
-                widget.ensureWidgetVisible(target, xMargin=0, yMargin=20)
+                widget.ensureWidgetVisible(target, xmargin=0, ymargin=20)
 
         QTimer.singleShot(50, _do_scroll)
 

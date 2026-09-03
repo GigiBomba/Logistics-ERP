@@ -32,6 +32,12 @@ class ToolSpec(BaseModel):
     name: str
     description: str
     parameters_json_schema: dict
+    # §23.4 LLM-first: surfaces the deterministic execution authority level for
+    # the LLM's pre-announcement only ("this action will require confirmation").
+    # The actual gate stays deterministic (ConfirmationLevel on the registered
+    # tool); the LLM never decides confirmation. One of
+    # "SAFE"/"INFORMATIONAL"/"BUSINESS"/"DESTRUCTIVE".
+    confirmation_level: Optional[str] = None
 
 
 class LLMRequest(BaseModel):

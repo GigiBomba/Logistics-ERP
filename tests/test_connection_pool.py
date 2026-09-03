@@ -323,7 +323,10 @@ class TestTimeoutBehaviour:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("INSERT INTO t VALUES (1)")
             lock_held.set()          # signal that lock is taken
-            time.sleep(5)            # keep holding it
+            # Keep holding the write lock until the contending thread has
+            # observed its own timeout (same 5s ceiling as the old blind
+            # sleep) so the test finishes as soon as the condition holds.
+            got_timeout.wait(timeout=5)
             conn.execute("COMMIT")
 
         def contend_write() -> None:

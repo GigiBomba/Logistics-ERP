@@ -176,6 +176,50 @@ ALL_REVISIONS: list[dict] = [
         "adds_columns": {},
         "indexes": [],
     },
+    {
+        "id": "i1a2b3c4d5e6",
+        "down": "h0a1b2c3d4e1",
+        "doc": "create copilot_autonomy_approvals",
+        "creates_tables": ["copilot_autonomy_approvals"],
+        "adds_columns": {},
+        "indexes": [
+            "uq_copilot_autonomy_approvals_company_workflow",
+            "idx_copilot_autonomy_approvals_company",
+        ],
+    },
+    {
+        "id": "j2b3c4d5e6f0",
+        "down": "i1a2b3c4d5e6",
+        "doc": "add copilot reasoning unique index",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": ["uq_copilot_reasoning_company_conversation"],
+    },
+    {
+        "id": "k4c5d6e7f8a1",
+        "down": "j2b3c4d5e6f0",
+        "doc": "add covering indexes for company-scoped hot queries",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": [
+            "idx_expenses_company",
+            "idx_maintenance_records_company_truck_date",
+            "idx_tacho_driver_activity_company_driver_date",
+        ],
+    },
+    {
+        "id": "l5d6e7f8a9b2",
+        "down": "k4c5d6e7f8a1",
+        "doc": "add action/entity-tracking columns to copilot_audit_log",
+        "creates_tables": [],
+        "adds_columns": {
+            "copilot_audit_log": [
+                "action", "entity_type", "entity_id",
+                "old_value", "new_value", "performed_by",
+            ],
+        },
+        "indexes": [],
+    },
 ]
 
 # Base tables that must exist before running migrations (referenced by FK / ADD COLUMN)
@@ -198,6 +242,34 @@ BASE_TABLES_SQL: dict[str, str] = {
             description TEXT,
             status TEXT DEFAULT 'draft',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    # Base tables for k4c5d6e7f8a1 (covering-index migration).  Kept minimal —
+    # deliberately WITHOUT monetary/timestamp columns so the SQLite-compatible
+    # harness never triggers the PostgreSQL-only ALTER COLUMN in
+    # f7b8c9d0e1f8 (its _column_exists guard skips columns that do not exist).
+    "expenses": """
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY,
+            company_id INTEGER,
+            truck_id INTEGER,
+            date TEXT
+        )
+    """,
+    "maintenance_records": """
+        CREATE TABLE IF NOT EXISTS maintenance_records (
+            id INTEGER PRIMARY KEY,
+            company_id INTEGER,
+            truck_id INTEGER,
+            date TEXT NOT NULL
+        )
+    """,
+    "tacho_driver_activity": """
+        CREATE TABLE IF NOT EXISTS tacho_driver_activity (
+            id INTEGER PRIMARY KEY,
+            company_id INTEGER,
+            driver_id INTEGER,
+            activity_date DATE NOT NULL
         )
     """,
 }
@@ -275,6 +347,10 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     },
     "invoice_number_sequences": {
         "series", "year", "last_number",
+    },
+    "copilot_autonomy_approvals": {
+        "id", "company_id", "workflow", "enabled",
+        "created_by", "created_at", "updated_at",
     },
 }
 
@@ -467,8 +543,8 @@ class TestUpgradeAll:
             version = result.scalar()
         engine.dispose()
         assert version is not None, "alembic_version is empty"
-        # The sole head is h0a1b2c3d4e1
-        assert version == "h0a1b2c3d4e1", (
+        # The sole head is l5d6e7f8a9b2
+        assert version == "l5d6e7f8a9b2", (
             f"Unexpected alembic_version: {version}"
         )
 
@@ -899,7 +975,7 @@ class TestRevisionChain:
 
         script = ScriptDirectory(ALEMBIC_DIR)
         heads = set(script.get_heads())
-        expected_heads = {"h0a1b2c3d4e1"}
+        expected_heads = {"l5d6e7f8a9b2"}
         assert heads == expected_heads, (
             f"Expected heads {expected_heads}, got {heads}"
         )

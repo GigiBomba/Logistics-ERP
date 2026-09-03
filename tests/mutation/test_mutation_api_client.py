@@ -46,11 +46,13 @@ def _make_raise_for_status(resp: MagicMock) -> None:
 class TestMutationApiClientRetry:
     """Kill mutations on retry logic — verifies the right failures trigger retry.
 
-    ``_request_with_retry`` catches ``httpx.HTTPError`` subclasses
-    (``ConnectError``, ``TimeoutException``, ``RemoteProtocolError``,
-    ``ReadError``) and retries up to 3 times with exponential backoff.
-    4xx responses are **not** retried — they pass through as valid HTTP
-    responses and the caller (e.g. ``_get``) calls ``raise_for_status()``.
+    ``_request_with_retry`` retries up to 3 times with exponential backoff on
+    transport-level exceptions (``ConnectError``, ``TimeoutException``,
+    ``RemoteProtocolError``, ``ReadError``) AND on transient server errors
+    (``_TRANSIENT_STATUSES`` = 500, 502, 503, 504).
+    4xx responses (and non-transient 5xx like 501) are **not** retried — they
+    pass through as valid HTTP responses and the caller (e.g. ``_get``) calls
+    ``raise_for_status()``.
     """
 
     @pytest.fixture
@@ -131,6 +133,24 @@ class TestMutationApiClientRetry:
             client._get("/test")
         assert client._client.request.call_count == 3
 
+    def test_retry_on_500(self, client):
+        """500 server error SHOULD trigger retry (up to 3 attempts).
+
+        ``_TRANSIENT_STATUSES`` includes 500 (circuit-breaker / retry
+        reliability), so a 500 is retried with exponential backoff.  The
+        final attempt passes through and ``_get`` raises ``HTTPStatusError``
+        from ``raise_for_status()``.
+        """
+        resp = _make_json_response(500, {"detail": "Server Error"})
+        _make_raise_for_status(resp)
+        client._client.request.return_value = resp
+
+        with pytest.raises(httpx.HTTPStatusError, match="500"):
+            client._get("/test")
+        assert client._client.request.call_count == 3, (
+            "500 is in _TRANSIENT_STATUSES and must be retried"
+        )
+
     # ── Should NOT retry ──────────────────────────────────────────────────────────
 
     def test_no_retry_on_400(self, client):
@@ -170,19 +190,22 @@ class TestMutationApiClientRetry:
             client._get("/test")
         assert client._client.request.call_count == 1
 
-    def test_no_retry_on_500(self, client):
-        """500 server error should NOT trigger retry from the client side.
+    def test_no_retry_on_501(self, client):
+        """501 Not Implemented should NOT trigger retry.
 
-        ``_request_with_retry`` only retries on transport-level exceptions;
-        a 500 is a valid HTTP response that passes straight through.
+        501 is a 5xx but is NOT in ``_TRANSIENT_STATUSES`` (500, 502, 503,
+        504) — it passes straight through and ``_get`` raises
+        ``HTTPStatusError`` from ``raise_for_status()``.
         """
-        resp = _make_json_response(500, {"detail": "Server Error"})
+        resp = _make_json_response(501, {"detail": "Not Implemented"})
         _make_raise_for_status(resp)
         client._client.request.return_value = resp
 
-        with pytest.raises(httpx.HTTPStatusError, match="500"):
+        with pytest.raises(httpx.HTTPStatusError, match="501"):
             client._get("/test")
-        assert client._client.request.call_count == 1
+        assert client._client.request.call_count == 1, (
+            "501 is not in _TRANSIENT_STATUSES and must not retry"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

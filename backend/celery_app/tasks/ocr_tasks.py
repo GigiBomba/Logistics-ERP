@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict
 
@@ -35,6 +36,33 @@ def process_document_ocr(
         doc = service.get_by_id(document_id)
         if not doc:
             return {"error": "Document not found", "document_id": document_id}
+
+        # ── Idempotency guard (C3) ──────────────────────────────────────
+        # The document row is the source of truth: if a previous run already
+        # persisted OCR results (``ocr_run_at`` set by this task, or legacy
+        # ``ocr_text``), do NOT re-run the expensive extraction on a retry
+        # after a partial failure — report the existing outcome instead.
+        if doc.get("ocr_run_at") or doc.get("ocr_text"):
+            existing_text = doc.get("ocr_text") or ""
+            try:
+                existing_fields = json.loads(doc.get("extracted_data_json") or "{}")
+            except (TypeError, ValueError):
+                existing_fields = {}
+            if not isinstance(existing_fields, dict):
+                existing_fields = {}
+            logger.info(
+                "process_document_ocr: document_id=%d already processed "
+                "(ocr_run_at=%r) — skipping extraction",
+                document_id, doc.get("ocr_run_at"),
+            )
+            return {
+                "status": "ok",
+                "document_id": document_id,
+                "engine": doc.get("ocr_engine") or engine,
+                "text_length": len(existing_text),
+                "field_count": len(existing_fields),
+                "already_processed": True,
+            }
 
         file_path = doc.get("file_path", "")
         if not file_path:

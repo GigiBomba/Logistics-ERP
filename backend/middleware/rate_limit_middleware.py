@@ -14,6 +14,30 @@ from backend.errors import ErrorCode
 
 logger = logging.getLogger(__name__)
 
+# Shared async redis client (R4).  Built from the same OPERION_REDIS_URL and
+# reused by every middleware instance so the zset operations in the request
+# path are non-blocking ``redis.asyncio`` calls instead of sync calls that
+# would stall the event loop on EVERY request.
+_async_redis_client: Optional[object] = None
+
+
+def _build_async_redis_client(redis_url: str, redis_password: str):
+    """Build (once) the process-wide async redis client."""
+    global _async_redis_client
+    if _async_redis_client is not None:
+        return _async_redis_client
+    try:
+        import redis as _redis
+        _async_redis_client = _redis.asyncio.from_url(
+            redis_url,
+            socket_timeout=2,
+            password=redis_password or None,
+            decode_responses=True,
+        )
+    except Exception:
+        _async_redis_client = None
+    return _async_redis_client
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Per-IP rate limiting backed by Redis (preferred) or in-memory dict.
@@ -35,15 +59,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._request_count = 0
         self._env = os.environ.get("OPERION_ENV", "development")
 
-        # Try to connect to Redis once at startup
+        # Try to connect to Redis once at startup.  The sync probe preserves
+        # the existing fail-fast/fail-back behaviour; the ASYNC client is what
+        # the request path actually uses.
         redis_url = os.environ.get("OPERION_REDIS_URL", "")
         redis_password = os.environ.get("OPERION_REDIS_PASSWORD", "")
         if redis_url:
             try:
                 import redis as _redis
-                client = _redis.Redis.from_url(redis_url, socket_timeout=2, password=redis_password or None)
-                client.ping()
-                self._redis_client = client
+                probe = _redis.Redis.from_url(redis_url, socket_timeout=2, password=redis_password or None)
+                probe.ping()
+                self._redis_client = _build_async_redis_client(redis_url, redis_password)
                 logger.info("RateLimitMiddleware using Redis backend at %s", redis_url)
             except Exception:
                 if self._env == "production":
@@ -59,7 +85,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _redis_key(self, client_ip: str) -> str:
         return f"ratelimit:{client_ip}"
 
-    def _check_redis(self, client_ip: str) -> bool:
+    async def _check_redis(self, client_ip: str) -> bool:
         """Check rate limit via Redis sorted set. Returns True if allowed."""
         client = self._redis_client
         if client is None:
@@ -71,14 +97,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         try:
             # Remove entries outside the window
-            client.zremrangebyscore(key, 0, window_start)
+            await client.zremrangebyscore(key, 0, window_start)
             # Count remaining entries
-            count = client.zcard(key)
+            count = await client.zcard(key)
             if count is not None and count >= self.max_requests:
                 return True  # blocked
             # Record this request
-            client.zadd(key, {str(now): now})
-            client.expire(key, self.window_seconds)
+            await client.zadd(key, {str(now): now})
+            await client.expire(key, self.window_seconds)
             return False  # allowed
         except Exception:
             if self._env == "production" and not self._redis_warned:
@@ -102,7 +128,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Try Redis first
         if self._redis_client is not None:
-            blocked = self._check_redis(client_ip)
+            blocked = await self._check_redis(client_ip)
             if blocked:
                 logger.warning(
                     "Rate limit exceeded: client=%s path=%s limit=%d per %ds",

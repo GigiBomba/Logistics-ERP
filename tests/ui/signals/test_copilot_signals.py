@@ -229,16 +229,13 @@ class TestGuidedOverlayWidgetSignals:
         spy = QSignalSpy(overlay.step_changed)
 
         overlay.start_tour(steps)
-        assert spy.wait(3000), "step_changed(0) not emitted after start_tour"
-        assert spy.count() >= 1, f"Expected >= 1 emission, got {spy.count()}"
+        assert spy.count() >= 1, f"Expected >= 1 emission after start_tour, got {spy.count()}"
 
         overlay.next_step()
-        assert spy.wait(3000), "step_changed(1) not emitted after next_step"
-        assert spy.count() >= 2, f"Expected >= 2 emissions, got {spy.count()}"
+        assert spy.count() >= 2, f"Expected >= 2 emissions after next_step, got {spy.count()}"
 
         overlay.next_step()
-        assert spy.wait(3000), "step_changed(2) not emitted after next_step"
-        assert spy.count() == 3, f"Expected 3 emissions, got {spy.count()}"
+        assert spy.count() == 3, f"Expected 3 emissions after next_step, got {spy.count()}"
 
         indices = [spy.at(i)[0] for i in range(spy.count())]
         assert indices == [0, 1, 2], (

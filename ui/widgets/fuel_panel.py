@@ -38,6 +38,12 @@ _LABEL_WIDTH = 30
 _MAX_COUNTRIES = 15
 _TOP_MARGIN = 6
 
+# Collapse-toggle (▼) button is a compact square icon button: width stays a
+# hard cap (square click target in the header row); height is a minimum floor.
+# The global QPushButton QSS governs the rendered height. Intentional
+# icon-button geometry (Phase 2).
+_TOGGLE_BTN_SIZE = 24
+
 
 class _BarChartWidget(QFrame):
     """Custom-painted bar chart showing diesel prices.
@@ -49,6 +55,13 @@ class _BarChartWidget(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._prices: list[tuple[str, float]] = []
+        self._max_price: float = 0.0
+        # Cache the label/price font once instead of constructing it on every
+        # paintEvent call (identical rendering; avoids per-paint allocation).
+        font = QFont("Segoe UI", 11)
+        if font.pointSize() <= 0:
+            font.setPointSize(11)
+        self._font = font
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMinimumHeight(0)
 
@@ -57,6 +70,8 @@ class _BarChartWidget(QFrame):
     def set_prices(self, prices: list[tuple[str, float]]) -> None:
         """Set the sorted list of ``(country_code, price)`` tuples and redraw."""
         self._prices = prices
+        # Precompute the max price once here; painting only reads it.
+        self._max_price = max((p for _, p in prices), default=0.0)
         self._recalc_height()
         self.update()
 
@@ -71,15 +86,11 @@ class _BarChartWidget(QFrame):
         painter.setRenderHint(QPainter.Antialiasing, False)
 
         w = self.width()
-        max_price = max(p for _, p in self._prices)
+        max_price = self._max_price
         # Available width for the bar itself
         bar_area_w = max(w - _LABEL_WIDTH - 60, 300)
 
-        # Font for labels and price text
-        font = QFont("Segoe UI", 11)
-        if font.pointSize() <= 0:
-            font.setPointSize(11)
-        painter.setFont(font)
+        painter.setFont(self._font)
 
         for i, (code, price) in enumerate(self._prices):
             y = _TOP_MARGIN + i * (_BAR_HEIGHT + _BAR_GAP)
@@ -168,7 +179,8 @@ class QtFuelPricePanel(QFrame):
         self._toggle_btn = QPushButton("\u25BC")  # ▼
         self._toggle_btn.setProperty("role", "fuel-toggle")
         self._toggle_btn.setCursor(Qt.PointingHandCursor)
-        self._toggle_btn.setFixedSize(24, 24)
+        self._toggle_btn.setFixedWidth(_TOGGLE_BTN_SIZE)
+        self._toggle_btn.setMinimumHeight(_TOGGLE_BTN_SIZE)
         self._toggle_btn.setFlat(True)
         self._toggle_btn.clicked.connect(self._toggle)
         header_layout.addWidget(self._toggle_btn)

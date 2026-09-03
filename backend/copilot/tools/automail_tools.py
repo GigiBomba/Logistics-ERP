@@ -239,6 +239,12 @@ class SendBulkTool(BaseTool):
     required_permission = "email:send_bulk"
     confirmation_level = ConfirmationLevel.DESTRUCTIVE
     supports_undo = False
+    # §13 — bulk fan-out (≤100 recipients) is heavy: dispatched to Celery
+    # (inline fallback), pausable/resumable so wave-1's 409 pause enforcement
+    # is satisfiable.
+    long_running = True
+    supports_pause = True
+    supports_resume = True
     parameters_schema = SendBulkParams
 
     async def validate(self, params: SendBulkParams, ctx: ToolExecutionContext) -> List[str]:

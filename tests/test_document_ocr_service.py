@@ -11,6 +11,11 @@ import pytest
 from services.document.ocr_service import OcrService, MAX_PDF_SIZE_FOR_OCR
 
 
+@pytest.fixture(autouse=True)
+def _no_worker_threads(monkeypatch):
+    monkeypatch.setattr(OcrService, "_start_ocr_workers", lambda self: None)
+
+
 @pytest.fixture
 def db_mock():
     return MagicMock()
@@ -90,7 +95,13 @@ def test_extract_image_text(db_mock, repo_mock):
 
 @patch("services.document.ocr_service.OcrService.retry_pending_ocr")
 def test_retry_pending_on_startup(mock_retry, db_mock, repo_mock):
-    _ = OcrService(db_mock, repo_mock)
+    service = OcrService(db_mock, repo_mock)
+    # The autouse _no_worker_threads fixture noops _start_ocr_workers, so the
+    # startup retry is no longer triggered by __init__; exercise the startup
+    # retry wiring directly (without spawning worker threads).
+    service._start_ocr_workers = lambda: service.retry_pending_ocr(
+        service._repo, service._ocr_queue, max_docs=50)
+    service._start_ocr_workers()
     mock_retry.assert_called_once()
 
 

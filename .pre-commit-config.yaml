@@ -44,3 +44,17 @@ repos:
         files: \.py$
         types: [python]
         stages: [pre-commit]
+
+  # ── UI Style Gate (Phase 1 Lane C) ───────────────────────────────
+  # Repo-wide static gate over ui/: inline QSS, raw hex colors,
+  # sub-10px fonts (baseline-graded) + fixed-geometry warnings.
+  # Runs once per commit regardless of which files changed.
+  - repo: local
+    hooks:
+      - id: ui-style-gate
+        name: UI Style Gate — Phase 1 Lane C
+        entry: python tools/ui_style_gate.py
+        language: system
+        pass_filenames: false
+        description: "Static style gate over ui/ (inline QSS, raw hex colors, sub-10px fonts, fixed-geometry warnings)"
+        stages: [pre-commit]

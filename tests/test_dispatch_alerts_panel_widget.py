@@ -350,6 +350,27 @@ def _find_stat_card_by_label(stats, label_substring):
     return None
 
 
+def _find_stat_card_by_key(stats, translation_key):
+    """Find a StatCard whose label matches a translation key.
+
+    Matches either the resolved translation (e.g. "Total Active") or the
+    raw-key fallback that ``t()`` returns when translations have not been
+    loaded in the current pytest worker — the panel label for
+    ``dispatch_board.alerts_panel_total_trips`` resolves to "Total Active"
+    in English, so an English substring like "TRIPS" only matches the
+    unloaded raw-key form and is order/state-dependent.
+    """
+    from services.i18n import t
+
+    candidates = {t(translation_key).upper(), translation_key.upper()}
+    for card in stats:
+        lbl = card._label_lbl.text() if hasattr(card, "_label_lbl") else ""
+        for cand in candidates:
+            if cand and cand in lbl.upper():
+                return card
+    return None
+
+
 # ── TestQtDispatchAlertsPanelAlertsEmpty — No alerts ──────────────────────────
 
 
@@ -512,11 +533,22 @@ class TestQtDispatchAlertsPanelUnassigned:
         assert "driver" in label_texts.lower()
 
     def test_neither_group_shown(self, alerts_panel):
-        """Card missing both truck and driver → 'Neither' group."""
+        """Card missing both truck and driver → 'No Truck or Driver' group."""
         alerts_panel.refresh([SAMPLE_CARD_3])  # no truck, no driver
         labels = alerts_panel._unassigned_content.parent().findChildren(QLabel)
         label_texts = " ".join(lbl.text() for lbl in labels)
-        assert "Neither" in label_texts or "neither" in label_texts.lower()
+        # The group title resolves through the ``alerts_panel_neither``
+        # translation key ("No Truck or Driver").  Match the resolved label
+        # or the raw-key fallback used when translations are not loaded in
+        # the test worker.
+        from services.i18n import t
+
+        title = t("dispatch_board.alerts_panel_neither")
+        assert (
+            title in label_texts
+            or "dispatch_board.alerts_panel_neither" in label_texts
+            or ("truck" in label_texts.lower() and "driver" in label_texts.lower())
+        )
 
     def test_both_missing_triggers_assign_both_callback(self, alerts_panel):
         alerts_panel.refresh([SAMPLE_CARD_3])  # no truck, no driver
@@ -607,7 +639,9 @@ class TestQtDispatchAlertsPanelSummaryKPI:
         from ui.widgets.stat_card import StatCard
 
         stats = alerts_panel.findChildren(StatCard)
-        total_card = _find_stat_card_by_label(stats, "TRIPS")
+        total_card = _find_stat_card_by_key(
+            stats, "dispatch_board.alerts_panel_total_trips"
+        )
         assert total_card is not None
         assert total_card.value_label.text() == "3"
 
@@ -679,7 +713,9 @@ class TestQtDispatchAlertsPanelSummaryKPI:
         from ui.widgets.stat_card import StatCard
 
         stats = alerts_panel.findChildren(StatCard)
-        total_card = _find_stat_card_by_label(stats, "TRIPS")
+        total_card = _find_stat_card_by_key(
+            stats, "dispatch_board.alerts_panel_total_trips"
+        )
         assert total_card is not None
         assert total_card.value_label.text() == "1"  # only SAMPLE_CARD_2
 

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMenu,
     QMessageBox,
@@ -74,6 +75,7 @@ from ui.widgets import (
     StyledLineEdit,
     StyledTableWidget,
 )
+from ui.widgets.stat_card import StatCard
 from ui.widgets.layout_utils import clear_layout
 from ui.views.fleet_tab.truck_form import _TruckFormDialog
 from ui.worker_pool import WorkerPool
@@ -418,6 +420,12 @@ class QtFleetTab(BaseView):
         self._table = StyledTableWidget(None, columns, prefs_key="fleet_tab")
         self._table.setSortingEnabled(True)
         self._table.rowDoubleClicked.connect(self._on_table_double_click)
+        # Interactive sections with a readable minimum — header text is never
+        # elided; columns are resized to fit after data loads.
+        hdr = self._table.horizontalHeader()
+        hdr.setStretchLastSection(False)
+        hdr.setMinimumSectionSize(60)
+        hdr.setSectionResizeMode(QHeaderView.Interactive)
         layout.addWidget(self._table, 1)
 
         # Empty state (hidden by default)
@@ -631,6 +639,8 @@ class QtFleetTab(BaseView):
             with PerfTimer("fleet_tab.table"):
                 self._table.set_data(table_rows)
                 self._table.restore_column_widths()
+                # Fit every column (header + content) so headers are never elided.
+                self._table.horizontalHeader().resizeSections(QHeaderView.ResizeToContents)
             with PerfTimer("fleet_tab.kpi"):
                 self._update_kpi_values(rows)
             with PerfTimer("fleet_tab.chart"):
@@ -680,6 +690,8 @@ class QtFleetTab(BaseView):
             with PerfTimer("fleet_tab.table_set"):
                 self._table.set_data(table_rows)
                 self._table.restore_column_widths()
+                # Fit every column (header + content) so headers are never elided.
+                self._table.horizontalHeader().resizeSections(QHeaderView.ResizeToContents)
             with PerfTimer("fleet_tab.kpi_update"):
                 self._update_kpi_values(rows)
 
@@ -754,9 +766,7 @@ class QtFleetTab(BaseView):
         self._grid_visible = not self._grid_visible
         for chart in self.findChildren(PlotlyChartWidget):
             try:
-                chart.fig.update_xaxes(showgrid=self._grid_visible)
-                chart.fig.update_yaxes(showgrid=self._grid_visible)
-                chart.render()
+                chart.set_grid_visible(self._grid_visible)
             except Exception:
                 logger.exception("Failed to toggle grid on chart widget")
 
@@ -1216,12 +1226,24 @@ class QtFleetTab(BaseView):
         # Odometer
         odometer_km = truck_row.get("mileage", 0) or 0
         odometer_str = f"{odometer_km:,.0f} {t('fleet.unit_km')}"
-        self._maint_kpi_card(kpi_layout, t("fleet.maint_kpi_odometer"), odometer_str, COLOR_ACCENT_PRIMARY)
+        kpi_layout.addWidget(
+            StatCard(
+                kpi_frame,
+                label=t("fleet.maint_kpi_odometer"),
+                value=odometer_str,
+                accent_color=COLOR_ACCENT_PRIMARY,
+            )
+        )
 
         # Last service
         last_service = repo.get_maintenance_last_date(truck_id)
-        self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_last_service"), last_service or "\u2014", COLOR_SUCCESS_DEFAULT
+        kpi_layout.addWidget(
+            StatCard(
+                kpi_frame,
+                label=t("fleet.maint_kpi_last_service"),
+                value=last_service or "\u2014",
+                accent_color=COLOR_SUCCESS_DEFAULT,
+            )
         )
 
         # Next due
@@ -1237,15 +1259,25 @@ class QtFleetTab(BaseView):
                 except Exception:
                     pass
         next_due_str = next_due.strftime("%d/%m/%Y") if next_due else "\u2014"
-        self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_next_due"), next_due_str, COLOR_WARNING_DEFAULT
+        kpi_layout.addWidget(
+            StatCard(
+                kpi_frame,
+                label=t("fleet.maint_kpi_next_due"),
+                value=next_due_str,
+                accent_color=COLOR_WARNING_DEFAULT,
+            )
         )
 
         # Cost month
         month_start = datetime.now().strftime("%Y-%m-01")
         cost_month = repo.sum_maintenance_cost(since_date=month_start)
-        self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_cost_month"), f"{cost_month:.0f}", COLOR_INFO_DEFAULT
+        kpi_layout.addWidget(
+            StatCard(
+                kpi_frame,
+                label=t("fleet.maint_kpi_cost_month"),
+                value=f"{cost_month:.0f}",
+                accent_color=COLOR_INFO_DEFAULT,
+            )
         )
 
         # Alert count
@@ -1258,8 +1290,13 @@ class QtFleetTab(BaseView):
                 alert_count = len(alerts)
             except Exception:
                 pass
-        self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_alerts"), str(alert_count), COLOR_ERROR_DEFAULT
+        kpi_layout.addWidget(
+            StatCard(
+                kpi_frame,
+                label=t("fleet.maint_kpi_alerts"),
+                value=str(alert_count),
+                accent_color=COLOR_ERROR_DEFAULT,
+            )
         )
 
         # Tachograph expiry
@@ -1284,33 +1321,16 @@ class QtFleetTab(BaseView):
             else:
                 tacho_color = COLOR_ERROR_DEFAULT
                 tacho_display = tacho_expiry
-        self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_tacho"), tacho_display, tacho_color
+        kpi_layout.addWidget(
+            StatCard(
+                kpi_frame,
+                label=t("fleet.maint_kpi_tacho"),
+                value=tacho_display,
+                accent_color=tacho_color,
+            )
         )
 
         layout.addWidget(kpi_frame)
-
-    @staticmethod
-    def _maint_kpi_card(
-        layout: QHBoxLayout, title: str, value: str, accent_color: str
-    ) -> None:
-        card = QFrame()
-        card.setProperty("role", "card")
-        card.setStyleSheet(f"border-left: 3px solid {accent_color};")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
-        card_layout.setSpacing(1)
-
-        title_lbl = QLabel(title.upper())
-        title_lbl.setProperty("fontRole", "label")
-        card_layout.addWidget(title_lbl)
-
-        val_lbl = QLabel(str(value))
-        val_lbl.setProperty("fontRole", "mono")
-        val_lbl.setStyleSheet(f"color: {accent_color};")
-        card_layout.addWidget(val_lbl)
-
-        layout.addWidget(card)
 
     # ==================================================================
     # Expenses tab within detail dialog
@@ -1340,6 +1360,10 @@ class QtFleetTab(BaseView):
             (cid, t(lbl_key), w) for cid, lbl_key, w in exp_cols
         ]
         self._expenses_tree = StyledTableWidget(None, translated_cols)
+        exp_hdr = self._expenses_tree.horizontalHeader()
+        exp_hdr.setStretchLastSection(False)
+        exp_hdr.setMinimumSectionSize(60)
+        exp_hdr.setSectionResizeMode(QHeaderView.Interactive)
 
         def load_expenses() -> None:
             rows = self.service.get_expenses(truck_id)
@@ -1355,6 +1379,9 @@ class QtFleetTab(BaseView):
                     }
                 )
             self._expenses_tree.set_data(data)
+            self._expenses_tree.horizontalHeader().resizeSections(
+                QHeaderView.ResizeToContents
+            )
 
         load_expenses()
         layout.addWidget(self._expenses_tree, 1)

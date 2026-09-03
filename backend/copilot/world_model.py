@@ -141,8 +141,19 @@ class WorldModelService:
             "maintenance", "financial", "notifications", "open_problems",
         ]
 
-        # Set multi-tenant context before building any section
-        if hasattr(self._db, 'user_company_id'):
+        # The section builders delegate to repositories/services that read the
+        # tenant scope from ``database.tenant_context`` contextvars — NOT from
+        # mutable attributes on the shared DatabaseManager.  Scope the ambient
+        # context around the builds (restoring the caller's prior company in a
+        # ``finally``) so ``get_slice(company_id=N)`` queries company N's data
+        # regardless of the caller's context, without leaking a different
+        # tenant scope back to the caller.
+        from database.tenant_context import get_company_id, set_company_context
+
+        prev_company_id = get_company_id()
+        # Keep the legacy attribute populated too — a few service paths (e.g.
+        # FleetService.get_expenses) still read ``db.user_company_id``.
+        if hasattr(self._db, "user_company_id"):
             self._db.user_company_id = company_id
 
         snapshot_kwargs: Dict[str, Any] = {
@@ -164,13 +175,17 @@ class WorldModelService:
             "todays_objectives": self._build_todays_objectives,
         }
 
-        for section in sections:
-            builder = section_builders.get(section)
-            if builder:
-                try:
-                    snapshot_kwargs[section] = builder(company_id)
-                except Exception as e:
-                    logger.warning("World Model section '%s' failed: %s", section, e)
+        try:
+            set_company_context(company_id)
+            for section in sections:
+                builder = section_builders.get(section)
+                if builder:
+                    try:
+                        snapshot_kwargs[section] = builder(company_id)
+                    except Exception as e:
+                        logger.warning("World Model section '%s' failed: %s", section, e)
+        finally:
+            set_company_context(prev_company_id)
 
         return WorldModelSnapshot(**snapshot_kwargs)
 
@@ -196,20 +211,20 @@ class WorldModelService:
         return FleetSummary()
 
     def _build_driver_summary(self, company_id: int = 0) -> DriverSummary:
+        """Query the real ``drivers`` table for aggregate counts.
+
+        The ``drivers`` table has no ``hours_worked`` / ``max_hours_per_day``
+        columns — those exist only on the ``DriverResult`` DTO, which
+        ``DriverTruckService.list_drivers()`` cannot build against the real
+        schema.  The summary is therefore computed from the repository rows
+        directly: total count, plus the real ``is_active`` column for the
+        availability count.
+        """
         try:
-            from backend.services.driver_truck_service import DriverTruckService
-            svc = DriverTruckService(self._db)
-            result = svc.list_drivers()
-            drivers = result.data if hasattr(result, "success") and result.success else []
-            total = len(drivers) if isinstance(drivers, list) else 0
-            available = 0
-            for d in (drivers or []):
-                if isinstance(d, dict):
-                    is_active = d.get("is_active", False)
-                else:
-                    is_active = getattr(d, "is_active", False)
-                if is_active:
-                    available += 1
+            from repositories.driver_repository import DriverRepository
+            rows = DriverRepository(self._db).get_all()
+            total = len(rows) if isinstance(rows, list) else 0
+            available = sum(1 for r in (rows or []) if r.get("is_active"))
             return DriverSummary(total_drivers=total, available_count=available)
         except Exception:
             pass
@@ -244,9 +259,49 @@ class WorldModelService:
         return TripSummary()
 
     def _build_document_summary(self, company_id: int = 0) -> DocumentSummary:
+        """Documents awaiting OCR and those expiring within 14 days (§9.1)."""
+        try:
+            from datetime import datetime, timedelta
+
+            from repositories.document_repository import DocumentRepository
+
+            rows = DocumentRepository(self._db).search(query="", limit=500) or []
+            pending = sum(1 for d in rows if not (d.get("ocr_run_at") or ""))
+            today = datetime.now().date()
+            soon = today + timedelta(days=14)
+            expiring = 0
+            for d in rows:
+                exp = d.get("expiry_date") or ""
+                if not exp:
+                    continue
+                try:
+                    exp_dt = datetime.fromisoformat(str(exp)[:10]).date()
+                except (TypeError, ValueError):
+                    continue
+                if today <= exp_dt <= soon:
+                    expiring += 1
+            return DocumentSummary(pending_ocr=pending, expiring_soon=expiring)
+        except Exception:
+            pass
         return DocumentSummary()
 
     def _build_dispatch_summary(self, company_id: int = 0) -> DispatchSummary:
+        """Open dispatches and in-transit trips from the trips table."""
+        try:
+            from repositories.trip_repository import TripRepository
+
+            rows = TripRepository(self._db).get_all(limit=500) or []
+            pending = 0
+            in_transit = 0
+            for t in rows:
+                status = str(t.get("status", "")).lower()
+                if status in ("loading", "dispatched", "planned", "pending"):
+                    pending += 1
+                elif status in ("in_transit", "in transit", "delivering"):
+                    in_transit += 1
+            return DispatchSummary(pending_dispatches=pending, in_transit=in_transit)
+        except Exception:
+            pass
         return DispatchSummary()
 
     def _build_maintenance_summary(self, company_id: int = 0) -> MaintenanceSummary:
@@ -275,6 +330,25 @@ class WorldModelService:
         return FinancialSummary()
 
     def _build_notification_summary(self, company_id: int = 0) -> NotificationSummary:
+        """Unresolved company alerts — unread count + critical/high subset.
+
+        Reads the ``alerts`` table (company-scoped, ``resolved`` flag) — the
+        same source the alert/notification surfaces use.
+        """
+        try:
+            row = self._db.conn.execute(
+                "SELECT COUNT(*) AS unread, "
+                "COALESCE(SUM(CASE WHEN severity IN ('critical','high') THEN 1 ELSE 0 END), 0) AS critical "
+                "FROM alerts WHERE company_id = ? AND resolved = 0",
+                (company_id,),
+            ).fetchone()
+            if row:
+                return NotificationSummary(
+                    unread_count=int(row["unread"] or 0),
+                    critical_count=int(row["critical"] or 0),
+                )
+        except Exception:
+            pass
         return NotificationSummary()
 
     def _build_open_problems(self, company_id: int = 0) -> List[OpenProblem]:

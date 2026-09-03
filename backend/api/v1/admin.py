@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from backend.config import BackendSettings
+from backend.config import get_settings
 from backend.dependencies import get_db
 from backend.dependencies_security import require_admin
 from repositories.alert_repository import AlertRepository
@@ -70,7 +70,7 @@ def _try_redis_info() -> Optional[RedisStatus]:
     try:
         import redis as redis_module
 
-        settings = BackendSettings()
+        settings = get_settings()
         if not settings.redis_url:
             return None
         client = redis_module.Redis.from_url(settings.redis_url, socket_timeout=3)
@@ -97,7 +97,7 @@ def _try_celery_info() -> Optional[CeleryStatus]:
 
     Returns ``None`` if Celery is not configured, unreachable, or too slow.
     """
-    settings = BackendSettings()
+    settings = get_settings()
     if not settings.celery_broker_url:
         return None
     # If the broker URL points to a non-running service, skip fast.
@@ -128,7 +128,7 @@ def get_diagnostics(
     GATE 1 enforcement: ``Depends(require_admin)`` returns 403 before
     any metrics logic executes if the caller is not an admin.
     """
-    settings = BackendSettings()
+    settings = get_settings()
 
     # Measure server-side latency (approximate round-trip marker)
     start = time.monotonic()
@@ -489,7 +489,7 @@ def get_system_info(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> SystemInfoResponse:
     """Return Python version, DB engine, API version, platform."""
-    settings = BackendSettings()
+    settings = get_settings()
     import backend
     api_version = getattr(backend, "__version__", "1.0.0")
 
@@ -615,7 +615,7 @@ def clear_cache(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> Dict[str, str]:
     """Invalidate the Redis cache (if Redis is available)."""
-    settings = BackendSettings()
+    settings = get_settings()
     if not settings.redis_url:
         return {"status": "skipped", "detail": "Redis is not configured."}
 

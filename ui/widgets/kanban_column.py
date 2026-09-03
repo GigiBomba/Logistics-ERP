@@ -100,6 +100,9 @@ class QtKanbanColumn(QFrame):
         super().__init__(parent)
         self.setProperty("role", "kanban-column")
         self.setFrameShape(QFrame.StyledPanel)
+        # Reasonable minimum width so trip cards don't crush on narrow boards
+        # while keeping all five columns on one row at 1440px.
+        self.setMinimumWidth(260)
         # Accept drops on the column itself.  Without this, Qt's
         # drag-and-drop never reaches ``dragEnterEvent`` /
         # ``dropEvent`` on the column — the previous bug was that

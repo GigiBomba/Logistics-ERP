@@ -162,3 +162,17 @@ The updated blueprint (V4, 1589 lines) contains **major structural changes** fro
 7. **Expanded §27 — Tests** — 18 test files specified (we have ~20 but ~8 are missing/placeholder)
 8. **`voice_activation_mobile`** — New tier feature key in TIER_FEATURES
 9. **3 new insight jobs** — fuel_cost_trend, return_load_matcher, driver_hours_forecast
+
+---
+
+## LLM-FIRST COMPLETION (2026-08-27) — SUPERSEDES THE ABOVE
+
+The Co-Pilot now implements the blueprint's real intent (Gate-reviewed, deepwork session `.slim/deepwork/llm-first-copilot.md`):
+
+**The LLM is the brain.** Every utterance goes to the LLM with the caller's RBAC-filtered tool catalog (`resolve_available_tools` → `ToolSpec`). The LLM answers conversationally or emits tool calls (`backend/copilot/llm/tool_calling.py` — `run_tool_loop`: native tools for Google, structured-JSON channel for self-hosted OpenAI-compatible endpoints, N=5 iterations / 90s budget, one repair retry, Level ≤1 executes in-loop, Level 2+ → pending confirmation plan). Tool execution goes through the existing `execute_plan`/`confirm_and_execute` — RBAC gate, audit rows, confirmation levels, retry, circuit breaker, autonomous-mode approval all intact. Results return as structured envelopes; the LLM synthesizes the final answer in the user's language (`copilot.summary.llm_chat`), with a derived reasoning graph persisted.
+
+**The keyword matcher (`INTENT_PATTERNS`, 22-language corpus) is now the OFFLINE FALLBACK only** (§23.5): used when no provider is usable or a provider attempt failed with zero tools executed; `model_unreachable` only when the fallback also yields nothing. Partial execution never re-runs the keyword path (no duplicate side effects).
+
+**Key contracts proven by tests:** golden suite 2.0.0 (keyword scenarios byte-identical as the fallback contract; 8 LLM-driven scenarios incl. Level 3 DESTRUCTIVE confirmation), real-SDK Gemini schema sanitizer validated against the full 75-tool catalog (hermetic), producer→adapter `functionResponse` interop, CI gate now pins LLM prompt constants (`TOOL_LOOP_SYSTEM_PROMPT`, `SYSTEM_PROMPT`, `_JSON_OUTPUT_FORMAT_CLAUSE`). Full copilot suite: 3,970 collected, all pass (`-n 0`); remaining flaky items are pre-existing resource/state contamination.
+
+**To activate the LLM brain:** configure an OpenAI-compatible endpoint + `qwen_api_key` in Settings → AI Vision (or `qwen_api_mode=ollama` for a local Ollama), or provide a Gemini key (`GOOGLE_API_KEY`/`OPERION_GEMINI_API_KEY`). Check current state without network calls: `python scripts/copilot_provider_health.py`. Until a provider is usable, the copilot behaves exactly as before (deterministic keyword fallback).

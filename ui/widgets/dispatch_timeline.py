@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import EmptyState
-from ui.design_tokens import COLOR_ACCENT_SUBTLE, COLOR_TEXT_PRIMARY, COLOR_WARNING_SUBTLE, SP
+from ui.design_tokens import COLOR_ACCENT_SUBTLE, COLOR_WARNING_SUBTLE, SP
 from ui.widgets import ActionButton
 from utils.dates import parse_date
 
@@ -244,9 +244,6 @@ class QtDispatchTimeline(QWidget):
 
         bar_label = QLabel(label)
         bar_label.setProperty("fontRole", "small")
-        bar_label.setStyleSheet(
-            f"background-color: transparent; color: {COLOR_TEXT_PRIMARY};"
-        )
         bar_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         bar_bar_layout.addWidget(bar_label)
 

@@ -76,7 +76,9 @@ class _ItemRow(QFrame):
 
         # -- Availability dot ------------------------------------------------
         dot = QLabel()
-        dot.setFixedSize(8, 8)
+        # Decorated dot: minimum floor + Fixed policy keeps it a small square
+        # in the row layout (Phase 2: minimums, not hard caps).
+        dot.setMinimumSize(8, 8)
         dot.setProperty("role", "availability-dot")
         if available:
             dot.setStyleSheet(
@@ -133,13 +135,18 @@ class _ItemRow(QFrame):
 
     def _walk_set_click(self, widget: QWidget) -> None:
         """Recursively assign click and hover handlers to *widget* and its children."""
-        original = getattr(widget, "mousePressEvent", None)
-        if original is None or original.__func__ is QWidget.mousePressEvent:
-            widget.mousePressEvent = self._on_click  # type: ignore[assignment]
+        # PySide6 exposes native event handlers (QWidget.mousePressEvent) as
+        # builtin_function_or_method objects that have no ``__func__`` — only
+        # Python methods do. Keep any existing Python override; install ours
+        # on native/default handlers so clicks land everywhere.
+        from types import MethodType
 
-        for child in widget.findChildren(QWidget, options=Qt.FindChildrenRecursively):
-            if child.mousePressEvent is None or child.mousePressEvent.__func__ is QWidget.mousePressEvent:
-                child.mousePressEvent = self._on_click  # type: ignore[assignment]
+        for w in (widget,) + tuple(
+            widget.findChildren(QWidget, options=Qt.FindChildrenRecursively)
+        ):
+            if isinstance(getattr(w, "mousePressEvent", None), MethodType):
+                continue
+            w.mousePressEvent = self._on_click  # type: ignore[assignment]
 
     def _on_click(self, event=None) -> None:
         if self._available and self._on_select:
@@ -182,7 +189,9 @@ class QtAssignmentDropdown(QFrame):
         super().__init__(parent)
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
         self.setProperty("role", "assignment-dropdown")
-        self.setFixedWidth(self.WIDTH)
+        # DPI-safe (Phase 2): minimum width floor, not a hard cap, so the popup
+        # can widen at 125-150% Windows scaling when row content demands it.
+        self.setMinimumWidth(self.WIDTH)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
 
         self._anchor = anchor_widget
@@ -328,8 +337,13 @@ class QtAssignmentDropdown(QFrame):
     # ── Positioning ─────────────────────────────────────────────────────────
 
     def _pre_position(self) -> None:
-        """Apply initial geometry before show() to avoid flicker."""
-        self.setFixedSize(self.WIDTH, self.MAX_HEIGHT + 38)  # header + scroll
+        """Apply initial geometry before show() to avoid flicker.
+
+        resize() seeds the geometry so anchoring math (self.height()) works
+        before the first show; the layout may still grow the popup to its
+        sizeHint (e.g. at high DPI) because there is no fixed-size cap.
+        """
+        self.resize(self.WIDTH, self.MAX_HEIGHT + 38)  # header + scroll
 
     def _position_at_anchor(self, anchor: QWidget) -> None:
         """Move the dropdown below *anchor*, flipping above if off-screen."""

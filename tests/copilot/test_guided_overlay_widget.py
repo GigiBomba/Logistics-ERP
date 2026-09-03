@@ -126,11 +126,11 @@ class TestConstruction:
         assert overlay.objectName() == "guided-overlay"
         assert overlay.is_active() is False
 
-    def test_construction_parent_resize_filter_not_installed(self):
-        """Parent resize filter should only be installed on start_tour."""
+    def test_construction_parent_resize_filter_installed(self):
+        """Parent resize filter should be installed immediately when a parent is present."""
         qt_widget = QWidget()
         overlay = GuidedOverlayWidget(parent=qt_widget)
-        assert overlay._parent_event_filter is None
+        assert overlay._parent_event_filter is not None
 
     def test_accessible_name_and_description(self):
         qt_widget = QWidget()
@@ -175,9 +175,9 @@ class TestTourLifecycle:
         assert overlay.isHidden() is False
         assert overlay._tooltip_card.isVisible() is True
 
-    def test_start_tour_installs_parent_resize_filter(self, make_overlay):
+    def test_start_tour_keeps_parent_resize_filter(self, make_overlay):
         overlay = make_overlay()
-        assert overlay._parent_event_filter is None
+        assert overlay._parent_event_filter is not None
         overlay.start_tour(_two_step_tour())
         assert overlay._parent_event_filter is not None
 

@@ -22,8 +22,9 @@ class CopilotAuditRepository(BaseRepository):
 
     def log_action(self, conversation_id: str, action: str, entity_type: str,
                    entity_id: str, old_value: str = "", new_value: str = "",
-                   performed_by: str = "") -> int:
+                   performed_by: str = "", user_id: int = 0) -> int:
         from database.tenant_context import get_company_id
+        now = datetime.utcnow().isoformat()
         data = {
             "conversation_id": conversation_id,
             "action": action,
@@ -32,7 +33,86 @@ class CopilotAuditRepository(BaseRepository):
             "old_value": old_value,
             "new_value": new_value,
             "performed_by": performed_by,
+            "user_id": user_id,
+            "status": "recorded",
+            "parameters": "{}",
+            "permission_checked": "not_recorded",
+            "permission_granted": 0,
+            "confirmation_level": 0,
+            "model_used": "",
+            "provider_id": "",
+            "prompt_version": "",
+            "started_at": now,
             "company_id": get_company_id() or 0,
+            "created_at": now,
+        }
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
+        return self._execute_insert(
+            f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
+            tuple(data.values()),
+            commit=True,
+        )
+
+    def log_step_execution(
+        self,
+        *,
+        conversation_id: str,
+        plan_id: str,
+        step_id: str,
+        tool_name: str,
+        tool_version: str,
+        status: str,
+        parameters: Optional[Dict[str, Any]] = None,
+        company_id: int = 0,
+        user_id: int = 0,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        model_used: str = "",
+        provider_id: str = "",
+        prompt_version: str = "",
+        permission_checked: Optional[str] = None,
+        permission_granted: Optional[bool] = None,
+        confirmation_level: Optional[int] = None,
+        started_at: Optional[str] = None,
+        finished_at: Optional[str] = None,
+        execution_time_ms: Optional[int] = None,
+    ) -> int:
+        """Insert a full copilot_audit_log row for one tool-execution step.
+
+        Writes the dedicated columns (``plan_id``, ``step_id``, ``tool_name``,
+        ``status``, ``result``, ``error``, ``started_at``, ``finished_at`` …)
+        so the /undo endpoint and retention queries can read execution
+        metadata without parsing the ``new_value`` JSON blob.
+
+        ``company_id`` is passed explicitly (resolved from the JWT services
+        dict by the executor) rather than from tenant context, keeping the
+        row findable by the same request-scoped company id later.
+        """
+        import json
+
+        data = {
+            "conversation_id": conversation_id,
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "tool_name": tool_name,
+            "tool_version": tool_version,
+            "parameters": json.dumps(parameters) if parameters is not None else "{}",
+            "status": status,
+            "permission_checked": permission_checked if permission_checked is not None else "not_recorded",
+            "permission_granted": 1 if permission_granted else 0,
+            "confirmation_level": confirmation_level if confirmation_level is not None else 0,
+            "result": json.dumps(result) if result is not None else None,
+            "error": error,
+            "model_used": model_used,
+            "provider_id": provider_id,
+            "prompt_version": prompt_version,
+            "company_id": company_id,
+            "user_id": user_id,
+            "performed_by": str(user_id),
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "execution_time_ms": execution_time_ms,
             "created_at": datetime.utcnow().isoformat(),
         }
         cols = ", ".join(data.keys())
@@ -168,6 +248,19 @@ class CopilotInsightRepository(BaseRepository):
             (company_id, limit, offset),
         )
 
+    def update_status(self, insight_id: int, company_id: int, status: str) -> bool:
+        """Set an insight's queue status (``new``/``reviewed``/``dismissed``).
+
+        Tenant-scoped on ``company_id`` so one company can never touch
+        another's insight. Returns True when exactly one row was updated.
+        """
+        cur = self._execute_with_count(
+            f"UPDATE {self.TABLE} SET status = ? WHERE id = ? AND company_id = ?",
+            (status, insight_id, company_id),
+            commit=True,
+        )
+        return cur > 0
+
     def delete_older_than(self, cutoff: str, company_id: Optional[int] = None) -> int:
         return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE created_at < ? "
@@ -193,12 +286,88 @@ class CopilotReasoningGraphRepository(BaseRepository):
         )
 
     def upsert(self, conversation_id: str, graph_json: str) -> None:
+        """Persist one graph per ``(company_id, conversation_id)``.
+
+        Uses an explicit ``ON CONFLICT (company_id, conversation_id) DO
+        UPDATE`` (the same shape ``CopilotAutonomyApprovalRepository``
+        uses) so a re-run REPLACES the previous graph instead of appending a
+        duplicate row.  On SQLite this requires the unique index
+        ``uq_copilot_reasoning_company_conversation`` (database/schema.py);
+        on PostgreSQL the equivalent index comes from the Alembic migration.
+        """
         from database.tenant_context import get_company_id
+        company_id = get_company_id() or 0
         self._execute(
-            f"INSERT OR REPLACE INTO {self.TABLE} "
-            f"(conversation_id, graph_json, company_id, created_at) VALUES (?, ?, ?, ?)",
-            (conversation_id, graph_json, get_company_id() or 0, datetime.utcnow().isoformat()),
+            f"INSERT INTO {self.TABLE} "
+            f"(conversation_id, graph_json, company_id, created_at) VALUES (?, ?, ?, ?) "
+            f"ON CONFLICT (company_id, conversation_id) DO UPDATE SET "
+            f"graph_json = excluded.graph_json, created_at = excluded.created_at",
+            (conversation_id, graph_json, company_id, datetime.utcnow().isoformat()),
             commit=True,
+        )
+
+    def delete_older_than(self, cutoff: str, company_id: Optional[int] = None) -> int:
+        return self._execute_with_count(
+            f"DELETE FROM {self.TABLE} WHERE created_at < ? "
+            f"{self._company_filter_for(company_id)}",
+            (cutoff,) + self._company_params_for(company_id),
+            commit=True,
+        )
+
+
+class CopilotAutonomyApprovalRepository(BaseRepository):
+    """Per-company pre-approvals for autonomous workflow execution (§21 Ph.4).
+
+    A row ``(company_id, workflow) -> enabled`` opts a company into running a
+    workflow without the manual confirmation step.  ``workflow`` is the plan's
+    ``intent.name`` (e.g. ``"dispatch.cancel"``).  The autonomous execution
+    path in the planner consults :meth:`is_approved` after the tier feature
+    flag and circuit-breaker checks (§23.1).
+    """
+    TABLE = "copilot_autonomy_approvals"
+    COLUMNS = [
+        "id", "company_id", "workflow", "enabled", "created_by",
+        "created_at", "updated_at",
+    ]
+
+    def is_approved(self, company_id: int, workflow: str) -> bool:
+        """Return whether *workflow* is enabled for *company_id*."""
+        row = self._fetchone(
+            f"SELECT enabled FROM {self.TABLE} WHERE company_id = ? AND workflow = ? LIMIT 1",
+            (company_id, workflow),
+        )
+        return bool(row and row.get("enabled"))
+
+    def set_approved(
+        self,
+        company_id: int,
+        workflow: str,
+        enabled: bool,
+        performed_by: str = "",
+    ) -> None:
+        """Insert or update the approval for one (company_id, workflow) pair.
+
+        Uses ``ON CONFLICT (company_id, workflow) DO UPDATE`` so the unique
+        index (see the Alembic migration) is honoured on both SQLite and
+        PostgreSQL; ``created_at`` is preserved across re-enables.
+        """
+        now = datetime.utcnow().isoformat()
+        self._execute(
+            f"INSERT INTO {self.TABLE} "
+            f"(company_id, workflow, enabled, created_by, created_at, updated_at) "
+            f"VALUES (?, ?, ?, ?, ?, ?) "
+            f"ON CONFLICT (company_id, workflow) DO UPDATE SET "
+            f"enabled = excluded.enabled, updated_at = excluded.updated_at, "
+            f"created_by = excluded.created_by",
+            (company_id, workflow, 1 if enabled else 0, performed_by, now, now),
+            commit=True,
+        )
+
+    def list_by_company(self, company_id: int, limit: int = 200) -> List[Dict[str, Any]]:
+        return self._fetchall(
+            f"SELECT workflow, enabled, created_by, created_at, updated_at "
+            f"FROM {self.TABLE} WHERE company_id = ? ORDER BY workflow LIMIT ?",
+            (company_id, limit),
         )
 
     def delete_older_than(self, cutoff: str, company_id: Optional[int] = None) -> int:

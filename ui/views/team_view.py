@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from services.user_service import UserService
 from ui.base_view import BaseView
 from services.i18n import t
-from ui.components import Btn, EmptyState, IconButton
+from ui.components import Btn, EmptyState, IconButton, Label, PageTitle
 from ui.design_tokens import SP
 from ui.widgets import (
     StyledComboBox,
@@ -72,6 +72,7 @@ class QtTeamView(BaseView):
         layout.setSpacing(SP["4"])
         layout.setAlignment(Qt.AlignTop)
 
+        self._build_page_header(layout)
         self._build_add_user_section(layout)
         self._build_team_members_section(layout)
 
@@ -81,6 +82,23 @@ class QtTeamView(BaseView):
         self.setWidget(self._container)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
+
+    def _build_page_header(self, parent_layout: QVBoxLayout) -> None:
+        """Build the page header (title + subtitle) — same pattern as other views."""
+        header = QWidget()
+        header.setFixedHeight(72)
+        hl = QVBoxLayout(header)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(SP["1"])
+        hl.addWidget(PageTitle(header, t("team.title", default="Team Management")))
+        hl.addWidget(
+            Label(
+                header,
+                t("team.subtitle", default="Invite team members and manage user access"),
+                role="secondary",
+            )
+        )
+        parent_layout.addWidget(header)
 
     # ── Section 1: Add User Card ──────────────────────────────────────────────
 
@@ -185,14 +203,16 @@ class QtTeamView(BaseView):
         self._table.setAccessibleName("Team members table")
         cl.addWidget(self._table)
 
-        # Empty state (hidden when table has data)
+        # Empty state (visible until real members arrive — prevents the
+        # members card from rendering as a blank rectangle before/without data)
         self._empty_state = EmptyState(
             parent=card,
             icon_name="fa5s.users",
             title=t("team.empty_title", "No team members"),
             subtitle=t("team.empty_desc", "Invite team members to collaborate."),
         )
-        self._empty_state.setVisible(False)
+        self._empty_state.setVisible(True)
+        self._table.setVisible(False)
         cl.addWidget(self._empty_state)
 
         parent_layout.addWidget(card)
@@ -304,37 +324,45 @@ class QtTeamView(BaseView):
     # ── Placeholder API methods ───────────────────────────────────────────────
 
     def _load_users(self) -> None:
-        """Fetch users from the API and populate the table."""
+        """Fetch users from the API and populate the table.
+
+        Always hides the skeleton loading overlay (shown by ``BaseView.wakeup``)
+        on every exit path — otherwise the page stays stuck on the flat grey
+        skeleton forever.
+        """
         rows: list[dict[str, Any]] = []
         try:
-            if self._api_client is not None:
-                result = self._api_client.list_users()
-                rows = result.get("items", [])
-            elif self._user_service is not None:
-                rows = self._user_service.list_users()
-        except Exception as exc:
-            logger.error("Failed to load users: %s", exc)
+            try:
+                if self._api_client is not None:
+                    result = self._api_client.list_users()
+                    rows = result.get("items", [])
+                elif self._user_service is not None:
+                    rows = self._user_service.list_users()
+            except Exception as exc:
+                logger.error("Failed to load users: %s", exc)
 
-        has_rows = bool(rows)
-        self._table.setVisible(has_rows)
-        self._empty_state.setVisible(not has_rows)
-        if not has_rows:
-            return
+            has_rows = bool(rows)
+            self._table.setVisible(has_rows)
+            self._empty_state.setVisible(not has_rows)
+            if not has_rows:
+                return
 
-        self._table.set_data(rows)
-        self._table.restore_column_widths()
+            self._table.set_data(rows)
+            self._table.restore_column_widths()
 
-        # Add Deactivate buttons to each row's Actions column
-        actions_col = len(self._table._column_ids) - 1
-        for r in range(self._table.rowCount()):
-            row_data: dict[str, Any] = {}
-            if hasattr(self._table, '_data') and r < len(self._table._data):
-                row_data = self._table._data[r]
-            deactivate_btn = Btn(self._table, t("team.deactivate"), variant="ghost", size="sm")
-            deactivate_btn.clicked.connect(
-                lambda checked=False, rd=row_data: self._on_deactivate_user(rd)
-            )
-            self._table.setCellWidget(r, actions_col, deactivate_btn)
+            # Add Deactivate buttons to each row's Actions column
+            actions_col = len(self._table._column_ids) - 1
+            for r in range(self._table.rowCount()):
+                row_data: dict[str, Any] = {}
+                if hasattr(self._table, '_data') and r < len(self._table._data):
+                    row_data = self._table._data[r]
+                deactivate_btn = Btn(self._table, t("team.deactivate"), variant="ghost", size="sm")
+                deactivate_btn.clicked.connect(
+                    lambda checked=False, rd=row_data: self._on_deactivate_user(rd)
+                )
+                self._table.setCellWidget(r, actions_col, deactivate_btn)
+        finally:
+            self._hide_loading()
 
     def _add_user(
         self,

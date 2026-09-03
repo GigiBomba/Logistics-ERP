@@ -1,6 +1,23 @@
 name: Security Test Suite
 
-on: [push, pull_request]
+# Only run the (slow) security suite when security-relevant code changes.
+# Manual dispatch remains available as an always-on override.
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "tests/security/**"
+      - ".github/workflows/security.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "tests/security/**"
+      - ".github/workflows/security.yml"
+  workflow_dispatch:
 
 jobs:
   security:

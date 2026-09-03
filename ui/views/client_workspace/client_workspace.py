@@ -34,6 +34,7 @@ from ui.performance_timer import PerfTimer
 from ui.worker_pool import WorkerPool
 from ui.components import (
     Btn,
+    EmptyState,
     IconButton,
     KPICard,
     PageTitle,
@@ -336,7 +337,20 @@ class QtClientWorkspace(QWidget):
         self._trips_table.horizontalHeader().setSortIndicatorShown(True)
         self._trips_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._trips_table.customContextMenuRequested.connect(self._show_trip_context_menu)
-        self._client_tabs.addTab(self._trips_table, t("client.tab_trips", "Trips"))
+        trips_container = QWidget(self._client_tabs)
+        trips_layout = QVBoxLayout(trips_container)
+        trips_layout.setContentsMargins(0, 0, 0, 0)
+        trips_layout.setSpacing(SP["2"])
+        trips_layout.addWidget(self._trips_table)
+        self._trips_empty_state = EmptyState(
+            parent=trips_container,
+            icon_name="mdi6.truck-outline",
+            title=t("client.no_trips_title", default="No trips yet"),
+            subtitle=t("client.no_trips_desc", default="Trips for this client will appear here."),
+        )
+        self._trips_empty_state.setVisible(False)
+        trips_layout.addWidget(self._trips_empty_state, 1)
+        self._client_tabs.addTab(trips_container, t("client.tab_trips", "Trips"))
 
         # Invoices tab
         inv_cols = _invoice_columns_for_table()
@@ -347,7 +361,20 @@ class QtClientWorkspace(QWidget):
         self._invoices_table.horizontalHeader().setSortIndicatorShown(True)
         self._invoices_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._invoices_table.customContextMenuRequested.connect(self._show_invoice_context_menu)
-        self._client_tabs.addTab(self._invoices_table, t("client.tab_invoices", "Invoices"))
+        inv_container = QWidget(self._client_tabs)
+        inv_layout = QVBoxLayout(inv_container)
+        inv_layout.setContentsMargins(0, 0, 0, 0)
+        inv_layout.setSpacing(SP["2"])
+        inv_layout.addWidget(self._invoices_table)
+        self._invoices_empty_state = EmptyState(
+            parent=inv_container,
+            icon_name="fa5s.file-invoice",
+            title=t("client.no_invoices_title", default="No invoices yet"),
+            subtitle=t("client.no_invoices_desc", default="Invoices for this client will appear here."),
+        )
+        self._invoices_empty_state.setVisible(False)
+        inv_layout.addWidget(self._invoices_empty_state, 1)
+        self._client_tabs.addTab(inv_container, t("client.tab_invoices", "Invoices"))
 
         # Revenue tab
         self._revenue_tab = QWidget()
@@ -563,6 +590,11 @@ class QtClientWorkspace(QWidget):
                     "net_profit":      f"\u20ac {t_row.get('net_profit', 0) or 0:,.0f}",
                     "status":          t_row.get("status", ""),
                 })
+            has_rows = bool(rows)
+            self._trips_table.setVisible(has_rows)
+            self._trips_empty_state.setVisible(not has_rows)
+            if not has_rows:
+                return
             self._trips_table.set_data(rows)
             self._trips_table.restore_column_widths()
 
@@ -583,6 +615,10 @@ class QtClientWorkspace(QWidget):
                 })
             self._invoices_table.set_data(rows)
             self._invoices_table.restore_column_widths()
+
+            has_rows = bool(rows)
+            self._invoices_table.setVisible(has_rows)
+            self._invoices_empty_state.setVisible(not has_rows)
 
             green = QColor(COLOR_SUCCESS_DEFAULT)
             amber = QColor(COLOR_WARNING_DEFAULT)

@@ -15,13 +15,12 @@ Uses the shared module-scoped fixtures from ``tests/security/conftest.py``
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 import uuid
 
 import pytest
 
-from conftest import TEST_DB_PATH as _TEST_DB_PATH  # type: ignore[import-not-found]
+from backend.security import create_access_token
 
 _OCR_PROCESS_URL = "/api/v1/ocr/process"
 
@@ -42,9 +41,8 @@ def _unique_png() -> bytes:
     return _PNG_HEADER + str(uuid.uuid4()).encode("utf-8")
 
 
-def _doc_company_id(doc_id: str) -> int | None:
+def _doc_company_id(db_path: str, doc_id: str) -> int | None:
     """Return the company_id of a document row directly from the test DB."""
-    db_path = os.environ.get("OPERION_DB_PATH", _TEST_DB_PATH)
     conn = sqlite3.connect(db_path, timeout=3)
     conn.row_factory = sqlite3.Row
     try:
@@ -52,6 +50,17 @@ def _doc_company_id(doc_id: str) -> int | None:
             "SELECT company_id FROM documents WHERE id = ?", (int(doc_id),)
         ).fetchone()
         return row["company_id"] if row else None
+    finally:
+        conn.close()
+
+
+def _doc_count(db_path: str, doc_id: str) -> int:
+    """Count document rows with *doc_id* directly from the test DB."""
+    conn = sqlite3.connect(db_path, timeout=3)
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) FROM documents WHERE id = ?", (int(doc_id),)
+        ).fetchone()[0]
     finally:
         conn.close()
 
@@ -88,14 +97,14 @@ class TestOcrProcessUpload:
         assert "engine_used" not in body
 
     def test_upload_persists_document_scoped_to_company(
-        self, client, auth_a: dict,
+        self, client, auth_a: dict, test_db_path: str,
     ) -> None:
         key = str(uuid.uuid4())
         resp = _upload(client, auth_a, key)
         assert resp.status_code == 201, f"OCR upload failed: {resp.text}"
         doc_id = resp.json()["document_id"]
 
-        assert _doc_company_id(doc_id) == 1, (
+        assert _doc_company_id(test_db_path, doc_id) == 1, (
             f"Document {doc_id} must be scoped to company 1"
         )
 
@@ -133,14 +142,25 @@ class TestOcrProcessIdempotency:
     """Same Idempotency-Key twice → exactly one document (dedupe)."""
 
     def test_same_key_twice_creates_exactly_one_document(
-        self, client, auth_a: dict,
+        self, client, test_db_path: str,
     ) -> None:
         key = str(uuid.uuid4())
-        first = _upload(client, auth_a, key)
+        # The idempotency middleware tenant-scopes keys from the JWT's
+        # ``company_id`` claim (R1).  Login-issued tokens carry only
+        # ``sub``/``role`` (see ``_issue_tokens`` in backend/api/v1/auth.py),
+        # so the middleware would skip caching and re-run the endpoint on the
+        # second POST.  Send a company-scoped token so dedupe is actually
+        # exercised — same pattern as tests/readiness/test_middleware.py.
+        company_headers = {
+            "Authorization": "Bearer " + create_access_token(
+                {"sub": "dispatcher-a@test.com", "role": "dispatcher", "company_id": 1}
+            )
+        }
+        first = _upload(client, company_headers, key)
         assert first.status_code == 201, f"First upload failed: {first.text}"
         first_doc = first.json()["document_id"]
 
-        second = _upload(client, auth_a, key)
+        second = _upload(client, company_headers, key)
         # The idempotency middleware replays the cached response — the
         # endpoint never runs a second time.  (Under TestClient the replayed
         # body is empty — documented limitation at
@@ -150,14 +170,7 @@ class TestOcrProcessIdempotency:
         assert second.headers.get("Idempotency-Replayed") == "true"
 
         # Exactly one document row created for this key's document_id.
-        db_path = os.environ.get("OPERION_DB_PATH", _TEST_DB_PATH)
-        conn = sqlite3.connect(db_path, timeout=3)
-        try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM documents WHERE id = ?", (int(first_doc),)
-            ).fetchone()[0]
-        finally:
-            conn.close()
+        count = _doc_count(test_db_path, first_doc)
         assert count == 1, f"Expected exactly one document row, found {count}"
 
     def test_distinct_keys_create_distinct_documents(

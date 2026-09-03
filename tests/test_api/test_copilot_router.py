@@ -1,4 +1,4 @@
-"""Tests for the Co-Pilot API router (``/api/v1/copilot``).
+﻿"""Tests for the Co-Pilot API router (``/api/v1/copilot``).
 
 Covers all 10 endpoints plus internal helpers:
 - POST /copilot/chat
@@ -42,7 +42,7 @@ from tests.test_api.conftest import StrippedMock
 BASE = "/api/v1/copilot"
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _make_step(
     step_id: str = "step-0",
@@ -108,7 +108,7 @@ def _make_chat_response(
     )
 
 
-# ── Fixtures ─────────────────────────────────────────────────────────────────
+# â”€â”€ Fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @pytest.fixture(autouse=True)
 def _cleanup_copilot_state():
@@ -118,6 +118,7 @@ def _cleanup_copilot_state():
     cr._plan_owners.clear()
     cr._company_conversations.clear()
     cr._ws_connections.clear()
+    cr._kill_switch_memo.clear()
     yield
 
 
@@ -136,7 +137,7 @@ def mock_db():
     db.conn = MagicMock()
     db.row_to_dict = lambda row: row
     db.rows_to_dicts = lambda rows: rows
-    # Repositories call db.execute(...) — alias it to conn.execute so both
+    # Repositories call db.execute(...) â€” alias it to conn.execute so both
     # spellings share the same cursor mock and call history.
     db.execute = db.conn.execute
     # Default cursor: fetchall returns empty list, fetchone returns None
@@ -164,12 +165,33 @@ def client_with_db(app, mock_db):
     app.dependency_overrides.clear()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+@pytest.fixture
+def client_with_role(app, mock_db):
+    """TestClient with ``get_db`` overridden but REAL ``require_admin`` authz.
+
+    Unlike the ``client`` / ``client_with_db`` fixtures this does NOT override
+    ``require_admin`` â€” the admin-only endpoint under test must enforce its own
+    authorization.  ``set_user`` swaps the ``get_current_user`` dependency so
+    each test can impersonate an admin or a regular operator.
+    """
+    from backend.dependencies import get_db
+    from backend.dependencies_security import get_current_user
+
+    def _set_user(user: dict) -> None:
+        app.dependency_overrides[get_current_user] = lambda: user
+
+    app.dependency_overrides[get_db] = lambda: mock_db
+    with TestClient(app, raise_server_exceptions=False) as c:
+        yield c, mock_db, _set_user
+    app.dependency_overrides.clear()
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # POST /copilot/chat
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestChat:
-    """POST /api/v1/copilot/chat — process a natural-language utterance."""
+    """POST /api/v1/copilot/chat â€” process a natural-language utterance."""
 
     @patch("backend.api.v1.copilot_router.process_utterance")
     def test_chat_returns_200_with_response(self, mock_process, client):
@@ -254,12 +276,86 @@ class TestChat:
         assert detail["message_key"] == "copilot.error.internal"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+class TestTierGateHelpOnly:
+    """Â§16/Â§33.4 â€” Pro-tier callers reach /chat through Help Mode only."""
+
+    def _user_client(self, app, tier: str, is_admin: bool = False):
+        from backend.dependencies_security import get_current_user
+        mock_user = {
+            "id": 2, "email": "u@test.com", "role": "dispatcher",
+            "is_admin": is_admin, "company_id": 2, "subscription_tier": tier,
+        }
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        return TestClient(app, raise_server_exceptions=False)
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    def test_pro_chat_passes_help_only_flag(self, mock_process, app):
+        """Pro (chat:False, help_mode:True) â†’ /chat allowed with help_only=True."""
+        mock_process.return_value = _make_chat_response(
+            conversation_id="conv-pro", summary_key="copilot.summary.help.answer_question",
+        )
+        client = self._user_client(app, tier="pro")
+        resp = client.post(f"{BASE}/chat", json={"utterance": "how do I print an invoice"})
+        assert resp.status_code == 200
+        assert mock_process.call_args.kwargs.get("help_only") is True
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    def test_business_chat_help_only_false(self, mock_process, app):
+        mock_process.return_value = _make_chat_response()
+        client = self._user_client(app, tier="business")
+        resp = client.post(f"{BASE}/chat", json={"utterance": "show trucks"})
+        assert resp.status_code == 200
+        assert mock_process.call_args.kwargs.get("help_only") is False
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    def test_enterprise_chat_help_only_false(self, mock_process, app):
+        mock_process.return_value = _make_chat_response()
+        client = self._user_client(app, tier="enterprise")
+        resp = client.post(f"{BASE}/chat", json={"utterance": "show trucks"})
+        assert resp.status_code == 200
+        assert mock_process.call_args.kwargs.get("help_only") is False
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    def test_tier_without_chat_or_help_mode_is_403(self, mock_process, app):
+        client = self._user_client(app, tier="free")
+        resp = client.post(f"{BASE}/chat", json={"utterance": "hello"})
+        assert resp.status_code == 403
+        mock_process.assert_not_called()
+
+
+class TestInsightAction:
+    """POST /copilot/insights/{id}/action â€” Â§18 approve/dismiss/remind."""
+
+    def test_remind_persists_reminded_status(self, client_with_db):
+        client, mock_db = client_with_db
+        mock_db.execute.return_value.rowcount = 1
+        resp = client.post(f"{BASE}/insights/5/action", json={"action": "remind"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "reminded"
+        assert body["message_key"] == "copilot.insight.action.remind"
+        sql, params = mock_db.execute.call_args.args
+        assert "copilot_insights" in sql
+        assert "reminded" in params
+
+    def test_remind_not_found(self, client_with_db):
+        client, mock_db = client_with_db
+        mock_db.execute.return_value.rowcount = 0
+        resp = client.post(f"{BASE}/insights/999/action", json={"action": "remind"})
+        assert resp.status_code == 404
+
+    def test_invalid_action_rejected(self, client_with_db):
+        client, _ = client_with_db
+        resp = client.post(f"{BASE}/insights/5/action", json={"action": "snooze"})
+        assert resp.status_code == 422
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # POST /copilot/voice
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestVoice:
-    """POST /api/v1/copilot/voice — process voice STT transcript."""
+    """POST /api/v1/copilot/voice â€” process voice STT transcript."""
 
     @patch("backend.api.v1.copilot_router.process_utterance")
     def test_voice_returns_200_with_response(self, mock_process, client):
@@ -305,12 +401,12 @@ class TestVoice:
         assert "copilot.error.internal" in resp.json()["detail"]["message_key"]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # GET /copilot/plans/{plan_id}
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestGetPlan:
-    """GET /api/v1/copilot/plans/{plan_id} — retrieve plan status."""
+    """GET /api/v1/copilot/plans/{plan_id} â€” retrieve plan status."""
 
     def test_get_plan_returns_plan_when_found(self, client):
         """Happy path: plan exists and is returned."""
@@ -358,12 +454,194 @@ class TestGetPlan:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+class TestGetPlanLongRunningReconciliation:
+    """§13 fidelity — GET /plans/{id} reconciles terminal long-running worker
+    outcomes (written to the Redis progress key) into the stored plan."""
+
+    @staticmethod
+    def _store_dispatched_plan(plan_id="plan-lr", conversation_id="conv-lr", step_id="step-lr"):
+        from backend.api.v1.copilot_router import _pending_plans, _plan_owners
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        plan = _make_plan(
+            plan_id=plan_id, conversation_id=conversation_id,
+            requires_confirmation=False,
+        )
+        plan.steps[0].step_id = step_id
+        plan.steps[0].status = "running"
+        plan.steps[0].result = {
+            "task_id": "task-lr",
+            "progress_key": progress_key("task-lr"),
+            "status": "dispatched",
+        }
+        # The executor stamps started_at at dispatch; finished_at stays None
+        # until the step reaches a terminal state.
+        plan.steps[0].finished_at = None
+        _pending_plans[plan_id] = plan
+        _plan_owners[plan_id] = 1
+        return plan
+
+    @staticmethod
+    def _progress_payload(task_id, step_id, status, percent, result=None, error=None,
+                          conversation_id="conv-lr", plan_id="plan-lr"):
+        message_key = {
+            "running": "copilot.tool.progress.executing",
+            "succeeded": "copilot.tool.progress.succeeded",
+            "failed": "copilot.tool.progress.failed",
+        }[status]
+        return {
+            "task_id": task_id,
+            "tool_name": "freight.search_loads",
+            "step_id": step_id,
+            "conversation_id": conversation_id,
+            "plan_id": plan_id,
+            "percent": percent,
+            "message_key": message_key,
+            "status": status,
+            "result": result,
+            "error": error,
+        }
+
+    def test_get_plan_reconciles_terminal_long_running_step(self, client):
+        """A terminal worker payload is back-written: the stored step becomes
+        succeeded with the tool result, plan status completed."""
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        plan = self._store_dispatched_plan()
+        fake_cache = MagicMock()
+        terminal = self._progress_payload(
+            "task-lr", plan.steps[0].step_id, "succeeded", 100,
+            result={"status": "success", "data": {"total_results": 5},
+                    "message_key": "copilot.tool.freight.search_loads_ok"},
+        )
+        fake_cache.lrange.return_value = [progress_key("task-lr")]
+        fake_cache.get.side_effect = (
+            lambda key: terminal if key == progress_key("task-lr") else None
+        )
+
+        with patch("backend.cache.get_cache", return_value=fake_cache):
+            resp = client.get(f"{BASE}/plans/plan-lr")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
+        step = data["steps"][0]
+        assert step["status"] == "succeeded"
+        assert step["result"]["data"]["total_results"] == 5
+        assert step["error"] is None
+        # The stored plan object itself was mutated (not just the response).
+        assert plan.steps[0].status == "succeeded"
+        assert plan.steps[0].finished_at is not None
+
+    def test_get_plan_reconciles_failed_long_running_step(self, client):
+        """A failed worker payload back-writes status/error; plan status is
+        partially_completed (§7 PARTIALLY_COMPLETED semantics)."""
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        plan = self._store_dispatched_plan()
+        fake_cache = MagicMock()
+        failed = self._progress_payload(
+            "task-lr", plan.steps[0].step_id, "failed", 100,
+            result={"status": "failed", "message_key": "copilot.tool.freight.search_loads_failed"},
+            error="copilot.tool.freight.search_loads_failed",
+        )
+        fake_cache.lrange.return_value = [progress_key("task-lr")]
+        fake_cache.get.side_effect = (
+            lambda key: failed if key == progress_key("task-lr") else None
+        )
+
+        with patch("backend.cache.get_cache", return_value=fake_cache):
+            resp = client.get(f"{BASE}/plans/plan-lr")
+
+        data = resp.json()
+        assert data["status"] == "partially_completed"
+        step = data["steps"][0]
+        assert step["status"] == "failed"
+        assert step["error"] == "copilot.tool.freight.search_loads_failed"
+        assert step["result"]["status"] == "failed"
+
+    def test_get_plan_keeps_step_running_for_non_terminal_progress(self, client):
+        """A mid-progress (running) payload leaves the stored step running."""
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        plan = self._store_dispatched_plan()
+        fake_cache = MagicMock()
+        running = self._progress_payload(
+            "task-lr", plan.steps[0].step_id, "running", 50,
+        )
+        fake_cache.lrange.return_value = [progress_key("task-lr")]
+        fake_cache.get.side_effect = (
+            lambda key: running if key == progress_key("task-lr") else None
+        )
+
+        with patch("backend.cache.get_cache", return_value=fake_cache):
+            resp = client.get(f"{BASE}/plans/plan-lr")
+
+        data = resp.json()
+        assert data["status"] == "executing"
+        step = data["steps"][0]
+        assert step["status"] == "running"
+        assert step["result"]["task_id"] == "task-lr"   # dispatch handle untouched
+        assert plan.steps[0].finished_at is None
+
+    def test_get_plan_reconcile_unknown_task_is_safe(self, client):
+        """An unknown task (no progress payload) skips silently — no crash."""
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        plan = self._store_dispatched_plan()
+        fake_cache = MagicMock()
+        fake_cache.lrange.return_value = [progress_key("ghost-task")]
+        fake_cache.get.side_effect = lambda key: None   # no payload for any key
+
+        with patch("backend.cache.get_cache", return_value=fake_cache):
+            resp = client.get(f"{BASE}/plans/plan-lr")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["steps"][0]["status"] == "running"
+        assert data["steps"][0]["result"]["task_id"] == "task-lr"
+        assert plan.steps[0].status == "running"
+
+    def test_get_plan_reconcile_unknown_plan_is_safe(self, client):
+        """GET for a plan with no stored entry returns not_found (no crash)."""
+        fake_cache = MagicMock()
+        fake_cache.lrange.return_value = []
+        fake_cache.get.return_value = None
+
+        with patch("backend.cache.get_cache", return_value=fake_cache):
+            resp = client.get(f"{BASE}/plans/ghost-plan")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "not_found"
+
+    def test_partially_completed_status_when_some_steps_failed(self, client):
+        """§7: a plan whose terminal steps are not all successful reads as
+        partially_completed."""
+        from backend.api.v1.copilot_router import _pending_plans, _plan_owners
+
+        plan = _make_plan(plan_id="plan-partial", conversation_id="conv-partial",
+                          requires_confirmation=False, steps=[
+                              _make_step(step_id="ok", status="succeeded", tool_name="vehicle.search"),
+                              _make_step(step_id="bad", status="failed", tool_name="trip.delete"),
+                          ])
+        _pending_plans["plan-partial"] = plan
+        _plan_owners["plan-partial"] = 1
+
+        with patch("backend.cache.get_cache") as mock_cache:
+            mock_cache.return_value.lrange.return_value = []
+            mock_cache.return_value.get.return_value = None   # kill-switch clean
+            resp = client.get(f"{BASE}/plans/plan-partial")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "partially_completed"
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # POST /copilot/plans/{plan_id}/confirm
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestConfirmPlan:
-    """POST /api/v1/copilot/plans/{plan_id}/confirm — execute a confirmed plan."""
+    """POST /api/v1/copilot/plans/{plan_id}/confirm â€” execute a confirmed plan."""
 
     @patch("backend.copilot.executor.confirm_and_execute")
     def test_confirm_plan_returns_completed(self, mock_confirm, client):
@@ -419,12 +697,12 @@ class TestConfirmPlan:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # POST /copilot/plans/{plan_id}/cancel
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestCancelPlan:
-    """POST /api/v1/copilot/plans/{plan_id}/cancel — cancel an in-flight plan."""
+    """POST /api/v1/copilot/plans/{plan_id}/cancel â€” cancel an in-flight plan."""
 
     @patch("backend.copilot.executor.cancel_plan")
     def test_cancel_plan_returns_cancelled(self, mock_cancel, client):
@@ -472,12 +750,12 @@ class TestCancelPlan:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # POST /copilot/plans/{plan_id}/undo
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestUndoPlan:
-    """POST /api/v1/copilot/plans/{plan_id}/undo — reverse a completed step."""
+    """POST /api/v1/copilot/plans/{plan_id}/undo â€” reverse a completed step."""
 
     def _make_audit_row(self, **overrides):
         """Build a dict simulating a DB row from copilot_audit_log."""
@@ -578,12 +856,12 @@ class TestUndoPlan:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # GET /copilot/conversations
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestListConversations:
-    """GET /api/v1/copilot/conversations — list user conversations."""
+    """GET /api/v1/copilot/conversations â€” list user conversations."""
 
     def _make_conv_row(self, conv_id, started_at="2025-01-01T00:00:00",
                        ended_at=None, turn_count=5, outcome="completed"):
@@ -664,12 +942,12 @@ class TestListConversations:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # GET /copilot/conversations/{conversation_id}
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestGetConversation:
-    """GET /api/v1/copilot/conversations/{id} — conversation detail."""
+    """GET /api/v1/copilot/conversations/{id} â€” conversation detail."""
 
     def _make_conv_detail_row(self, **overrides):
         row = {
@@ -726,12 +1004,12 @@ class TestGetConversation:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # GET /copilot/insights
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestListInsights:
-    """GET /api/v1/copilot/insights — proactive insights queue."""
+    """GET /api/v1/copilot/insights â€” proactive insights queue."""
 
     def _make_insight_row(self, **overrides):
         row = {
@@ -807,9 +1085,9 @@ class TestListInsights:
         assert resp.status_code == 401
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # WS /copilot/ws/{conversation_id}
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestWebSocket:
     """WebSocket endpoint for real-time plan updates."""
@@ -876,13 +1154,157 @@ class TestWebSocket:
             # After exiting the context manager, the connection should be removed
             assert len(_ws_connections.get("conv-cleanup", [])) == 0
 
+    def test_websocket_emits_progress_for_long_running_step(self, client):
+        """Â§13: a long-running step's Redis progress key is surfaced as a
+        ``type:"progress"`` message with percent + message_key."""
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
 
-# ══════════════════════════════════════════════════════════════════════════════
+        fake_cache = MagicMock()
+        progress_payload = {
+            "task_id": "task-123",
+            "tool_name": "freight.search_loads",
+            "step_id": "step-1",
+            "conversation_id": "conv-ws-prog",
+            "plan_id": "plan-1",
+            "percent": 50,
+            "message_key": "copilot.tool.progress.executing",
+            "status": "running",
+            "result": None,
+            "error": None,
+        }
+        fake_cache.lrange.return_value = [progress_key("task-123")]
+        fake_cache.get.side_effect = (
+            lambda key: progress_payload if key == progress_key("task-123") else None
+        )
+
+        with (
+            patch("backend.security.decode_access_token") as mock_decode,
+            patch("backend.cache.get_cache", return_value=fake_cache),
+        ):
+            mock_decode.return_value = {"company_id": 1}
+            with client.websocket_connect(
+                f"{BASE}/ws/conv-ws-prog?token=valid.jwt.token"
+            ) as ws:
+                connected = ws.receive_json()
+                assert connected["type"] == "connected"
+                prog = ws.receive_json()
+                assert prog["type"] == "progress"
+                assert prog["task_id"] == "task-123"
+                assert prog["percent"] == 50
+                assert prog["message_key"] == "copilot.tool.progress.executing"
+                assert prog["status"] == "running"
+                assert prog["step_id"] == "step-1"
+                assert prog["tool_name"] == "freight.search_loads"
+
+    def test_websocket_progress_is_not_duplicated(self, client):
+        """Â§13: the same progress payload is only pushed once per connection."""
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        fake_cache = MagicMock()
+        progress_payload = {
+            "task_id": "task-456",
+            "tool_name": "freight.search_loads",
+            "step_id": "step-1",
+            "conversation_id": "conv-ws-dup",
+            "plan_id": "plan-1",
+            "percent": 100,
+            "message_key": "copilot.tool.progress.succeeded",
+            "status": "succeeded",
+            "result": None,
+            "error": None,
+        }
+        fake_cache.lrange.return_value = [progress_key("task-456")]
+        fake_cache.get.side_effect = (
+            lambda key: progress_payload if key == progress_key("task-456") else None
+        )
+
+        with (
+            patch("backend.security.decode_access_token") as mock_decode,
+            patch("backend.cache.get_cache", return_value=fake_cache),
+        ):
+            mock_decode.return_value = {"company_id": 1}
+            with client.websocket_connect(
+                f"{BASE}/ws/conv-ws-dup?token=valid.jwt.token"
+            ) as ws:
+                ws.receive_json()  # connected
+                first = ws.receive_json()
+                assert first["type"] == "progress"
+                # The initial poll already pushed it; a second poll (driven by a
+                # ping round-trip) must not re-push the identical payload.
+                ws.send_text("ping")
+                pong = ws.receive_json()
+                assert pong["type"] == "pong"
+
+    def test_websocket_poll_reconciles_terminal_progress_into_stored_plan(self, client):
+        """§13 fidelity: the WS poll back-writes a terminal worker payload into
+        the stored plan — a later GET /plans/{id} shows the terminal result."""
+        from backend.api.v1.copilot_router import _pending_plans, _plan_owners
+        from backend.celery_app.tasks.copilot_tool_tasks import progress_key
+
+        plan = _make_plan(plan_id="plan-ws-lr", conversation_id="conv-ws-lr",
+                          requires_confirmation=False)
+        plan.steps[0].step_id = "step-ws-lr"
+        plan.steps[0].status = "running"
+        plan.steps[0].result = {
+            "task_id": "task-ws-lr",
+            "progress_key": progress_key("task-ws-lr"),
+            "status": "dispatched",
+        }
+        _pending_plans["plan-ws-lr"] = plan
+        _plan_owners["plan-ws-lr"] = 1
+
+        terminal = {
+            "task_id": "task-ws-lr",
+            "tool_name": "freight.search_loads",
+            "step_id": "step-ws-lr",
+            "conversation_id": "conv-ws-lr",
+            "plan_id": "plan-ws-lr",
+            "percent": 100,
+            "message_key": "copilot.tool.progress.succeeded",
+            "status": "succeeded",
+            "result": {"status": "success", "data": {"total_results": 3},
+                       "message_key": "copilot.tool.freight.search_loads_ok"},
+            "error": None,
+        }
+        fake_cache = MagicMock()
+        fake_cache.lrange.return_value = [progress_key("task-ws-lr")]
+        fake_cache.get.side_effect = (
+            lambda key: terminal if key == progress_key("task-ws-lr") else None
+        )
+
+        with (
+            patch("backend.security.decode_access_token") as mock_decode,
+            patch("backend.cache.get_cache", return_value=fake_cache),
+        ):
+            mock_decode.return_value = {"company_id": 1}
+            with client.websocket_connect(
+                f"{BASE}/ws/conv-ws-lr?token=valid.jwt.token"
+            ) as ws:
+                ws.receive_json()  # connected
+                prog = ws.receive_json()
+                assert prog["type"] == "progress"
+                assert prog["status"] == "succeeded"
+
+        # The initial poll reconciled the stored plan before the WS closed.
+        assert plan.steps[0].status == "succeeded"
+        assert plan.steps[0].result["data"]["total_results"] == 3
+        assert plan.steps[0].finished_at is not None
+
+        # GET /plans/{id} now shows the terminal step result.
+        resp = client.get(f"{BASE}/plans/plan-ws-lr")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert data["steps"][0]["status"] == "succeeded"
+        assert data["steps"][0]["result"]["data"]["total_results"] == 3
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Internal helpers
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestKillSwitch:
-    """_check_kill_switch — platform and per-company kill switch."""
+    """_check_kill_switch â€” platform and per-company kill switch."""
 
     @patch("backend.cache.get_cache")
     def test_check_kill_switch_platform_tripped(self, mock_get_cache, client):
@@ -930,8 +1352,162 @@ class TestKillSwitch:
         mock_process.assert_called_once()
 
 
+class TestKillSwitchMemo:
+    """_check_kill_switch — short-TTL in-process memoization (§26).
+
+    Approved perf fix: consecutive requests within the TTL skip the two
+    synchronous Redis reads entirely; a kill-switch flip still propagates
+    within ~TTL (≤2s) and never longer.
+    """
+
+    @pytest.mark.asyncio
+    @patch("backend.cache.get_cache")
+    async def test_second_call_within_ttl_skips_redis(self, mock_get_cache):
+        """First call performs both Redis reads; a second call within the TTL
+        hits the in-process memo and performs zero Redis reads."""
+        import backend.api.v1.copilot_router as cr
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        await cr._check_kill_switch(company_id=1)
+        assert mock_cache.get.call_count == 2  # platform + company reads
+
+        await cr._check_kill_switch(company_id=1)
+        assert mock_cache.get.call_count == 2  # memo hit — no new Redis reads
+
+    @pytest.mark.asyncio
+    @patch("backend.cache.get_cache")
+    async def test_kill_switch_flip_trips_within_ttl(self, mock_get_cache):
+        """A kill switch set AFTER a memoized pass-through still trips once
+        the memo entry expires (~TTL)."""
+        import backend.api.v1.copilot_router as cr
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        # Pass-through first → memoized as not-tripped.
+        await cr._check_kill_switch(company_id=1)
+        assert cr._kill_switch_memo["platform"]
+
+        # Flip the switch in Redis and advance the memo clock past the TTL.
+        mock_cache.get.return_value = True
+        expired = (
+            cr._kill_switch_memo["platform"][0]
+            + cr._KILL_SWITCH_MEMO_TTL_SECONDS
+            + 1
+        )
+        with patch.object(cr, "_kill_switch_memo_now", return_value=expired):
+            with pytest.raises(HTTPException) as exc:
+                await cr._check_kill_switch(company_id=1)
+
+        assert exc.value.status_code == 503
+        assert exc.value.detail["message_key"] == "copilot.error.unavailable"
+
+    @pytest.mark.asyncio
+    @patch("backend.cache.get_cache")
+    async def test_tripped_result_is_never_memoized(self, mock_get_cache):
+        """A raised 503 must never be memoized — the next request re-reads
+        Redis (and, with the platform switch still engaged, raises again)."""
+        import backend.api.v1.copilot_router as cr
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = True
+        mock_get_cache.return_value = mock_cache
+
+        with pytest.raises(HTTPException) as exc:
+            await cr._check_kill_switch(company_id=1)
+        assert exc.value.status_code == 503
+
+        with pytest.raises(HTTPException):
+            await cr._check_kill_switch(company_id=1)
+
+        # Both calls performed the real Redis reads (platform key tripped first).
+        assert mock_cache.get.call_count == 2
+        # Nothing was memoized from a raised result.
+        assert cr._kill_switch_memo == {}
+
+
+class TestRecordUsageOffloaded:
+    """record_usage call sites in async endpoints must offload the sync Redis
+    writes through asyncio.to_thread (no event-loop blocking)."""
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    @patch("backend.cache.get_cache")
+    @patch("asyncio.to_thread", new_callable=AsyncMock)
+    def test_chat_offloads_record_usage_to_thread(
+        self, mock_to_thread, mock_get_cache, mock_process, client,
+    ):
+        from backend.copilot.tier_gate import record_usage
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        mock_get_cache.return_value = mock_cache
+        mock_process.return_value = _make_chat_response()
+
+        resp = client.post(f"{BASE}/chat", json={"utterance": "hello"})
+
+        assert resp.status_code == 200
+        mock_to_thread.assert_called_once_with(record_usage, 1)
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    @patch("backend.cache.get_cache")
+    @patch("asyncio.to_thread", new_callable=AsyncMock)
+    def test_voice_offloads_record_usage_to_thread(
+        self, mock_to_thread, mock_get_cache, mock_process, client,
+    ):
+        from backend.copilot.tier_gate import record_usage
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        mock_get_cache.return_value = mock_cache
+        mock_process.return_value = _make_chat_response()
+
+        resp = client.post(f"{BASE}/voice", json={"utterance": "hello"})
+
+        assert resp.status_code == 200
+        mock_to_thread.assert_called_once_with(record_usage, 1)
+
+
+class TestChatQuotaGating:
+    """Tier-gated endpoints still return 403/429 with the to_thread change."""
+
+    @patch("backend.cache.get_cache")
+    def test_chat_returns_429_when_quota_exceeded(self, mock_get_cache, client_with_role):
+        client, mock_db, set_user = client_with_role
+        set_user({"id": 2, "email": "op@test.com", "role": "dispatcher",
+                  "is_admin": False, "company_id": 1, "subscription_tier": "business"})
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        with patch("backend.copilot.tier_gate.check_quota", return_value=False):
+            resp = client.post(f"{BASE}/chat", json={"utterance": "hello"})
+
+        assert resp.status_code == 429
+        assert resp.json()["detail"]["message_key"] == "copilot.error.quota_exceeded"
+
+    @patch("backend.cache.get_cache")
+    def test_chat_returns_403_for_tier_without_feature(self, mock_get_cache, client_with_role):
+        client, mock_db, set_user = client_with_role
+        set_user({"id": 2, "email": "op@test.com", "role": "dispatcher",
+                  "is_admin": False, "company_id": 1, "subscription_tier": ""})
+
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        resp = client.post(f"{BASE}/chat", json={"utterance": "hello"})
+
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["message_key"] == "copilot.error.feature_not_in_tier"
+
+
 class TestSetKillSwitch:
-    """_set_kill_switch — toggling kill switch state."""
+    """_set_kill_switch â€” toggling kill switch state."""
 
     @patch("backend.cache.get_cache")
     @patch("backend.api.v1.copilot_router._cancel_inflight_plans")
@@ -985,7 +1561,7 @@ class TestSetKillSwitch:
 
 
 class TestCancelInflightPlans:
-    """_cancel_inflight_plans — cancel pending plans for a company."""
+    """_cancel_inflight_plans â€” cancel pending plans for a company."""
 
     @patch("backend.copilot.executor.cancel_plan")
     def test_cancel_inflight_plans_all(self, mock_cancel_plan):
@@ -1048,7 +1624,7 @@ class TestCancelInflightPlans:
 
 
 class TestPushPlanUpdate:
-    """_push_plan_update — push step status via WebSocket."""
+    """_push_plan_update â€” push step status via WebSocket."""
 
     @pytest.mark.asyncio
     async def test_push_plan_update_sends_message(self):
@@ -1085,7 +1661,7 @@ class TestPushPlanUpdate:
             tool_name="vehicle.search",
             conversation_id="conv-nonexistent",
         )
-        # No assertion needed — just verifying no exception
+        # No assertion needed â€” just verifying no exception
 
     @pytest.mark.asyncio
     async def test_push_plan_update_removes_dead_connections(self):
@@ -1109,7 +1685,7 @@ class TestPushPlanUpdate:
 
 
 class TestValidatePlanOwnership:
-    """_validate_plan_ownership — company isolation check."""
+    """_validate_plan_ownership â€” company isolation check."""
 
     def test_validate_plan_ownership_returns_plan(self):
         """When plan exists and belongs to the company, return it."""
@@ -1159,15 +1735,15 @@ class TestValidatePlanOwnership:
 
         plan = _make_plan(plan_id="unowned-plan")
         _pending_plans["unowned-plan"] = plan
-        # No owner entry — should still return the plan
+        # No owner entry â€” should still return the plan
 
         result = _validate_plan_ownership("unowned-plan", 1)
         assert result is plan
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Kill switch integration via endpoint
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestKillSwitchIntegration:
     """End-to-end kill switch behaviour through real endpoints."""
@@ -1198,3 +1774,271 @@ class TestKillSwitchIntegration:
             assert resp.status_code == 503, (
                 f"{method} {url} expected 503, got {resp.status_code}"
             )
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# POST /copilot/admin/autonomy/approvals (Â§21 Ph.4 item 4)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class TestAutonomyApprovalAdmin:
+    """POST /api/v1/copilot/admin/autonomy/approvals â€” admin-only workflow pre-approval."""
+
+    _AUTO_BASE = f"{BASE}/admin/autonomy/approvals"
+
+    def _payload(self, company_id: int = 1, workflow: str = "dispatch.cancel",
+                 enabled: bool = True) -> dict:
+        return {"company_id": company_id, "workflow": workflow, "enabled": enabled}
+
+    def _admin_user(self) -> dict:
+        return {"id": 1, "email": "admin@test.com", "role": "admin",
+                "is_admin": True, "company_id": 1}
+
+    def _operator_user(self) -> dict:
+        return {"id": 2, "email": "op@test.com", "role": "dispatcher",
+                "is_admin": False, "company_id": 1}
+
+    def test_non_admin_user_rejected(self, client_with_role):
+        """A non-admin user (dispatcher) must be rejected with 403."""
+        client, mock_db, set_user = client_with_role
+        set_user(self._operator_user())
+
+        resp = client.post(self._AUTO_BASE, json=self._payload())
+
+        assert resp.status_code == 403
+        # Nothing may be written to the approvals table.
+        approval_writes = [
+            call for call in mock_db.conn.execute.call_args_list
+            if "copilot_autonomy_approvals" in call[0][0]
+        ]
+        assert approval_writes == []
+
+    def test_admin_approval_returns_200(self, client_with_role):
+        """An admin enabling a workflow pre-approval returns 200 with the row."""
+        client, mock_db, set_user = client_with_role
+        set_user(self._admin_user())
+
+        resp = client.post(self._AUTO_BASE, json=self._payload())
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["company_id"] == 1
+        assert body["workflow"] == "dispatch.cancel"
+        assert body["enabled"] is True
+
+        # The approval row is written with enabled=1.
+        approval_writes = [
+            call[0][1] for call in mock_db.conn.execute.call_args_list
+            if "copilot_autonomy_approvals" in call[0][0]
+        ]
+        assert len(approval_writes) == 1
+        assert approval_writes[0][2] == 1  # (company_id, workflow, enabled, ...)
+
+    def test_admin_disable_persists(self, client_with_role):
+        """Disabling on a second call must write enabled=0 for the same workflow."""
+        client, mock_db, set_user = client_with_role
+        set_user(self._admin_user())
+
+        first = client.post(self._AUTO_BASE, json=self._payload(enabled=True))
+        assert first.status_code == 200
+        assert first.json()["enabled"] is True
+
+        second = client.post(self._AUTO_BASE, json=self._payload(enabled=False))
+        assert second.status_code == 200
+        assert second.json()["enabled"] is False
+
+        approval_writes = [
+            call[0][1] for call in mock_db.conn.execute.call_args_list
+            if "copilot_autonomy_approvals" in call[0][0]
+        ]
+        assert len(approval_writes) == 2
+        assert approval_writes[0][2] == 1  # enabled=True
+        assert approval_writes[1][2] == 0  # disabled on the second call
+
+    def test_endpoint_requires_auth(self, app):
+        """Without a valid JWT token, the endpoint returns 401."""
+        client = TestClient(app)
+        resp = client.post(self._AUTO_BASE, json=self._payload())
+        assert resp.status_code == 401
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# UIContext passthrough (Â§8, Â§11, Â§30)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class TestChatUIContext:
+    """POST /chat forwards the client's UIContext to the planner for entity resolution."""
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    def test_ui_context_forwarded_to_process_utterance(self, mock_process, client):
+        """A chat request with ui_context must reach process_utterance unchanged."""
+        mock_process.return_value = _make_chat_response(conversation_id="conv-ui")
+
+        resp = client.post(f"{BASE}/chat", json={
+            "utterance": "show me trucks",
+            "ui_context": {
+                "active_screen": "dispatcher_board",
+                "selected_entity_type": "vehicle",
+                "selected_entity_id": 42,
+                "captured_at": "2026-08-27T10:00:00",
+            },
+        })
+
+        assert resp.status_code == 200
+        kwargs = mock_process.call_args.kwargs
+        ui = kwargs.get("ui_context")
+        assert ui is not None, "process_utterance must receive the ui_context"
+        assert ui.active_screen == "dispatcher_board"
+        assert ui.selected_entity_type == "vehicle"
+        assert ui.selected_entity_id == 42
+        assert ui.captured_at is not None
+
+    @patch("backend.api.v1.copilot_router.process_utterance")
+    def test_chat_without_ui_context_sends_none(self, mock_process, client):
+        """No ui_context in the request â†’ process_utterance receives None."""
+        mock_process.return_value = _make_chat_response(conversation_id="conv-plain")
+
+        resp = client.post(f"{BASE}/chat", json={"utterance": "show me trucks"})
+
+        assert resp.status_code == 200
+        assert mock_process.call_args.kwargs.get("ui_context") is None
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Plan pause / resume / stop (Â§13, Â§30)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class TestPlanPauseResumeStop:
+    """POST /api/v1/copilot/plans/{id}/pause | /resume | /stop â€” Â§13 lifecycle."""
+
+    def _store_plan(self, plan_id: str, plan, owner_company: int = 1) -> None:
+        from backend.api.v1.copilot_router import _pending_plans, _plan_owners
+        _pending_plans[plan_id] = plan
+        _plan_owners[plan_id] = owner_company
+
+    def test_pause_returns_paused_and_keeps_plan(self, client_with_db):
+        from backend.api.v1.copilot_router import _pending_plans
+
+        plan = _make_plan(plan_id="plan-pause", steps=[_make_step(status="pending")])
+        self._store_plan("plan-pause", plan)
+
+        pausable = MagicMock()
+        pausable.supports_pause = True
+        pausable.supports_resume = True
+        with patch("backend.copilot.tools.registry.get_tool", return_value=pausable):
+            resp = client_with_db[0].post(f"{BASE}/plans/plan-pause/pause")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "paused"
+        assert body["message_key"] == "copilot.plan.paused"
+        # Plan stays in the pending store, flagged paused.
+        assert "plan-pause" in _pending_plans
+        assert plan.paused is True
+
+    def test_pause_refused_when_tool_not_pausable(self, client_with_db):
+        """Â§13 â€” a plan whose tool lacks supports_pause is refused with 409."""
+        plan = _make_plan(plan_id="plan-nopause", steps=[_make_step(status="pending")])
+        self._store_plan("plan-nopause", plan)
+
+        non_pausable = MagicMock()
+        non_pausable.supports_pause = False
+        with patch("backend.copilot.tools.registry.get_tool", return_value=non_pausable):
+            resp = client_with_db[0].post(f"{BASE}/plans/plan-nopause/pause")
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["message_key"] == "copilot.plan.cannot_pause"
+
+    def test_pause_not_pausable_when_terminal(self, client_with_db):
+        plan = _make_plan(plan_id="plan-done-pause", steps=[_make_step(status="succeeded")])
+        self._store_plan("plan-done-pause", plan)
+
+        resp = client_with_db[0].post(f"{BASE}/plans/plan-done-pause/pause")
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["message_key"] == "copilot.plan.not_pausable"
+
+    @patch("backend.copilot.executor.execute_plan", new_callable=AsyncMock)
+    def test_resume_executes_pending_steps(self, mock_execute, client_with_db):
+        from backend.api.v1.copilot_router import _pending_plans
+
+        plan = _make_plan(plan_id="plan-resume", steps=[_make_step(status="pending")])
+        plan.paused = True
+        self._store_plan("plan-resume", plan)
+
+        executed = _make_plan(plan_id="plan-resume", steps=[_make_step(status="succeeded")])
+        mock_execute.return_value = executed
+
+        resumable = MagicMock()
+        resumable.supports_pause = True
+        resumable.supports_resume = True
+        with patch("backend.copilot.tools.registry.get_tool", return_value=resumable):
+            resp = client_with_db[0].post(f"{BASE}/plans/plan-resume/resume")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "completed"
+        assert body["message_key"] == "copilot.plan.resumed"
+        mock_execute.assert_awaited_once()
+        # Fully-executed plan is removed from the pending store (like confirm).
+        assert "plan-resume" not in _pending_plans
+
+    def test_resume_not_paused_returns_409(self, client_with_db):
+        plan = _make_plan(plan_id="plan-notpaused", steps=[_make_step(status="pending")])
+        self._store_plan("plan-notpaused", plan)
+
+        resp = client_with_db[0].post(f"{BASE}/plans/plan-notpaused/resume")
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["message_key"] == "copilot.plan.not_paused"
+
+    def test_stop_marks_steps_and_removes_plan(self, client_with_db):
+        from backend.api.v1.copilot_router import _pending_plans
+
+        plan = _make_plan(plan_id="plan-stop", steps=[_make_step(status="pending")])
+        self._store_plan("plan-stop", plan)
+
+        resp = client_with_db[0].post(f"{BASE}/plans/plan-stop/stop")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "stopped"
+        assert body["message_key"] == "copilot.plan.stopped"
+        # Remaining steps are marked stopped and the plan leaves the store.
+        assert plan.steps[0].status == "stopped"
+        assert "plan-stop" not in _pending_plans
+
+    def test_get_plan_shows_paused_status(self, client):
+        plan = _make_plan(plan_id="plan-paused-get")
+        plan.paused = True
+        self._store_plan("plan-paused-get", plan)
+
+        resp = client.get(f"{BASE}/plans/plan-paused-get")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "paused"
+
+    def test_paused_plan_refuses_confirm(self, client_with_db):
+        plan = _make_plan(plan_id="plan-paused-confirm", requires_confirmation=True)
+        plan.paused = True
+        self._store_plan("plan-paused-confirm", plan)
+
+        resp = client_with_db[0].post(f"{BASE}/plans/plan-paused-confirm/confirm")
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["message_key"] == "copilot.plan.paused"
+
+    def test_paused_plan_refuses_undo(self, client_with_db):
+        plan = _make_plan(plan_id="plan-paused-undo")
+        plan.paused = True
+        self._store_plan("plan-paused-undo", plan)
+
+        resp = client_with_db[0].post(f"{BASE}/plans/plan-paused-undo/undo")
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["message_key"] == "copilot.plan.paused"
+
+    @pytest.mark.parametrize("action", ["pause", "resume", "stop"])
+    def test_lifecycle_endpoints_require_auth(self, app, action):
+        client = TestClient(app)
+        resp = client.post(f"{BASE}/plans/any-plan/{action}")
+        assert resp.status_code == 401

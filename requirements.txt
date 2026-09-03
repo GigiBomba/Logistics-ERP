@@ -71,6 +71,11 @@ google-auth>=2.50.0
 google-genai>=1.47.0
 websockets>=15.0.1
 
+# --- Wake-word detection (optional: Enterprise hands-free voice, §3.5/§16) ---
+# Install with: pip install "openwakeword>=0.4.0"
+# The desktop app falls back to push-to-talk when not installed.
+# openwakeword>=0.4.0
+
 # --- Distributed task queue / cache ---
 celery[redis]>=5.3.0
 redis>=5.0.0

@@ -233,8 +233,9 @@ class ClientAnalyticsTab(BaseTab):
             f" font-weight: 700; font-family: '{FONT_FAMILY}';"
             f" background: transparent; padding-top: 2px;"
         )
-        if multiline:
-            val.setStyleSheet(val.styleSheet() + " line-height: 1.3;")
+        # NOTE: the previous ``line-height: 1.3`` append was dropped — verified
+        # empirically that Qt 6.11.2 ignores ``line-height`` in QSS (a no-op,
+        # exactly like ``text-transform``), so it never affected rendering.
         card_layout.addWidget(val)
         return card
 

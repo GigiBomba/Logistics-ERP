@@ -8,6 +8,7 @@ Tests cover:
 from __future__ import annotations
 
 
+import asyncio
 import hashlib
 import uuid
 
@@ -15,13 +16,24 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import backend.middleware.idempotency_middleware as idem_mw
 from backend.middleware.auth_middleware import AuthMiddleware
 from backend.middleware.correlation_middleware import CorrelationMiddleware
-from backend.middleware.idempotency_middleware import (
-    IdempotencyMiddleware,
-    _idempotency_store,
-)
+from backend.middleware.idempotency_middleware import IdempotencyMiddleware
+from backend.security import create_access_token
 from config import Config
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Helpers
+# ═════════════════════════════════════════════════════════════════════
+
+def _auth_headers(company_id: int = 1) -> dict:
+    """Headers carrying a valid JWT so the middleware can tenant-scope keys (R1)."""
+    token = create_access_token(
+        {"sub": "u@x.com", "role": "admin", "company_id": company_id}
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -95,8 +107,12 @@ class TestIdempotencyMiddleware:
     # ── Clean the in-memory store before every test ─────────────────
 
     @pytest.fixture(autouse=True)
-    def _clear_idempotency_store(self):
-        _idempotency_store.clear()
+    def _clear_idempotency_store(self, monkeypatch):
+        idem_mw._idempotency_store.clear()
+        idem_mw._key_locks.clear()
+        # Fresh loop-bound lock per test (module lock would bind to the
+        # first TestClient loop and raise "different event loop" later).
+        monkeypatch.setattr(idem_mw, "_store_lock", asyncio.Lock())
         yield
 
     # ── Tests ──────────────────────────────────────────────────────
@@ -126,16 +142,17 @@ class TestIdempotencyMiddleware:
         resp1 = client.post(
             "/echo",
             json={"msg": "first"},
-            headers={"Idempotency-Key": key},
+            headers={**_auth_headers(), "Idempotency-Key": key},
         )
         assert resp1.status_code == 200
         assert resp1.headers.get("Idempotency-Key-Supported") == "true"
         assert resp1.headers.get("Idempotency-Replayed") is None
 
-        # Store should now contain one entry for this key
+        # Store should now contain one entry for this key (tenant-scoped, R1)
         key_hash = hashlib.sha256(key.encode()).hexdigest()
-        assert key_hash in _idempotency_store
-        cached_expiry, cached_status, cached_ctype, cached_body = _idempotency_store[key_hash]
+        storage_key = f"idem:1:{key_hash}"
+        assert storage_key in idem_mw._idempotency_store
+        cached_expiry, cached_status, cached_ctype, cached_body = idem_mw._idempotency_store[storage_key]
         assert cached_status == 200
         assert cached_ctype == "application/json"
 
@@ -143,7 +160,7 @@ class TestIdempotencyMiddleware:
         resp2 = client.post(
             "/echo",
             json={"msg": "second"},
-            headers={"Idempotency-Key": key},
+            headers={**_auth_headers(), "Idempotency-Key": key},
         )
         assert resp2.status_code == cached_status
         assert resp2.headers.get("Idempotency-Replayed") == "true"
@@ -156,14 +173,14 @@ class TestIdempotencyMiddleware:
         resp_a = client.post(
             "/echo",
             json={"seq": 1},
-            headers={"Idempotency-Key": str(uuid.uuid4())},
+            headers={**_auth_headers(), "Idempotency-Key": str(uuid.uuid4())},
         )
         assert resp_a.status_code == 200
 
         resp_b = client.post(
             "/echo",
             json={"seq": 2},
-            headers={"Idempotency-Key": str(uuid.uuid4())},
+            headers={**_auth_headers(), "Idempotency-Key": str(uuid.uuid4())},
         )
         assert resp_b.status_code == 200
 

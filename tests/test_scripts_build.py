@@ -178,19 +178,26 @@ class TestRunPyinstaller:
 
 
 class TestReportSize:
-    def test_reports_size_for_small_build(self, capsys):
+    @staticmethod
+    def _make_small_build(tmp_path):
+        """A deterministic tiny build directory (independent of the real
+        repo/tests directory size, which varies by machine)."""
+        (tmp_path / "tiny.txt").write_text("x" * 10, encoding="utf-8")
+        return tmp_path
+
+    def test_reports_size_for_small_build(self, tmp_path, capsys):
         import scripts.build_client
 
-        base = Path(__file__).parent  # use test dir as a small directory
+        base = self._make_small_build(tmp_path)
         scripts.build_client._report_size(base)
         captured = capsys.readouterr()
         assert "Build size:" in captured.out
         assert "MB" in captured.out
 
-    def test_no_warning_for_small_build(self, capsys):
+    def test_no_warning_for_small_build(self, tmp_path, capsys):
         import scripts.build_client
 
-        base = Path(__file__).parent
+        base = self._make_small_build(tmp_path)
         scripts.build_client._report_size(base)
         captured = capsys.readouterr()
         # Should NOT contain the 100 MB warning

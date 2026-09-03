@@ -77,21 +77,33 @@ class TestKillMutationBuildFingerprint:
             "A mutation that drops profile from the key will fail."
         )
 
-    # ── 3. Different truck_id → different fingerprint ──
-    def test_different_truck_id_different_fingerprint(self, service, base_record):
-        """Two routes identical except truck_id must have distinct fingerprints."""
-        record_a = base_record
+    # ── 3. Different truck_label → different fingerprint ──
+    def test_different_truck_label_different_fingerprint(self, service, base_record):
+        """Two routes identical except truck_label must have distinct fingerprints.
+
+        ``build_fingerprint`` keys on ``truck_label`` (not ``truck_id`` —
+        a per-device local id that would defeat cross-device fingerprint
+        convergence), so distinct labels must not collide.
+        """
+        record_a = RouteHistoryRecord(
+            stops=base_record.stops,
+            profile=base_record.profile,
+            truck_id="TRUCK-001",
+            truck_label="TRUCK-A",
+            excluded_countries=base_record.excluded_countries,
+        )
         record_b = RouteHistoryRecord(
             stops=base_record.stops,
             profile=base_record.profile,
             truck_id="TRUCK-002",
+            truck_label="TRUCK-B",
             excluded_countries=base_record.excluded_countries,
         )
         fp_a = service.build_fingerprint(record_a)
         fp_b = service.build_fingerprint(record_b)
         assert fp_a != fp_b, (
-            "Different truck_id must produce different fingerprints. "
-            "A mutation that drops truck_id from the key will fail."
+            "Different truck_label must produce different fingerprints. "
+            "A mutation that drops truck_label from the key will fail."
         )
 
     # ── 4. Excluded countries order-independent (sorted() removal) ──

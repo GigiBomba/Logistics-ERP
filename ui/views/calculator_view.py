@@ -56,6 +56,7 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
+    FONT_MONO,
     FONT_SIZE_SM,
     FONT_WEIGHT_SEMIBOLD,
     SP,
@@ -118,6 +119,8 @@ class QtCalculatorView(QWidget):
 
         self._trucks: list = []
         self._truck_map: dict[str, dict[str, Any]] = {}
+        self._trucks_loaded = False
+        self._clients_loaded = False
         self._selected_truck: dict[str, Any] | None = None
         self._selected_truck_id = None
         self._selected_client_id = None
@@ -192,7 +195,7 @@ class QtCalculatorView(QWidget):
 
         # ── Right panel: results ──
         self.results_card = Card(self)
-        self.results_card.setMaximumWidth(640)
+        self.results_card.setMinimumWidth(340)
         self._build_result_section()
         split.addWidget(self.results_card, 45)
 
@@ -214,7 +217,7 @@ class QtCalculatorView(QWidget):
         self.truck_combo.currentIndexChanged.connect(self._on_truck_selected)
         self._truck_refresh_btn = Btn(
             card, "\u21BB", variant="ghost", size="sm",
-            command=self._load_trucks,
+            command=lambda: self._load_trucks(force=True),
         )
         self._truck_refresh_btn.setToolTip(
             t("common.refresh", default="Refresh")
@@ -237,7 +240,7 @@ class QtCalculatorView(QWidget):
         self.e_client = StyledComboBox(card, values=[], state="readonly")
         self._client_refresh_btn = Btn(
             card, "\u21BB", variant="ghost", size="sm",
-            command=self._load_clients,
+            command=lambda: self._load_clients(force=True),
         )
         self._client_refresh_btn.setToolTip(
             t("common.refresh", default="Refresh")
@@ -258,7 +261,7 @@ class QtCalculatorView(QWidget):
         cl = card.layout()
         CardHeader(cl, t("main.section_finance"))
 
-        self.e_price = StyledLineEdit(card, placeholder=t("main.offer_price"))
+        self.e_price = StyledLineEdit(card)
         cl.addWidget(field(card, t("main.offer_price"), self.e_price))
 
         # VAT row
@@ -360,6 +363,11 @@ class QtCalculatorView(QWidget):
             title=t("main.empty_calc_title"),
             subtitle=t("main.empty_calc_subtitle"),
         )
+        # The shared EmptyState component fixes its own max width but does not
+        # wrap long title/subtitle copy, so the text clips at both ends in the
+        # narrow result panel.  Enable wrapping on its labels here.
+        for _lbl in self._empty_state.findChildren(QLabel):
+            _lbl.setWordWrap(True)
         cl.addWidget(self._empty_state)
 
         # Results container (hidden initially)
@@ -378,9 +386,10 @@ class QtCalculatorView(QWidget):
             rl.addWidget(lbl)
             rl.addStretch()
             value_label.setStyleSheet(
-                f"font-family: 'Consolas', monospace; font-size: 13px; color: {COLOR_TEXT_PRIMARY};"
+                f"font-family: '{FONT_MONO}', monospace; font-size: 13px; color: {COLOR_TEXT_PRIMARY};"
             )
             value_label.setAlignment(Qt.AlignRight)
+            value_label.setWordWrap(True)
             rl.addWidget(value_label)
             return row
 
@@ -407,13 +416,15 @@ class QtCalculatorView(QWidget):
         prl.addWidget(profit_lbl)
         prl.addStretch()
         self._res_profit.setStyleSheet(
-            f"font-family: 'Consolas', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {COLOR_TEXT_PRIMARY};"
+            f"font-family: '{FONT_MONO}', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {COLOR_TEXT_PRIMARY};"
         )
         self._res_profit.setAlignment(Qt.AlignRight)
+        self._res_profit.setWordWrap(True)
         prl.addWidget(self._res_profit)
         self._res_profit_pct.setStyleSheet(
-            f"font-family: 'Consolas', monospace; font-size: 13px; color: {COLOR_TEXT_TERTIARY};"
+            f"font-family: '{FONT_MONO}', monospace; font-size: 13px; color: {COLOR_TEXT_TERTIARY};"
         )
+        self._res_profit_pct.setWordWrap(True)
         prl.addWidget(self._res_profit_pct)
         res_layout.addWidget(profit_row)
 
@@ -436,13 +447,20 @@ class QtCalculatorView(QWidget):
 
     # ── Truck loading / selection ──────────────────────────────────────────────
 
-    def _load_trucks(self):
+    def _load_trucks(self, force: bool = False):
+        """Populate truck combo. Data is loaded once; skip redundant reloads.
+
+        ``force=True`` (used by the manual Refresh button) always re-queries.
+        """
+        if getattr(self, "_trucks_loaded", False) and not force:
+            return
         if self.fleet_service is None:
             return
         try:
             self._trucks = self.fleet_service.get_trucks()
         except Exception:
             self._trucks = []
+        self._trucks_loaded = True
 
         self._truck_map = {}
         self.truck_combo.clear()
@@ -469,14 +487,20 @@ class QtCalculatorView(QWidget):
         # Select first truck by default
         self._on_truck_selected(0)
 
-    def _load_clients(self):
-        """Populate client combo from the database."""
+    def _load_clients(self, force: bool = False):
+        """Populate client combo. Data is loaded once; skip redundant reloads.
+
+        ``force=True`` (used by the manual Refresh button) always re-queries.
+        """
+        if getattr(self, "_clients_loaded", False) and not force:
+            return
         if self.client_service is None:
             return
         try:
             clients = self.client_service.get_all()
         except Exception:
             clients = []
+        self._clients_loaded = True
         self.e_client.clear()
         if not clients:
             self.e_client.addItem("")
@@ -702,7 +726,7 @@ class QtCalculatorView(QWidget):
         self._res_cost.setText(fmt_currency(total_cost))
         self._res_profit.setText(fmt_currency(res.net_profit))
         self._res_profit.setStyleSheet(
-            f"font-family: 'Consolas', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {color};"
+            f"font-family: '{FONT_MONO}', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {color};"
         )
         self._res_profit_pct.setText(f"({fmt_percentage(res.margin_percent)})")
         self._res_rate.setText(fmt_rate(res.profit_per_km))

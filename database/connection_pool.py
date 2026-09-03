@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+import uuid
 from contextlib import contextmanager
 from time import perf_counter
 from typing import TYPE_CHECKING, Iterator, Optional
@@ -92,6 +93,13 @@ class ConnectionPool:
                 timeout=self._timeout,
                 check_same_thread=True,
             )
+            # Some tables (created by Alembic migrations) declare
+            # `id ... DEFAULT gen_random_uuid()`, a PostgreSQL idiom that
+            # SQLite does not provide.  Register a Python-backed
+            # `gen_random_uuid()` so INSERTs that omit `id` resolve the
+            # default to a UUID v4 instead of failing with
+            # "unknown function: gen_random_uuid()".
+            c.create_function("gen_random_uuid", 0, lambda: str(uuid.uuid4()))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA foreign_keys=ON")
             # Explicit busy timeout — the sqlite3.connect timeout argument

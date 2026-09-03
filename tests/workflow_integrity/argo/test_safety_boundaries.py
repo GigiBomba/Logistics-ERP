@@ -125,7 +125,8 @@ class TestARGOPermissionEnforcement:
     async def test_argo_read_only_on_blocked_companies(self, workflow_env, db):
         """Permission system enforces read-only access for driver role."""
         # The _check_tool_permission function enforces role-based access:
-        # - Drivers can only read trips, fleet, tracking, routes
+        # - Drivers can only read a limited resource subset (trips, tracking,
+        #   routes, documents, drivers, currency)
         # - Dispatchers can read/write but not delete
         # - Managers have broad access
 
@@ -143,9 +144,10 @@ class TestARGOPermissionEnforcement:
         write_mock.required_permission = "trips:write"
         assert _check_tool_permission(write_mock, "driver") is False
 
-        # 4. InvoiceFinalizeTool checks invoices:write — dispatcher lacks this
+        # 4. InvoiceFinalizeTool checks invoices:write — granted to dispatcher
+        #    (only *:delete and system:undo are excluded from the matrix)
         invoice_tool = InvoiceFinalizeTool()
-        assert _check_tool_permission(invoice_tool, "dispatcher") is False
+        assert _check_tool_permission(invoice_tool, "dispatcher") is True
 
         # 5. Manager CAN finalize invoices
         assert _check_tool_permission(invoice_tool, "manager") is True

@@ -34,7 +34,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from database.time_utils import utc_now_iso
 from services.device_identity import DeviceIdentity
-from services.sync_conflict_service import SyncConflictService
+from services.sync_conflict_service import SyncConflictService, payloads_equivalent
 from services.sync_pull_service import _DOCUMENT_REF_ENTITIES, _FK_REFERENCES
 
 logger = logging.getLogger(__name__)
@@ -155,6 +155,7 @@ class _SyncWorker(QObject):
             "tombstones_applied": 0,
             "entities_delta": 0,
             "entities_full_refresh": 0,
+            "pull_failed_entities": [],
             "status": "idle",
         }
         try:
@@ -212,6 +213,11 @@ class _SyncWorker(QObject):
             summary["entities_full_refresh"] = getattr(
                 self._pull, "last_full_refresh_count", 0,
             )
+            # Entities whose pull failed this cycle (per-entity resilience —
+            # the cycle continues; the next cycle retries them).
+            summary["pull_failed_entities"] = getattr(
+                self._pull, "last_failed_entities", [],
+            )
 
             if self._abort_if_stopping(summary):
                 return
@@ -266,7 +272,9 @@ class _SyncWorker(QObject):
         pushed = conflicts = errors = gone = 0
         pending = self._outbox.pending(limit=500)
         if not pending:
-            return pushed, conflicts, errors, gone
+            # No pending rows — the conflict count still reflects any
+            # unresolved journal rows left over from earlier cycles.
+            return pushed, len(self._conflicts.list_unresolved()), errors, gone
 
         for chunk in _chunks(pending, _PUSH_CHUNK_SIZE):
             # R4: abort promptly when a stop was requested mid-cycle.
@@ -308,21 +316,39 @@ class _SyncWorker(QObject):
                         )
                     pushed += 1
                 elif status == "conflict":
-                    self._conflicts.record(
-                        row["entity_type"],
-                        row["local_id"],
-                        server_id=result.get("server_id"),
-                        local_payload=item["payload"],
-                        server_payload=result.get("server_row"),
-                    )
-                    conflicts += 1
-                    self.sync_status_changed.emit("conflicts")
+                    server_payload = result.get("server_row")
+                    if payloads_equivalent(item["payload"], server_payload):
+                        # R3c: spurious conflict — the server row already
+                        # carries the same business content (e.g. a server DB
+                        # reset re-stamped updated_at without changing the
+                        # row).  Treat it as a successful push: mark the
+                        # outbox row synced so the retry loop stops.
+                        self._outbox.mark_synced(row["id"], result.get("server_id"))
+                        if row["op"] == "INSERT" and result.get("server_id") is not None:
+                            self._record_id_map(
+                                row["entity_type"], row["local_id"], result["server_id"]
+                            )
+                        pushed += 1
+                    else:
+                        self._conflicts.record(
+                            row["entity_type"],
+                            row["local_id"],
+                            server_id=result.get("server_id"),
+                            local_payload=item["payload"],
+                            server_payload=server_payload,
+                        )
+                        conflicts += 1
+                        self.sync_status_changed.emit("conflicts")
                 elif status == "error":
                     self._outbox.mark_retry(row["id"])
                     errors += 1
-                    if row["retry_count"] + 1 > _MAX_PUSH_RETRIES:
-                        # Surface it and leave the row in the outbox — the
-                        # journal/UI can decide what to do with it.
+                    if row["retry_count"] + 1 == _MAX_PUSH_RETRIES:
+                        # Surface it ONCE (when the row crosses the retry
+                        # ceiling) and leave the row in the outbox — the
+                        # journal/UI can decide what to do with it.  The row
+                        # keeps being retried each cycle (self-healing when
+                        # the server recovers) but must not re-alert the UI
+                        # every cycle.
                         self.sync_error.emit(
                             f"push failed after {_MAX_PUSH_RETRIES} retries: "
                             f"{row['entity_type']} local_id={row['local_id']} "
@@ -341,6 +367,12 @@ class _SyncWorker(QObject):
                     )
                     self._outbox.mark_retry(row["id"])
                     errors += 1
+        # The summary count must reflect the ACTUAL unresolved journal rows,
+        # not the number of conflict statuses in this cycle — a conflicted
+        # outbox row is re-pushed every cycle (10 pending UPDATEs for one row
+        # → 10 statuses but 1 journal row), so the per-cycle count would
+        # over-report (R3c).
+        conflicts = len(self._conflicts.list_unresolved())
         return pushed, conflicts, errors, gone
 
     def _build_push_item(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:

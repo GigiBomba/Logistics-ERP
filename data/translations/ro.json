@@ -86,11 +86,13 @@
             "recording_error": "Eroare microfon: {error}"
         },
         "error": {
+            "model_unreachable": "Nu am putut contacta modelul AI momentan. Verifică setările AI (Setări → AI Vision) și încearcă din nou — între timp poți folosi ecranele standard.",
             "too_many_steps": "Acest plan are prea mulți pași. Poți restrânge cererea?",
             "too_many_graph_nodes": "Această solicitare ar genera prea mulți pași de raționament. Poți restrânge cererea?",
             "too_many_tokens": "Această solicitare este prea complexă pentru a fi procesată într-o singură etapă. Poți împărți în părți mai mici?",
             "timeout": "Operațiunea a expirat. Te rugăm să încerci din nou.",
             "feature_not_in_tier": "Această funcție nu este disponibilă la abonamentul tău.",
+            "quota_exceeded": "Ați depășit limita lunară de utilizare pentru abonamentul dvs.",
             "unavailable": "AI Co-Pilot-ul este temporar indisponibil. Te rugăm să folosești ecranele standard.",
             "service_error": "Serviciul backend a returnat o eroare.",
             "unexpected": "A apărut o eroare neașteptată.",
@@ -100,7 +102,8 @@
             "unknown_analytics_domain": "Domeniu de analiză necunoscut. Disponibil: financial, fleet, driver, client, route_profitability, trip_status, cost_breakdown, monthly_volume, revenue_quarterly, maintenance, truck_utilization, invoice_aging, overdue, summary.",
             "stt_unavailable": "Intrarea vocală nu este disponibilă deoarece motorul de conversie a vorbirii în text nu este instalat. Instalați pachetul „faster-whisper” sau introduceți solicitarea dvs.",
             "stt_failed": "Transcrierea vorbirii în text a eșuat. Vă rugăm să încercați din nou sau să introduceți cererea dvs.",
-            "stt_no_speech": "Nu a fost detectată nicio vorbire. Vă rugăm să încercați să vorbiți din nou sau să introduceți cererea."
+            "stt_no_speech": "Nu a fost detectată nicio vorbire. Vă rugăm să încercați să vorbiți din nou sau să introduceți cererea.",
+            "help_only_tier": "Modul de ajutor acoperă doar documentația și răspunsurile practice. Datele live și acțiunile necesită un plan Business sau Enterprise."
         },
         "step": {
             "vehicle_search_done": "Căutare vehicule finalizată.",
@@ -171,6 +174,16 @@
                 "generate_pdf_failed": "Generarea PDF a eșuat.",
                 "generate_excel_ok": "Excel generat cu succes.",
                 "generate_excel_failed": "Generarea Excel a eșuat."
+            },
+            "whatsapp": {
+                "send_ok": "Mesaj WhatsApp trimis către {recipient}.",
+                "send_failed": "Nu s-a putut trimite mesajul WhatsApp către {recipient}."
+            },
+            "progress": {
+                "validating": "Se validează solicitarea...",
+                "executing": "Se execută în fundal...",
+                "succeeded": "Activitate finalizată cu succes.",
+                "failed": "Activitatea a eșuat."
             }
         },
         "dispatch": {
@@ -271,7 +284,7 @@
             }
         },
         "clarification": {
-            "unknown_intent": "Nu am înțeles această solicitare. Poți reformula?",
+            "unknown_intent": "Nu am înțeles această solicitare. Poți reformula? Te pot ajuta cu vehicule, șoferi, rute, curse, clienți, documente, valută, urmărirea flotei și analize — încearcă să întrebi, de exemplu, 'găsește camioane disponibile' sau 'verifică orele șoferului'.",
             "tool_unavailable": "Această funcție nu este disponibilă. Încearcă o altă solicitare.",
             "low_confidence": "Nu sunt sigur că am înțeles corect. Poți oferi mai multe detalii?",
             "missing_entities": "Am nevoie de mai multe informații pentru a finaliza această solicitare.",
@@ -284,7 +297,15 @@
             "not_persisted": "Istoricul planurilor nu este încă disponibil.",
             "cancelled": "Planul a fost anulat.",
             "not_found": "Planul cu ID-ul {plan_id} nu a fost găsit.",
-            "not_owned": "Nu aveți acces la acest plan."
+            "not_owned": "Nu aveți acces la acest plan.",
+            "cannot_pause": "Acest plan nu poate fi întrerupt — instrumentele sale nu acceptă pauza.",
+            "cannot_resume": "Acest plan nu poate fi reluat — instrumentele sale nu acceptă reluarea."
+        },
+        "summary": {
+            "llm_chat": "{answer}",
+            "help": {
+                "greeting": "Salut! Sunt asistentul tău AI Co-Pilot. Te pot ajuta cu vehicule, șoferi, rute, curse, clienți, documente, valută, urmărirea flotei și analize, și te pot ghida pas cu pas prin fluxurile de lucru. Încearcă să întrebi, de exemplu, 'găsește camioane disponibile' sau 'verifică orele șoferului'."
+            }
         },
         "world_model": {
             "overdue_invoices": "Există {count} facturi restante care necesită atenție.",
@@ -335,6 +356,11 @@
                 "minutes_ago": "{n}m ago",
                 "hours_ago": "{n}h ago",
                 "days_ago": "{n}d ago"
+            }
+        },
+        "whatsapp": {
+            "error": {
+                "not_configured": "WhatsApp nu este configurat. Cereți unui administrator să configureze WhatsApp Business API."
             }
         }
     },
@@ -1480,7 +1506,12 @@
         "cancelled": "Anulată",
         "invoiced": "Facturată",
         "paid": "Plătită",
-        "Archived": "Arhivată"
+        "Archived": "Arhivată",
+        "in_progress": "În Curs",
+        "overdue": "Restant",
+        "maintenance": "Mentenanță",
+        "unassigned": "Neatribuiți",
+        "delayed": "Întârziat"
     },
     "common": {
         "all": "Toate",
@@ -1609,7 +1640,7 @@
         "detail_route": "Ruta",
         "detail_departure": "Plecare",
         "detail_eta": "ETA",
-        "detail_promised_date": "Data de livrare promis\u0103",
+        "detail_promised_date": "Data de livrare promisă",
         "detail_distance": "Distanta",
         "detail_price": "Pret",
         "detail_net_profit": "Profit Net",
@@ -1852,7 +1883,7 @@
         "excellent": "Excelent",
         "export": "Exportă",
         "export_success": "Export Reușit",
-        "export_title": "Titlu Export",
+        "export_title": "Export",
         "fair": "Acceptabil",
         "filter_label": "Filtru",
         "flash_maint_scheduled": "Mentenanță Programată",
@@ -1889,7 +1920,7 @@
         "page_info": "Informații Pagină",
         "predictions": "Previziuni",
         "predictions_header": "Antet Previziuni",
-        "predictions_title": "Titlu Previziuni",
+        "predictions_title": "Previziuni",
         "prev": "Anterior",
         "refresh": "Reîmprospătare",
         "refresh_score": "Reîmprospătează Scorul",
@@ -1897,7 +1928,7 @@
         "schedule_add": "Adaugă Programare",
         "schedule_delete_confirm": "Confirmă Ștergerea Programării",
         "schedule_delete_prompt": "Prompt Ștergere Programare",
-        "schedule_delete_title": "Titlu Ștergere Programare",
+        "schedule_delete_title": "Ștergere Programare",
         "schedule_due_by": "Scadent Până La",
         "schedule_every_km": "La fiecare KM",
         "schedule_every_months": "La fiecare Luni",
@@ -3230,5 +3261,13 @@
         "offline_title": "Mod Offline",
         "offline_message": "Raportarea problemelor nu este disponibilă în modul offline.",
         "button_tooltip": "Raportează o Problemă"
+    },
+    "alert_card": {
+        "trip_ref": "Trip {trip_id}",
+        "truck_ref": "Truck {truck_id}"
+    },
+    "client_activity": {
+        "trip_line": "Trip: {truck} — {status} / {client} — {distance} km",
+        "invoice_line": "Invoice: {number} — {status} — {amount} EUR ({trip_status})"
     }
 }

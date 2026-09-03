@@ -13,6 +13,7 @@ sanely on inputs from the worker.
 from __future__ import annotations
 
 
+import contextlib
 import os
 import tempfile
 import unittest
@@ -56,6 +57,8 @@ class TestWorkerSlotsExist(unittest.TestCase):
             self.db.close()
         finally:
             os.unlink(self.path)
+        with contextlib.suppress(Exception):
+            self.view.shutdown()
         self.view.deleteLater()
 
     def test_on_stage_changed_method_exists(self) -> None:
@@ -86,6 +89,8 @@ class TestWorkerSlotsBehave(unittest.TestCase):
             self.db.close()
         finally:
             os.unlink(self.path)
+        with contextlib.suppress(Exception):
+            self.view.shutdown()
         self.view.deleteLater()
 
     def test_on_stage_changed_with_unknown_run_id_refreshes(self) -> None:

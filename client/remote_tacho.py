@@ -25,13 +25,12 @@ class RemoteTachoService:
         return self._api.get_tacho_status()
 
     def import_ddd_file(self, file_path: str) -> dict:
-        """Upload a DDD file for import via the API."""
+        """Upload a DDD file for import via the API.
+
+        Routes through ``ApiClient._post`` (retry/backoff + circuit breaker)
+        instead of the raw httpx client, matching every other API call.
+        """
         import os
         with open(file_path, "rb") as f:
             files = {"file": (os.path.basename(file_path), f)}
-            resp = self._api._client.post(
-                f"{self._api._base_url}/api/v1/tacho/import",
-                files=files,
-            )
-            resp.raise_for_status()
-            return resp.json()
+            return self._api._post("/api/v1/tacho/import", files=files)

@@ -9,6 +9,81 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 
+# ── Process-global settings cache (F1) ──────────────────────────────────
+# ``BackendSettings()`` parses ``.env`` + every OPERION_* env var through
+# Pydantic on every construction — request hot paths (auth, mfa, admin,
+# support, security dependencies) were instantiating it 4-5x per request.
+# These settings are process-global by design (single-install deployment,
+# no tenant data), so one cached instance per process is safe and correct.
+_settings_cache: Optional["BackendSettings"] = None
+_settings_fingerprint: Optional[str] = None
+_settings_class: Optional[type] = None
+
+
+def _env_fingerprint() -> str:
+    """Cheap fingerprint of the env inputs that feed ``BackendSettings``.
+
+    Hashes every ``OPERION_*`` env var plus the ``.env`` file mtime (when
+    present).  This is a few microseconds on the hot path — orders of
+    magnitude cheaper than re-parsing the whole settings object — and it
+    makes the cache self-invalidating when tests (or an operator) mutate
+    the environment between calls, without any explicit ``reload_settings``.
+    """
+    import hashlib
+
+    h = hashlib.sha1()
+    for key, value in sorted(os.environ.items()):
+        if key.startswith("OPERION_"):
+            h.update(key.encode("utf-8", "replace"))
+            h.update(b"=")
+            h.update(str(value).encode("utf-8", "replace"))
+            h.update(b"\0")
+    try:
+        h.update(str(os.path.getmtime(".env")).encode("utf-8"))
+    except OSError:
+        pass
+    return h.hexdigest()
+
+
+def get_settings() -> "BackendSettings":
+    """Return the process-global :class:`BackendSettings` instance.
+
+    The first call parses ``.env`` and the environment once and caches
+    the result; every subsequent call reuses that instance while the
+    settings inputs are unchanged (env fingerprint + class identity —
+    covers tests that patch ``BackendSettings`` or mutate ``OPERION_*``
+    env vars between cases).  Explicit invalidation is available via
+    :func:`reload_settings`.
+
+    Prefer this over constructing ``BackendSettings()`` directly in
+    request/route code.
+    """
+    global _settings_cache, _settings_fingerprint, _settings_class
+    fingerprint = _env_fingerprint()
+    if (
+        _settings_cache is None
+        or _settings_class is not BackendSettings
+        or fingerprint != _settings_fingerprint
+    ):
+        _settings_cache = BackendSettings()
+        _settings_fingerprint = fingerprint
+        _settings_class = BackendSettings
+    return _settings_cache
+
+
+def reload_settings() -> "BackendSettings":
+    """Invalidate the cached settings and re-parse them from the environment.
+
+    Clears ``_settings_cache`` and immediately rebuilds it, returning the
+    fresh instance.  Tests that mutate env vars between cases call this so
+    the next :func:`get_settings` reflects the new values instead of a
+    stale cached copy.
+    """
+    global _settings_cache
+    _settings_cache = None
+    return get_settings()
+
+
 class BackendSettings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────
     db_engine: str = "sqlite"

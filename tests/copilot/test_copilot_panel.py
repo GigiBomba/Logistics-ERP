@@ -6,16 +6,16 @@ clear conversation, enterprise voice mode, signal emissions, and edge cases
 such as empty messages, long messages, and special characters.
 
 Design notes
-------------
+-----------
 - The CoPilotPanel is constructed as a child of a shown QMainWindow so that
   ``isVisible()`` and child-widget visibility work correctly.
 - Thread+asyncio execution paths in ``_process_utterance`` / ``_process_voice``
-  are exercised by patching ``threading.Thread.start`` to run synchronously,
-  then processing Qt events so that ``QTimer.singleShot(0, …)`` callbacks fire.
-- A known production bug (free-variable ``exc`` in ``lambda`` inside an
-  ``except`` block — lines 298, 358) causes ``_handle_error`` callbacks to
-  crash.  Tests that verify the error-display path call ``_handle_error``
-  directly rather than routing through the broken lambda.
+  run in real worker threads; results are delivered back to the main thread
+  through the queued ``response_ready`` / ``request_failed`` Qt signals, so
+  tests wait on the resulting UI state with ``qtbot.waitUntil``.
+- Some tests still patch ``threading.Thread.start`` to run synchronously for
+  deterministic single-threaded coverage of the pipeline; the signal-based
+  delivery makes that safe (a same-thread emit uses a direct connection).
 """
 
 from __future__ import annotations
@@ -254,13 +254,17 @@ class TestTextSendFlow:
         controller.send_utterance.assert_not_called()
 
     def test_send_text_via_button_adds_user_bubble(self, panel, qtbot):
-        """Clicking Send adds a user bubble, shows thinking, disables input."""
+        """Clicking Send adds a user bubble, shows thinking, disables input.
+
+        The worker runs in a real thread; the response is delivered via the
+        queued ``response_ready`` signal, so the intermediate "processing"
+        state is still visible synchronously after sending.
+        """
         # Initially empty
         assert panel._conversation._empty_label.isVisible()
 
         panel._chat_input._input.setText("Hello world")
-        with patch.object(threading.Thread, "start", lambda self: self.run()):
-            panel._chat_input._on_send()
+        panel._chat_input._on_send()
 
         # User bubble added synchronously
         assert not panel._conversation._empty_label.isVisible()
@@ -414,6 +418,36 @@ class TestFormatResponse:
         d = {"summary_key": "copilot.test.greeting", "summary_params": {}}
         result = panel._format_response(d)
         assert result is not None
+
+    def test_llm_chat_answer_rendered_verbatim(self, panel):
+        """copilot.summary.llm_chat renders the raw answer — braces and
+        newlines are never passed through str.format(), and the i18n template
+        '{answer}' must not leak into the bubble."""
+        answer = "Line one {a} {b}\nLine two } not a template"
+        d = {
+            "summary_key": "copilot.summary.llm_chat",
+            "summary_params": {"answer": answer},
+            "clarification_question_key": None,
+            "clarification_params": {},
+            "timeline": [],
+            "conversation_id": "c1",
+        }
+        result = panel._format_response(d)
+        assert result == answer
+        assert "{answer}" not in result
+
+    def test_llm_chat_empty_answer_falls_back(self, panel):
+        """An empty/blank answer does not render the i18n template."""
+        d = {
+            "summary_key": "copilot.summary.llm_chat",
+            "summary_params": {"answer": "   "},
+            "clarification_question_key": None,
+            "clarification_params": {},
+            "timeline": [],
+            "conversation_id": "c1",
+        }
+        result = panel._format_response(d)
+        assert "{answer}" not in result
 
     def test_clarification_question_only(self, panel):
         d = {
@@ -579,21 +613,26 @@ class TestThinkingState:
     def test_thinking_shown_on_send(self, panel, qtbot):
         """Thinking indicator becomes visible when a message is sent."""
         panel._chat_input._input.setText("Process")
-        with patch.object(threading.Thread, "start", lambda self: self.run()):
-            panel._chat_input._on_send()
+        panel._chat_input._on_send()
 
         assert panel._conversation._thinking.isVisible()
 
     def test_thinking_hidden_after_response(self, panel, qtbot, controller):
-        """Thinking indicator hides when the response arrives."""
+        """Thinking indicator hides when the response arrives.
+
+        The worker runs in a real thread (no ``Thread.start`` patch); the
+        response is delivered back to the main thread via the queued
+        ``response_ready`` signal, so we wait on the UI state instead.
+        """
         controller.send_utterance.return_value = make_mock_response()
 
         panel._chat_input._input.setText("Process")
-        with patch.object(threading.Thread, "start", lambda self: self.run()):
-            panel._chat_input._on_send()
+        panel._chat_input._on_send()
 
-        qtbot.wait(100)
-        assert not panel._conversation._thinking.isVisible()
+        qtbot.waitUntil(
+            lambda: not panel._conversation._thinking.isVisible(),
+            timeout=5000,
+        )
 
     def test_thinking_hidden_direct_handle_error(self, panel):
         """_handle_error directly hides the thinking indicator."""
@@ -808,6 +847,29 @@ class TestHandleResponse:
         bubbles = panel._conversation.findChildren(ChatBubbleWidget)
         assert len(bubbles) >= 1
 
+    def test_handle_response_summary_only_renders_bubble(self, panel):
+        """A response carrying only summary_key (no plan/timeline) renders a
+        normal assistant bubble — e.g. the greeting direct-response."""
+        panel._conversation.show_thinking()
+        panel._chat_input.set_processing(True)
+
+        panel._handle_response({
+            "summary_key": "copilot.summary.help.greeting",
+            "summary_params": {},
+            "clarification_question_key": None,
+            "clarification_params": {},
+            "timeline": [],
+            "conversation_id": "c1",
+        })
+
+        # Thinking hidden, input re-enabled, assistant bubble added
+        assert not panel._conversation._thinking.isVisible()
+        assert panel._chat_input._input.isEnabled()
+        from ui.copilot.widgets.chat_bubble import ChatBubbleWidget
+
+        bubbles = panel._conversation.findChildren(ChatBubbleWidget)
+        assert len(bubbles) >= 1
+
     def test_handle_response_with_clarification(self, panel):
         """Response with both summary and clarification question."""
         panel._handle_response({
@@ -889,14 +951,11 @@ class TestHandleError:
 
 
 class TestThreadedSendIntegration:
-    """Full threaded pipeline: sync patching of Thread.start so that
-    ``_process_utterance`` runs synchronously, then QTimer callbacks are
-    pumped via ``qtbot.wait``.
-
-    Note: The production code contains a known ``exc`` closure bug
-    (lines 298, 358) that crashes ``_handle_error`` callbacks.  These tests
-    exercise only the success path.  Error-path UI is tested directly via
-    ``_handle_error`` above.
+    """Full threaded pipeline: worker threads deliver results via the queued
+    ``response_ready`` / ``request_failed`` signals.  Some tests patch
+    ``Thread.start`` to run synchronously for deterministic coverage; the
+    signal-based delivery makes that safe (a same-thread emit uses a direct
+    connection).  Error-path UI is exercised end-to-end via ``request_failed``.
     """
 
     def test_send_utterance_thread_updates_ui(self, panel, qtbot, controller):

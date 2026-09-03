@@ -26,4 +26,11 @@ services:
       # the desktop starts no ops engine in remote mode, so the API process
       # runs OperationsEngine(db, prefs).start() against its own database.
       - OPERION_RUN_OPS_ENGINE=1
+      # CRITICAL: the server must NEVER share the desktop's SQLite file
+      # (data/cashflow.db). Two SQLite engines (Windows desktop + Linux
+      # container) migrating the same file concurrently corrupts its schema
+      # ("malformed database schema ... index already exists") and breaks
+      # /sync/pull + /sync/sequences with 500s. The server gets its own DB;
+      # the desktop syncs to it via the API.
+      - OPERION_DB_PATH=/app/data/server.db
     restart: unless-stopped

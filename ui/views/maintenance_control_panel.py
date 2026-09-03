@@ -34,6 +34,7 @@ from ui.components import (
     Btn,
     Card,
     CardHeader,
+    Divider,
     EmptyState,
     FieldLabel,
     Label,
@@ -120,6 +121,9 @@ class QtMaintenanceControlPanel(QWidget):
         self._cb_show_resolved: QCheckBox | None = None
         self._summary_lbl: QLabel | None = None
         self._alert_count_lbl: QLabel | None = None
+        self._more_btn = None
+        self._more_widget: QWidget | None = None
+        self._more_expanded = False
 
         # Alert filter proxy
         self._alert_proxy = AlertFilterProxy(self)
@@ -275,67 +279,129 @@ class QtMaintenanceControlPanel(QWidget):
 
     def _build_filter_bar(self, layout):
         fb = Card()
-        fbl = QHBoxLayout()
-        fb.layout().addLayout(fbl)
+        fbl = fb.layout()
+        fbl.setSpacing(SP["2"])
 
-        sev_lbl = FieldLabel(None, t("maint.filter_severity"))
-        fbl.addWidget(sev_lbl)
+        # ── PRIMARY row: severity pills · type · truck · show resolved ──
+        # Compact, grouped filter strip. Each group is labelled only where a
+        # label adds clarity; the summary counter + "More filters" toggle sit
+        # at the right edge.
+        primary = QHBoxLayout()
+        primary.setSpacing(SP["1"])
+
+        # Severity group (compact pills, self-explanatory labels).
+        sev_lbl = FieldLabel(None, t("maint.severity_label", default="Severity"))
+        primary.addWidget(sev_lbl)
+        primary.addSpacing(SP["1"])
 
         self._cb_critical = QCheckBox(t("maint.severity_critical"))
         self._cb_critical.setProperty("role", "filter")
         self._cb_critical.setChecked(True)
         self._cb_critical.stateChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._cb_critical)
+        primary.addWidget(self._cb_critical)
 
         self._cb_warning = QCheckBox(t("maint.severity_warning"))
         self._cb_warning.setProperty("role", "filter")
         self._cb_warning.setChecked(True)
         self._cb_warning.stateChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._cb_warning)
+        primary.addWidget(self._cb_warning)
 
         self._cb_info = QCheckBox(t("maint.severity_info"))
         self._cb_info.setProperty("role", "filter")
         self._cb_info.setChecked(True)
         self._cb_info.stateChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._cb_info)
+        primary.addWidget(self._cb_info)
 
+        # Type group.
+        primary.addSpacing(SP["3"])
         type_lbl = FieldLabel(None, t("maint.filter_type"))
-        fbl.addWidget(type_lbl)
-
+        primary.addWidget(type_lbl)
         self._c_type = QComboBox()
         self._c_type.setProperty("role", "filter")
+        self._c_type.setMinimumWidth(SP["10"] * 3)
         self._c_type.addItem(t("common.all"))
         for at in AlertType:
             self._c_type.addItem(at.value)
         self._c_type.currentTextChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._c_type)
+        primary.addWidget(self._c_type)
 
+        # Truck group.
+        primary.addSpacing(SP["3"])
         truck_lbl = FieldLabel(None, t("maint.filter_truck"))
-        fbl.addWidget(truck_lbl)
+        primary.addWidget(truck_lbl)
         self._e_truck = QLineEdit()
         self._e_truck.setProperty("role", "filter")
         self._e_truck.setPlaceholderText(t("maint.filter_placeholder", default="Filter..."))
+        self._e_truck.setFixedWidth(SP["10"] * 3 + SP["2"])
         self._e_truck.textChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._e_truck)
+        primary.addWidget(self._e_truck)
 
+        # Show-resolved toggle (compact label; full label in tooltip).
+        primary.addSpacing(SP["3"])
+        self._cb_show_resolved = QCheckBox(
+            t("maint.show_resolved_short", default="Resolved")
+        )
+        self._cb_show_resolved.setProperty("role", "filter")
+        self._cb_show_resolved.setToolTip(t("maint.show_resolved"))
+        self._cb_show_resolved.stateChanged.connect(self._on_filter_changed)
+        primary.addWidget(self._cb_show_resolved)
+
+        primary.addStretch(1)
+        self._summary_lbl = Label(None, "", role="muted")
+        primary.addWidget(self._summary_lbl)
+
+        self._more_btn = Btn(
+            None,
+            f"\u25b6 {t('maint.more_filters', default='More')}",
+            variant="ghost",
+            size="sm",
+            command=self._toggle_more_filters,
+        )
+        self._more_btn.setToolTip(t("maint.filter_trip"))
+        primary.addWidget(self._more_btn)
+
+        fbl.addLayout(primary)
+
+        # ── SECONDARY row (collapsible "More filters"): trip filter ──
+        self._more_widget = QWidget()
+        self._more_widget.setObjectName("maint_more_filters")
+        more_col = QVBoxLayout(self._more_widget)
+        more_col.setContentsMargins(0, 0, 0, 0)
+        more_col.setSpacing(SP["2"])
+        more_col.addWidget(Divider(self._more_widget))
+
+        more_row = QHBoxLayout()
+        more_row.setSpacing(SP["2"])
         trip_lbl = FieldLabel(None, t("maint.filter_trip"))
-        fbl.addWidget(trip_lbl)
+        more_row.addWidget(trip_lbl)
         self._e_trip = QLineEdit()
         self._e_trip.setProperty("role", "filter")
         self._e_trip.setPlaceholderText(t("maint.filter_placeholder", default="Filter..."))
+        self._e_trip.setFixedWidth(SP["10"] * 4)
         self._e_trip.textChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._e_trip)
+        more_row.addWidget(self._e_trip)
+        more_row.addStretch(1)
+        more_col.addLayout(more_row)
 
-        self._cb_show_resolved = QCheckBox(t("maint.show_resolved"))
-        self._cb_show_resolved.setProperty("role", "filter")
-        self._cb_show_resolved.stateChanged.connect(self._on_filter_changed)
-        fbl.addWidget(self._cb_show_resolved)
-
-        fbl.addStretch(1)
-        self._summary_lbl = Label(None, "", role="muted")
-        fbl.addWidget(self._summary_lbl)
+        self._more_widget.setVisible(False)
+        fbl.addWidget(self._more_widget)
 
         layout.addWidget(fb)
+
+    def _toggle_more_filters(self):
+        """Collapsible "More filters" tier (mimics settings_view sections)."""
+        self._more_expanded = not self._more_expanded
+        if self._more_widget is not None:
+            self._more_widget.setVisible(self._more_expanded)
+        if self._more_btn is not None:
+            if self._more_expanded:
+                self._more_btn.setText(
+                    f"\u25bc {t('maint.fewer_filters', default='Fewer')}"
+                )
+            else:
+                self._more_btn.setText(
+                    f"\u25b6 {t('maint.more_filters', default='More')}"
+                )
 
     def _build_alert_list(self, layout):
         if self._vm is None:
@@ -477,7 +543,7 @@ class QtMaintenanceControlPanel(QWidget):
         if self._filter_severities is None or Severity.INFO in self._filter_severities:
             parts.append(f"I:{i_count}")
         if self._summary_lbl:
-            self._summary_lbl.setText(" | ".join(parts))
+            self._summary_lbl.setText(" ".join(parts))
 
     # ── i18n ─────────────────────────────────────────────────────
 

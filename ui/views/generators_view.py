@@ -82,10 +82,10 @@ from ui.widgets import (
 logger = logging.getLogger(__name__)
 
 _COPY_META = {
-    "Sender":        {"color": COLOR_ERROR_TEXT,     "bg": COLOR_ERROR_SUBTLE,   "icon": "\U0001F4E4"},
-    "Consignee":     {"color": COLOR_INFO_DEFAULT,   "bg": COLOR_INFO_SUBTLE,    "icon": "\U0001F4E5"},
-    "Carrier":       {"color": COLOR_SUCCESS_TEXT,   "bg": COLOR_SUCCESS_SUBTLE, "icon": "\U0001F69B"},
-    "Administrative": {"color": COLOR_TEXT_SECONDARY, "bg": COLOR_BG_OVERLAY,    "icon": "\U0001F4C1"},
+    "Sender":        {"color": COLOR_ERROR_TEXT,     "bg": COLOR_ERROR_SUBTLE,   "icon": "fa5s.paper-plane"},
+    "Consignee":     {"color": COLOR_INFO_DEFAULT,   "bg": COLOR_INFO_SUBTLE,    "icon": "fa5s.download"},
+    "Carrier":       {"color": COLOR_SUCCESS_TEXT,   "bg": COLOR_SUCCESS_SUBTLE, "icon": "fa5s.truck"},
+    "Administrative": {"color": COLOR_TEXT_SECONDARY, "bg": COLOR_BG_OVERLAY,    "icon": "fa5s.folder-open"},
 }
 
 _COPY_ACCENT_COLORS = {
@@ -239,11 +239,14 @@ class QtGeneratorsView(QWidget):
     def _build_header(self, parent_layout: QVBoxLayout) -> None:
         header = QFrame()
         header.setObjectName("card")
-        header.setFixedHeight(72)
+        # Min-height (not fixed) so the title/subtitle block can grow when
+        # the subtitle wraps at narrow widths instead of clipping.
+        header.setMinimumHeight(72)
         hdr_layout = QHBoxLayout(header)
         hdr_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
 
         title_block = QWidget()
+        title_block.setMinimumWidth(320)
         title_vlyt = QVBoxLayout(title_block)
         title_vlyt.setContentsMargins(0, 0, 0, 0)
         title_vlyt.setSpacing(SP["1"])
@@ -253,6 +256,7 @@ class QtGeneratorsView(QWidget):
         self._i18n_labels.append((title_lbl, "generators.title"))
 
         subtitle_lbl = Label(header, t("generators.subtitle"), role="secondary")
+        subtitle_lbl.setWordWrap(True)
         title_vlyt.addWidget(subtitle_lbl)
         self._i18n_labels.append((subtitle_lbl, "generators.subtitle"))
 
@@ -453,9 +457,10 @@ class QtGeneratorsView(QWidget):
 
         btn_single = Btn(
             card,
-            f"\U0001F4E4  {t('generators.cmr_generate_single')}",
+            t('generators.cmr_generate_single'),
             command=self._generate_cmr,
             variant="secondary",
+            icon_name="fa5s.paper-plane",
         )
         btn_single.setFixedHeight(38)
         card.layout().addWidget(btn_single)
@@ -502,7 +507,7 @@ class QtGeneratorsView(QWidget):
             row.setProperty("role", "card")
             row.setFixedHeight(44)
             row.setStyleSheet(
-                "QFrame[role=\"card\"] { background-color: #111113; }"
+                f"QFrame[role=\"card\"] {{ background-color: {COLOR_BG_ELEVATED}; }}"
             )
             row_lyt = QHBoxLayout(row)
             row_lyt.setContentsMargins(0, 0, 0, 0)
@@ -522,9 +527,12 @@ class QtGeneratorsView(QWidget):
             content_lyt.setContentsMargins(SP["2"], 0, SP["2"], 0)
             content_lyt.setSpacing(SP["2"])
 
-            icon_lbl = QLabel(meta["icon"])
-            icon_lbl.setFixedWidth(22)
-            icon_lbl.setStyleSheet(f"color: {meta['color']}; font-size: 12px;")
+            icon_lbl = QLabel()
+            icon_lbl.setFixedSize(22, 18)
+            icon_lbl.setAlignment(Qt.AlignCenter)
+            icon_lbl.setPixmap(
+                qta.icon(meta["icon"], color=meta["color"]).pixmap(16, 16)
+            )
             content_lyt.addWidget(icon_lbl)
 
             copy_name_lbl = Label(content, t(suffix_key), role="muted")
@@ -584,7 +592,7 @@ class QtGeneratorsView(QWidget):
         return _COPY_META.get(suffix, {
             "color": COLOR_TEXT_SECONDARY,
             "bg": COLOR_BG_ELEVATED,
-            "icon": "\U0001F4C4",
+            "icon": "fa5s.folder-open",
         })
 
     # ── Receipt tab content ───────────────────────────────────────────

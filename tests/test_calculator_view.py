@@ -211,11 +211,17 @@ class TestQtCalculatorView:
         # events should be unsubscribed
         assert not getattr(calculator_view, "_events_subscribed", True)
 
-    def test_wakeup_loads_trucks(self, calculator_view, mock_fleet_service):
-        """wakeup() calls _load_trucks."""
+    def test_wakeup_does_not_reload_trucks(self, calculator_view, mock_fleet_service, qtbot):
+        """wakeup() does not redundantly reload trucks (loaded once at init).
+
+        Manual Refresh (``_load_trucks(force=True)``) is the forced-reload path.
+        """
+        qtbot.waitUntil(
+            lambda: mock_fleet_service.get_trucks.call_count >= 1, timeout=5000
+        )
         calculator_view.wakeup()
-        # load_trucks was already called in __init__, wakeup calls it again
-        assert mock_fleet_service.get_trucks.call_count >= 2
+        # Trucks were loaded once at init; wakeup skips the redundant reload.
+        assert mock_fleet_service.get_trucks.call_count == 1
 
     def test_truck_selection_sets_fuel(self, calculator_view, mock_fleet_service):
         """Selecting a truck updates the fuel consumption value."""

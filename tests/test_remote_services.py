@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +13,14 @@ from client.remote_services import (
     RemoteFleetService,
     RemoteTripService,
 )
+
+
+def _jwt_with_company(company_id: int) -> str:
+    """Craft a fake JWT whose payload carries a ``company_id`` claim."""
+    def b64url(obj):
+        raw = json.dumps(obj).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    return f"{b64url({'alg': 'none'})}.{b64url({'company_id': company_id})}.sig"
 
 
 # ── RemoteFleetService ─────────────────────────────────────────────────
@@ -177,6 +187,13 @@ class TestRemoteClientService:
     @pytest.fixture
     def service(self, api):
         return RemoteClientService(api)
+
+    @pytest.fixture(autouse=True)
+    def _clear_client_cache(self):
+        from client.remote_services import _client_cache
+        _client_cache.clear()
+        yield
+        _client_cache.clear()
 
     def test_get_all_returns_items(self, service, api):
         api.list_clients.return_value = {
@@ -524,3 +541,95 @@ class TestRemoteClientService:
         api.get_client_payment_summary.return_value = None
         result = service.get_payment_summary(1)
         assert result == {}
+
+    # ── get_all_with_revenue: batch endpoint + cache (B1 / C1) ───────────
+
+    def test_get_all_with_revenue_uses_batch_endpoint(self, service, api):
+        """With a company id available, one batch call replaces N per-client calls."""
+        api._auth.token = _jwt_with_company(7)
+        api.list_clients.return_value = {
+            "items": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
+        }
+        api.get_dashboards_batch.return_value = {"items": [
+            {"id": 1, "revenue": 100, "trip_count": 5},
+            {"id": 2, "revenue": 200, "trip_count": 10},
+        ]}
+
+        result = service.get_all_with_revenue()
+
+        assert api.get_dashboards_batch.call_count == 1
+        api._get.assert_not_called()  # no per-client dashboard round trips
+        assert result[0]["revenue"] == 100
+        assert result[0]["trip_count"] == 5
+        assert result[1]["revenue"] == 200
+        assert result[1]["trip_count"] == 10
+
+    def test_get_all_with_revenue_falls_back_to_parallel_on_batch_error(self, service, api):
+        """Batch endpoint unavailable (error) → bounded parallel per-client."""
+        api._auth.token = _jwt_with_company(8)
+        api.list_clients.return_value = {
+            "items": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
+        }
+        api.get_dashboards_batch.side_effect = RuntimeError("not supported")
+        api._get.side_effect = [
+            {"revenue": 100, "trip_count": 5},
+            {"revenue": 200, "trip_count": 10},
+        ]
+
+        result = service.get_all_with_revenue()
+
+        assert api.get_dashboards_batch.call_count == 1
+        assert api._get.call_count == 2
+        assert result[0]["revenue"] == 100
+        assert result[1]["revenue"] == 200
+
+    def test_get_all_with_revenue_falls_back_when_batch_shape_invalid(self, service, api):
+        """Batch response without an items list → fall back to per-client."""
+        api._auth.token = _jwt_with_company(8)
+        api.list_clients.return_value = {"items": [{"id": 1, "name": "A"}]}
+        api.get_dashboards_batch.return_value = {"nope": True}
+        api._get.return_value = {"revenue": 55, "trip_count": 3}
+
+        result = service.get_all_with_revenue()
+
+        assert api._get.call_count == 1
+        assert result[0]["revenue"] == 55
+        assert result[0]["trip_count"] == 3
+
+    def test_get_all_with_revenue_cache_hit_zero_network(self, service, api):
+        """A repeated call within TTL serves the cached result — 0 network."""
+        api._auth.token = _jwt_with_company(9)
+        api.list_clients.return_value = {"items": [{"id": 1, "name": "A"}]}
+        api.get_dashboards_batch.return_value = {
+            "items": [{"id": 1, "revenue": 100, "trip_count": 5}]
+        }
+
+        first = service.get_all_with_revenue()
+        assert api.get_dashboards_batch.call_count == 1
+        assert api.list_clients.call_count == 1
+
+        second = service.get_all_with_revenue()
+
+        assert first == second
+        assert api.get_dashboards_batch.call_count == 1  # no new batch call
+        assert api.list_clients.call_count == 1          # no new pagination call
+        api._get.assert_not_called()
+
+    def test_get_all_with_revenue_cache_is_company_scoped(self, service, api):
+        """Cached company A data must never serve company B."""
+        api._auth.token = _jwt_with_company(10)
+        api.list_clients.return_value = {"items": [{"id": 1, "name": "A"}]}
+        api.get_dashboards_batch.return_value = {
+            "items": [{"id": 1, "revenue": 111, "trip_count": 1}]
+        }
+        service.get_all_with_revenue()
+
+        # Switch tenant.
+        api._auth.token = _jwt_with_company(11)
+        api.list_clients.return_value = {"items": [{"id": 1, "name": "A"}]}
+        api.get_dashboards_batch.return_value = {
+            "items": [{"id": 1, "revenue": 222, "trip_count": 2}]
+        }
+        result = service.get_all_with_revenue()
+
+        assert result[0]["revenue"] == 222  # NOT the cached 111 from company 10

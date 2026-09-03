@@ -99,8 +99,9 @@ class TestARGOToolManipulation:
         # InvoiceFinalizeTool requires invoices:write
         invoice_tool = InvoiceFinalizeTool()
 
-        # Dispatcher cannot finalize invoices (no invoices:* access)
-        assert _check_tool_permission(invoice_tool, "dispatcher") is False
+        # Dispatcher CAN finalize invoices (invoices:write granted; only
+        # *:delete and system:undo are excluded from the dispatcher matrix)
+        assert _check_tool_permission(invoice_tool, "dispatcher") is True
 
         # Driver cannot finalize either
         assert _check_tool_permission(invoice_tool, "driver") is False
@@ -133,9 +134,9 @@ class TestARGOToolManipulation:
         # Even a valid dispatcher cannot call tools they don't have permission for
         # (tested by making a mock tool with a permission the role lacks)
         mock_tool = MagicMock()
-        mock_tool.required_permission = "analytics:write"
+        mock_tool.required_permission = "can_schedule_maintenance"
 
-        # Dispatcher does not have analytics:write
+        # Dispatcher does not have can_schedule_maintenance
         assert _check_tool_permission(mock_tool, "dispatcher") is False
         # Manager does
         assert _check_tool_permission(mock_tool, "manager") is True

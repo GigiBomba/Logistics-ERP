@@ -1611,3 +1611,43 @@ CREATE TABLE IF NOT EXISTS sync_tombstones (
     UNIQUE (company_id, entity_type, server_id)
 );
 
+-- =============================================================================
+-- §COPILOT (Phase 4): autonomy approvals + reasoning-graph uniqueness.
+-- The copilot_* tables themselves are created by the Alembic migrations
+-- (f6a7b8c9d0e6, i1a2b3c4d5e6, ...) on PostgreSQL — this file runs BEFORE
+-- Alembic, so the DDL below is purely the idempotent mirror for databases
+-- booted without Alembic.  SQLite mirror lives in database/schema.py.
+-- =============================================================================
+
+-- Copilot autonomy approvals (mirror of Alembic i1a2b3c4d5e6).
+-- Unique (company_id, workflow) — the CopilotAutonomyApprovalRepository
+-- ON CONFLICT (company_id, workflow) upsert targets this on both engines.
+CREATE TABLE IF NOT EXISTS copilot_autonomy_approvals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    workflow TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_copilot_autonomy_approvals_company_workflow
+    ON copilot_autonomy_approvals(company_id, workflow);
+CREATE INDEX IF NOT EXISTS idx_copilot_autonomy_approvals_company
+    ON copilot_autonomy_approvals(company_id);
+
+-- Unique (company_id, conversation_id) on copilot_reasoning_graphs — makes
+-- the reasoning-graph upsert a true replace.  The table is created by the
+-- Alembic migration f6a7b8c9d0e6 AFTER this file runs on fresh databases,
+-- so the index is created guarded on table existence; the Alembic migration
+-- j2b3c4d5e6f0 adds it (after deduping legacy duplicates) when this file's
+-- no-op path applies.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_name = 'copilot_reasoning_graphs') THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_copilot_reasoning_company_conversation
+            ON copilot_reasoning_graphs(company_id, conversation_id);
+    END IF;
+END $$;
+

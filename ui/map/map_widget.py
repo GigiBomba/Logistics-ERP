@@ -26,6 +26,14 @@ from ui.design_tokens import COLOR_ACCENT_PRIMARY
 
 logger = logging.getLogger(__name__)
 
+# Keyless dark basemap tile provider (CARTO basemaps now require an API key).
+# Esri World Dark Gray Base matches the app's dark theme (#09090b page background).
+MAP_TILE_URL = (
+    "https://server.arcgisonline.com/ArcGIS/rest/services/"
+    "Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+)
+MAP_TILE_ATTR = "Esri, HERE, Garmin, © OpenStreetMap contributors"
+
 _QWC_JS: str | None = None
 
 
@@ -91,7 +99,8 @@ class MapWidget(QWebEngineView):
         m = folium.Map(
             location=list(self._center),
             zoom_start=self._zoom,
-            tiles="CartoDB dark_matter",
+            tiles=MAP_TILE_URL,
+            attr=MAP_TILE_ATTR,
             control_scale=True,
         )
         map_var = m.get_name()
