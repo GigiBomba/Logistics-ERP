@@ -78,7 +78,6 @@ class TestChatInputWidgetA11y:
 
     def test_tab_order_input_to_mic_to_send(self, qt_widget, qtbot):
         """Tab should move input field → mic button → send button."""
-        from PySide6.QtWidgets import QApplication
         from ui.copilot.widgets.chat_input import ChatInputWidget
 
         widget = ChatInputWidget(parent=qt_widget)
@@ -91,7 +90,7 @@ class TestChatInputWidgetA11y:
         # Activate the window so setFocus works
         widget.window().activateWindow()
         widget._input.setFocus()
-        QApplication.processEvents()
+        qtbot.waitUntil(lambda: widget._input.hasFocus(), timeout=2000)
         assert_widget_has_focus(widget._input)
 
         # Tab to the mic button
@@ -159,7 +158,6 @@ class TestChatInputWidgetA11y:
 
     def test_tab_to_send_then_enter_activates(self, qt_widget, qtbot):
         """Tab to Send button and press Enter should call _on_send."""
-        from PySide6.QtWidgets import QApplication
         from ui.copilot.widgets.chat_input import ChatInputWidget
 
         widget = ChatInputWidget(parent=qt_widget)
@@ -175,7 +173,7 @@ class TestChatInputWidgetA11y:
 
         with qtbot.waitSignal(widget.send_clicked, timeout=1000) as blocker:
             widget._input.setFocus()
-            QApplication.processEvents()
+            qtbot.waitUntil(lambda: widget._input.hasFocus(), timeout=1000)
             # Tab from input → mic → send
             QTest.keyClick(widget._input, Qt.Key_Tab)
             QTest.keyClick(widget._mic_btn, Qt.Key_Tab)
@@ -186,7 +184,6 @@ class TestChatInputWidgetA11y:
 
     def test_tab_to_mic_then_space_activates(self, qt_widget, qtbot):
         """Tab to mic button and press Space should activate mic."""
-        from PySide6.QtWidgets import QApplication
         from ui.copilot.widgets.chat_input import ChatInputWidget
 
         widget = ChatInputWidget(parent=qt_widget)
@@ -199,7 +196,7 @@ class TestChatInputWidgetA11y:
 
         with qtbot.waitSignal(widget.mic_pressed, timeout=1000):
             widget._input.setFocus()
-            QApplication.processEvents()
+            qtbot.waitUntil(lambda: widget._input.hasFocus(), timeout=1000)
             # Tab to mic button
             QTest.keyClick(widget._input, Qt.Key_Tab)
             assert_widget_has_focus(widget._mic_btn)
@@ -247,7 +244,6 @@ class TestChatInputWidgetA11y:
 
     def test_tab_wraps_input_to_mic_to_send(self, qt_widget, qtbot):
         """Tab should move input → mic → send then wrap to the next focusable."""
-        from PySide6.QtWidgets import QApplication
         from ui.copilot.widgets.chat_input import ChatInputWidget
 
         widget = ChatInputWidget(parent=qt_widget)
@@ -259,7 +255,7 @@ class TestChatInputWidgetA11y:
 
         widget.window().activateWindow()
         widget._input.setFocus()
-        QApplication.processEvents()
+        qtbot.waitUntil(lambda: widget._input.hasFocus(), timeout=2000)
         assert_widget_has_focus(widget._input)
 
         # Tab → mic button

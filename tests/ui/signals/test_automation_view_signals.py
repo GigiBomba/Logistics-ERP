@@ -78,9 +78,9 @@ class TestDropZoneSignals:
             Qt.LeftButton,
             Qt.NoModifier,
         )
-        dz.dropEvent(event)
+        with qtbot.waitSignal(dz.files_dropped, timeout=5000):
+            dz.dropEvent(event)
 
-        QTest.qWait(50)
         assert len(received) == 1
         assert len(received[0]) == 1
         assert received[0][0].endswith("test.pdf")
@@ -111,8 +111,8 @@ class TestRunCardSignals:
         card.clicked.connect(slot)
 
         # Simulate mouse press
-        QTest.mouseClick(card, Qt.LeftButton)
-        QTest.qWait(50)
+        with qtbot.waitSignal(card.clicked, timeout=5000):
+            QTest.mouseClick(card, Qt.LeftButton)
 
         assert len(received) == 1
         assert received[0] == 42
@@ -149,8 +149,8 @@ class TestRunDetailPanelSignals:
             received.append(trip_id)
 
         panel.prepare_clicked.connect(slot)
-        panel._on_prepare_clicked()
-        QTest.qWait(50)
+        with qtbot.waitSignal(panel.prepare_clicked, timeout=5000):
+            panel._on_prepare_clicked()
 
         assert len(received) == 1
         assert received[0] == 77
@@ -178,8 +178,8 @@ class TestRunDetailPanelSignals:
             received.append(trip_id)
 
         panel.send_clicked.connect(slot)
-        panel._on_send_clicked()
-        QTest.qWait(50)
+        with qtbot.waitSignal(panel.send_clicked, timeout=5000):
+            panel._on_send_clicked()
 
         assert len(received) == 1
         assert received[0] == 88
@@ -215,8 +215,8 @@ class TestRunDetailPanelSignals:
         # Find the last button and click it
         if panel._candidate_links:
             btn = panel._candidate_links[-1]
-            QTest.mouseClick(btn, Qt.LeftButton)
-            QTest.qWait(50)
+            with qtbot.waitSignal(panel.link_requested, timeout=5000):
+                QTest.mouseClick(btn, Qt.LeftButton)
 
             assert len(received) == 1
             r, t = received[0]
@@ -245,8 +245,8 @@ class TestRunDetailPanelSignals:
             received.append(run_id)
 
         panel.skip_and_package_clicked.connect(slot)
-        panel._on_skip_clicked()
-        QTest.qWait(50)
+        with qtbot.waitSignal(panel.skip_and_package_clicked, timeout=5000):
+            panel._on_skip_clicked()
 
         assert len(received) == 1
         assert received[0] == 15
@@ -287,8 +287,8 @@ class TestRunDetailPanelSignals:
             from PySide6.QtWidgets import QMessageBox
             mock_question.return_value = QMessageBox.Yes
 
-            panel._on_delete_run()
-            QTest.qWait(50)
+            with qtbot.waitSignal(panel.delete_requested, timeout=5000):
+                panel._on_delete_run()
 
         assert len(received) == 1
         assert received[0] == 20
@@ -321,7 +321,12 @@ class TestRunDetailPanelSignals:
             "match_confidence": 0.95,
         }
         panel.show_run(run, {}, [], mode="advanced")
-        QTest.qWait(50)
+        # Buttons are enabled synchronously inside show_run; the waitUntil
+        # guards any deferred style/polish pass before the assertions.
+        qtbot.waitUntil(
+            lambda: panel._prepare_btn.isEnabled() and panel._send_btn.isEnabled(),
+            timeout=2000,
+        )
 
         # Buttons should be enabled since status is complete and trip_id is set
         assert panel._prepare_btn.isEnabled() is True
@@ -357,16 +362,17 @@ class TestAutomationViewSignals:
 
         view.package_requested.connect(slot)
 
-        # Use the public method that emits the signal
+        # Use the public method that emits the signal (no run is selected in
+        # the mock repo, so it returns None without emitting — only the direct
+        # emit below is verified).
         result = view.prepare_package_for_selected_trip()
-        QTest.qWait(50)
 
         # prepare_package_for_selected_trip calls selected_trip_id() which
         # needs a run to exist in the mock repo.  Instead, we can directly
         # call the method that emits the signal.
         # Let's just emit directly to verify the signal works.
-        view.package_requested.emit(42)
-        QTest.qWait(50)
+        with qtbot.waitSignal(view.package_requested, timeout=5000):
+            view.package_requested.emit(42)
 
         assert len(received) == 1
         assert received[0] == 42
@@ -393,8 +399,8 @@ class TestAutomationViewSignals:
         view.send_requested.connect(slot)
 
         # Emit directly to verify the signal works
-        view.send_requested.emit(77)
-        QTest.qWait(50)
+        with qtbot.waitSignal(view.send_requested, timeout=5000):
+            view.send_requested.emit(77)
 
         assert len(received) == 1
         assert received[0] == 77

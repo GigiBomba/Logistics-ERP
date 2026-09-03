@@ -270,6 +270,8 @@ class TestStatusCard:
     def test_card_creation(self, status_card):
         """_StatusCard initializes with title and status."""
         assert status_card is not None
+        # Card surface styling is theme-driven via the role property.
+        assert status_card.property("role") == "card"
 
     def test_update_status_changes_text(self, status_card):
         """update_status changes the status label."""
@@ -285,15 +287,15 @@ class TestStatusCard:
     # ── Status styles ────────────────────────────────────────────────
 
     def test_status_card_initial_style(self, status_card):
-        """_StatusCard applies the correct stylesheet for 'online' status."""
-        from ui.views.api_dashboard_view import _STATUS_STYLES
-        expected = _STATUS_STYLES["online"]
-        assert expected in status_card._status.styleSheet()
+        """_StatusCard applies the success token for 'online' status."""
+        from ui.design_tokens import COLOR_SUCCESS_DEFAULT
+        assert COLOR_SUCCESS_DEFAULT in status_card._status.styleSheet()
 
     def test_status_card_unknown_status_default_style(self, qtbot):
         """_StatusCard uses 'unknown' style for unrecognised status values."""
-        from ui.views.api_dashboard_view import _StatusCard, _STATUS_STYLES
+        from ui.views.api_dashboard_view import _StatusCard
+        from ui.design_tokens import COLOR_NEUTRAL_DEFAULT
         card = _StatusCard(None, "Test", "unknown", "")
         qtbot.addWidget(card)
-        expected = _STATUS_STYLES["unknown"]
-        assert expected in card._status.styleSheet()
+        # Case-insensitive: the product's unknown-style hex is lowercase.
+        assert COLOR_NEUTRAL_DEFAULT.lower() in card._status.styleSheet().lower()

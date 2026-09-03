@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ui.design_tokens import COLOR_SUCCESS_TEXT
 from ui.views.calculator_view import QtCalculatorView
 
 
@@ -91,7 +92,8 @@ class TestQtCalculatorView:
 
         result_text = calc_view._res_profit.text()
         assert result_text and len(result_text) > 3, f"Expected financial result in label, got: '{result_text}'"
-        assert calc_view._res_profit.styleSheet() != ""
+        # Non-negative profit renders with the success-text token.
+        assert COLOR_SUCCESS_TEXT in calc_view._res_profit.styleSheet()
 
     def test_calculate_saves_trip(self, calc_view, qtbot, monkeypatch):
         monkeypatch.setattr("ui.views.calculator_view.QMessageBox", MagicMock())

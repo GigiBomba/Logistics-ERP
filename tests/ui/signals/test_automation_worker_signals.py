@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
-from PySide6.QtTest import QTest
 
 # SP workaround: some imports in automation_worker.py reference
 # ui.widgets.SP which may not exist in all environments.
@@ -97,8 +96,8 @@ class TestPipelineWorkerSignals:
 
         host.stage_changed.connect(slot)
         try:
-            host.stage_changed.emit(42, "ocr", "ocr_done")
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.stage_changed, timeout=5000):
+                host.stage_changed.emit(42, "ocr", "ocr_done")
             assert len(received) == 1
             r, s, st = received[0]
             assert isinstance(r, int) and r == 42
@@ -120,8 +119,8 @@ class TestPipelineWorkerSignals:
 
         host.worker_ready.connect(slot)
         try:
-            host.worker_ready.emit(99)
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.worker_ready, timeout=5000):
+                host.worker_ready.emit(99)
             assert len(received) == 1
             assert isinstance(received[0], int)
             assert received[0] == 99
@@ -142,8 +141,8 @@ class TestPipelineWorkerSignals:
         host.ocr_extracted.connect(slot)
         try:
             data = {"cnp": "123", "name": "test"}
-            host.ocr_extracted.emit(7, data, "full ocr text here")
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.ocr_extracted, timeout=5000):
+                host.ocr_extracted.emit(7, data, "full ocr text here")
             assert len(received) == 1
             r, ext, txt = received[0]
             assert isinstance(r, int) and r == 7
@@ -167,8 +166,8 @@ class TestPipelineWorkerSignals:
         try:
             trip = {"id": 1, "client_name": "Acme"}
             candidates = [{"trip": trip, "confidence": 0.95, "signals": {}}]
-            host.match_ready.emit(5, trip, 0.95, candidates)
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.match_ready, timeout=5000):
+                host.match_ready.emit(5, trip, 0.95, candidates)
             assert len(received) == 1
             r, bm, c, ca = received[0]
             assert isinstance(r, int) and r == 5
@@ -192,8 +191,8 @@ class TestPipelineWorkerSignals:
         host.manual_needed.connect(slot)
         try:
             candidates = [{"trip": {"id": 10}, "confidence": 0.6, "signals": {}}]
-            host.manual_needed.emit(3, candidates)
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.manual_needed, timeout=5000):
+                host.manual_needed.emit(3, candidates)
             assert len(received) == 1
             r, c = received[0]
             assert isinstance(r, int) and r == 3
@@ -214,8 +213,8 @@ class TestPipelineWorkerSignals:
 
         host.processing_done.connect(slot)
         try:
-            host.processing_done.emit(8, "/tmp/processed.pdf")
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.processing_done, timeout=5000):
+                host.processing_done.emit(8, "/tmp/processed.pdf")
             assert len(received) == 1
             r, p = received[0]
             assert isinstance(r, int) and r == 8
@@ -236,8 +235,8 @@ class TestPipelineWorkerSignals:
 
         host.finished.connect(slot)
         try:
-            host.finished.emit(10, 100, None)
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.finished, timeout=5000):
+                host.finished.emit(10, 100, None)
             assert len(received) == 1
             r, d, e = received[0]
             assert isinstance(r, int) and r == 10
@@ -259,8 +258,8 @@ class TestPipelineWorkerSignals:
 
         host.log.connect(slot)
         try:
-            host.log.emit(1, "Processing started")
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.log, timeout=5000):
+                host.log.emit(1, "Processing started")
             assert len(received) == 1
             r, m = received[0]
             assert isinstance(r, int) and r == 1
@@ -284,8 +283,8 @@ class TestPipelineWorkerSignals:
         host.finished.connect(slot)
         try:
             # Simulate an error emit (e.g. before DB row created)
-            host.finished.emit(PIPELINE_ERROR_RUN_ID, None, "Cannot read input")
-            QTest.qWait(50)
+            with qtbot.waitSignal(host.finished, timeout=5000):
+                host.finished.emit(PIPELINE_ERROR_RUN_ID, None, "Cannot read input")
             assert len(received) == 1
             r, d, e = received[0]
             assert r == -1, f"Expected -1, got {r}"

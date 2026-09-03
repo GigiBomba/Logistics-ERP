@@ -5,7 +5,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QEnterEvent
 from PySide6.QtWidgets import QLabel
 
-from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_TEXT_TERTIARY
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_TEXT_TERTIARY,
+)
 from ui.widgets.stat_card import StatCard
 from ui.widgets.stat_card_row import StatCardRow, StatCardRowContainer
 
@@ -39,7 +43,11 @@ class TestStatCard:
         card = StatCard(qt_widget, label="X", value="0")
         qtbot.addWidget(card)
         card.set_value_color(COLOR_ACCENT_PRIMARY)
+        # The value colour is applied to the rendered label via the token.
         assert COLOR_ACCENT_PRIMARY in card._value_lbl.styleSheet()
+        # The card's surface styling is theme-driven.
+        from ui.theme_engine import QtTheme
+        assert "QFrame#stat-card" in QtTheme.qss()
 
     def test_value_label_property(self, qt_widget, qtbot):
         card = StatCard(qt_widget, label="X", value="42")
@@ -79,7 +87,7 @@ class TestStatCard:
         assert not card._dot.isVisible()
         card.set_status_dot("#EF4444")
         assert card._dot.isVisible()
-        assert "#EF4444" in card._dot.styleSheet()
+        assert COLOR_ERROR_DEFAULT in card._dot.styleSheet()
 
 
 class TestStatCardRow:

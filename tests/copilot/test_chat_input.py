@@ -22,7 +22,15 @@ from unittest.mock import patch
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QPushButton, QWidget
+
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_WARNING_DEFAULT,
+)
 
 # =============================================================================
 # Helpers
@@ -60,8 +68,9 @@ class TestConstruction:
         policy = w.sizePolicy()
         assert policy.horizontalPolicy().name == "Expanding"
         assert policy.verticalPolicy().name == "Fixed"
-        # Stylesheet is transparent
-        assert "transparent" in w.styleSheet()
+        # Container is a QFrame; the input's visible chrome is token-driven.
+        assert isinstance(w, QFrame)
+        assert COLOR_BG_OVERLAY in w._input.styleSheet()
 
     def test_construction_no_parent(self, qt_widget):
         """Can construct with no parent."""
@@ -94,7 +103,8 @@ class TestConstruction:
         """Mic button starts in idle state."""
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
-        assert "transparent" in w._mic_btn.styleSheet() or "COLOR_BORDER_SUBTLE" or "1px solid" in w._mic_btn.styleSheet()
+        # The idle mic style is token-driven (subtle border).
+        assert COLOR_BORDER_SUBTLE in w._mic_btn.styleSheet()
 
 
 # =============================================================================
@@ -421,32 +431,28 @@ class TestMicButton:
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
         w.set_mic_state("idle")
-        ss = w._mic_btn.styleSheet()
-        assert "transparent" in ss or "border-radius" in ss
+        assert COLOR_BORDER_SUBTLE in w._mic_btn.styleSheet()
 
     def test_mic_state_listening_stylesheet(self, qt_widget):
         """Setting mic state to 'listening' applies the listening style."""
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
         w.set_mic_state("listening")
-        ss = w._mic_btn.styleSheet()
-        assert "COLOR_ERROR_DEFAULT" in ss or "background-color" in ss
+        assert COLOR_ERROR_DEFAULT in w._mic_btn.styleSheet()
 
     def test_mic_state_processing_stylesheet(self, qt_widget):
         """Setting mic state to 'processing' applies the processing style."""
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
         w.set_mic_state("processing")
-        ss = w._mic_btn.styleSheet()
-        assert "COLOR_WARNING_DEFAULT" in ss or "background-color" in ss
+        assert COLOR_WARNING_DEFAULT in w._mic_btn.styleSheet()
 
     def test_mic_state_unknown_falls_back_to_idle(self, qt_widget):
         """Unknown state falls back to idle style."""
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
         w.set_mic_state("nonexistent")
-        ss = w._mic_btn.styleSheet()
-        assert "transparent" in ss or "border-radius" in ss
+        assert COLOR_BORDER_SUBTLE in w._mic_btn.styleSheet()
 
     def test_mic_visible_toggle(self, qt_widget, qtbot):
         """set_mic_visible shows/hides the mic button."""
@@ -476,7 +482,7 @@ class TestMicButton:
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
         w.set_mic_state("listening")
-        assert "Recording" in w._mic_btn.toolTip() or "release to send" in w._mic_btn.toolTip()
+        assert "listening" in w._mic_btn.toolTip().lower()
         w.set_mic_state("processing")
         assert "Processing" in w._mic_btn.toolTip()
         w.set_mic_state("idle")
@@ -610,10 +616,10 @@ class TestLayout:
         assert stretch == 1
 
     def test_send_button_has_style(self, qt_widget):
-        """Send button has styled stylesheet with accent colour."""
+        """Send button has token-driven accent styling."""
         from ui.copilot.widgets.chat_input import ChatInputWidget
         w = ChatInputWidget(qt_widget)
-        assert w._send_btn.styleSheet() != ""
+        assert COLOR_ACCENT_PRIMARY in w._send_btn.styleSheet()
 
 
 # =============================================================================

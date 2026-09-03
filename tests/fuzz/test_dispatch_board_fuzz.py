@@ -2,6 +2,13 @@
 
 Sends random keyboard, mouse, and resize events to the board
 to verify no crashes occur under adversarial input.
+
+NOTE: the keyboard fuzz deliberately uses a CURATED safe subset of
+Qt.Key values (A-Z, 0-9, and common navigation/editing keys).  The full
+Qt.Key enum contains out-of-range/negative values that QTest.keyClick
+cannot handle (libshiboken Overflow warnings and possible Qt event-state
+corruption); the curated 52-key set keeps the fuzz warning-free while
+still exercising adversarial input.
 """
 
 from __future__ import annotations
@@ -23,8 +30,20 @@ from PySide6.QtTest import QTest
 # ---------------------------------------------------------------------------
 
 _FUZZ_KEYS = [
-    k.value for k in Qt.Key
-    if not any(x in k.name for x in ("Shift", "Control", "Alt", "Meta", "unknown"))
+    *(getattr(Qt.Key, f"Key_{ch}") for ch in string.ascii_uppercase),
+    *(getattr(Qt.Key, f"Key_{d}") for d in range(10)),
+    Qt.Key.Key_Tab,
+    Qt.Key.Key_Return,
+    Qt.Key.Key_Escape,
+    Qt.Key.Key_Backspace,
+    Qt.Key.Key_Space,
+    Qt.Key.Key_Delete,
+    Qt.Key.Key_Home,
+    Qt.Key.Key_End,
+    Qt.Key.Key_Left,
+    Qt.Key.Key_Right,
+    Qt.Key.Key_Up,
+    Qt.Key.Key_Down,
 ]
 
 
@@ -154,13 +173,13 @@ class TestDispatchBoardKeyboardFuzz:
         """Send mixed Tab/Enter/Escape/Arrow key presses on cards/columns."""
         view = view_with_mocks
         nav_keys = [
-            Qt.Key.Key_Tab.value, Qt.Key.Key_Backtab.value,
-            Qt.Key.Key_Return.value, Qt.Key.Key_Enter.value,
-            Qt.Key.Key_Escape.value, Qt.Key.Key_Left.value,
-            Qt.Key.Key_Right.value, Qt.Key.Key_Up.value,
-            Qt.Key.Key_Down.value, Qt.Key.Key_Home.value,
-            Qt.Key.Key_End.value, Qt.Key.Key_PageUp.value,
-            Qt.Key.Key_PageDown.value,
+            Qt.Key.Key_Tab, Qt.Key.Key_Backtab,
+            Qt.Key.Key_Return, Qt.Key.Key_Enter,
+            Qt.Key.Key_Escape, Qt.Key.Key_Left,
+            Qt.Key.Key_Right, Qt.Key.Key_Up,
+            Qt.Key.Key_Down, Qt.Key.Key_Home,
+            Qt.Key.Key_End, Qt.Key.Key_PageUp,
+            Qt.Key.Key_PageDown,
         ]
         for col_key in list(view._columns.keys()):
             col = view._columns[col_key]

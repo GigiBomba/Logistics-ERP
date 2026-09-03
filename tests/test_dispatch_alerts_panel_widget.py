@@ -342,10 +342,19 @@ class TestQtDispatchAlertsPanelBriefKPI:
 
 
 def _find_stat_card_by_label(stats, label_substring):
-    """Helper to find a StatCard whose label text contains the given substring."""
+    """Helper to find a StatCard whose label text contains the given substring.
+
+    Substring semantics are preserved, but the needle is resolved through
+    ``t()`` first (a no-op for plain English fragments) and matched
+    case-insensitively against the panel's resolved label text (labels are
+    rendered via ``t(key).upper()``, e.g. "TOTAL ACTIVE").
+    """
+    from services.i18n import t
+
+    needle = t(label_substring).upper()
     for card in stats:
         lbl = card._label_lbl.text() if hasattr(card, "_label_lbl") else ""
-        if label_substring.upper() in lbl.upper():
+        if needle and needle in lbl.upper():
             return card
     return None
 
@@ -353,16 +362,19 @@ def _find_stat_card_by_label(stats, label_substring):
 def _find_stat_card_by_key(stats, translation_key):
     """Find a StatCard whose label matches a translation key.
 
-    Matches either the resolved translation (e.g. "Total Active") or the
-    raw-key fallback that ``t()`` returns when translations have not been
-    loaded in the current pytest worker — the panel label for
-    ``dispatch_board.alerts_panel_total_trips`` resolves to "Total Active"
-    in English, so an English substring like "TRIPS" only matches the
-    unloaded raw-key form and is order/state-dependent.
+    Matches case-insensitively against any of the candidate forms of the key:
+    the resolved translation (e.g. "Total Active"), the raw key
+    (``dispatch_board.alerts_panel_total_trips``), or the raw key with
+    underscores normalised to spaces.  This covers both the loaded and
+    unloaded translation states of the pytest worker.
     """
     from services.i18n import t
 
-    candidates = {t(translation_key).upper(), translation_key.upper()}
+    candidates = {
+        t(translation_key).upper(),
+        translation_key.upper(),
+        translation_key.replace("_", " ").upper(),
+    }
     for card in stats:
         lbl = card._label_lbl.text() if hasattr(card, "_label_lbl") else ""
         for cand in candidates:

@@ -22,6 +22,17 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
+from ui.design_tokens import (
+    COLOR_ACCENT_SUBTLE,
+    COLOR_BG_ELEVATED,
+    COLOR_BORDER_SUBTLE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    FONT_SIZE_SM,
+    FONT_WEIGHT_SEMIBOLD,
+    RADIUS_LG,
+)
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -29,12 +40,6 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 # The t() fallback keys for role labels
 YOU_LABEL = "copilot.chat.you"
 CO_PILOT_LABEL = "copilot.chat.co_pilot"
-
-# Known design-token colour name substrings used in bubble stylesheets
-# (actual hex values from ui/design_tokens.py).
-# We check for these name references in the generated stylesheet.
-COLOR_USER_BG = "COLOR_ACCENT_SUBTLE"
-COLOR_ASSISTANT_BG = "COLOR_BG_ELEVATED"
 
 
 def _get_labels(bubble: QFrame) -> list[QLabel]:
@@ -87,7 +92,11 @@ class TestConstruction:
         policy = bubble.sizePolicy()
         assert policy.horizontalPolicy().name == "Expanding"
         assert policy.verticalPolicy().name == "Fixed"
-        assert "transparent" in bubble.styleSheet()
+        # The outer bubble is a transparent QFrame; the visible inner bubble
+        # carries the token-driven assistant (elevated) background.
+        assert isinstance(bubble, QFrame)
+        inner = bubble.findChildren(QFrame)[0]
+        assert COLOR_BG_ELEVATED in inner.styleSheet()
 
     def test_construction_no_parent(self):
         """Can construct with no parent."""
@@ -146,7 +155,11 @@ class TestRoleLabel:
         bubble = ChatBubbleWidget("Hi", is_user=False, parent=qt_widget)
         role_lbl = _get_role_label(bubble)
         assert role_lbl is not None
-        assert "co_pilot" in role_lbl.text().lower() or "copilot.chat" in role_lbl.text()
+        assert (
+            "co_pilot" in role_lbl.text().lower()
+            or "co-pilot" in role_lbl.text().lower()
+            or "copilot.chat" in role_lbl.text()
+        )
 
     def test_role_label_has_semibold_font(self, qt_widget):
         """Role label has semibold font weight in its stylesheet."""
@@ -154,7 +167,7 @@ class TestRoleLabel:
         bubble = ChatBubbleWidget("Hi", parent=qt_widget)
         role_lbl = _get_role_label(bubble)
         assert role_lbl is not None
-        assert "FONT_WEIGHT_SEMIBOLD" in role_lbl.styleSheet() or "font-weight" in role_lbl.styleSheet()
+        assert f"font-weight: {FONT_WEIGHT_SEMIBOLD}" in role_lbl.styleSheet()
 
     def test_role_label_secondary_color(self, qt_widget):
         """Role label uses secondary text colour."""
@@ -162,7 +175,7 @@ class TestRoleLabel:
         bubble = ChatBubbleWidget("Hi", parent=qt_widget)
         role_lbl = _get_role_label(bubble)
         assert role_lbl is not None
-        assert "COLOR_TEXT_SECONDARY" in role_lbl.styleSheet() or "color" in role_lbl.styleSheet()
+        assert COLOR_TEXT_SECONDARY in role_lbl.styleSheet()
 
 
 # =============================================================================
@@ -195,7 +208,7 @@ class TestMessageLabel:
         bubble = ChatBubbleWidget("Coloured", parent=qt_widget)
         msg_lbl = _get_message_label(bubble)
         assert msg_lbl is not None
-        assert "COLOR_TEXT_PRIMARY" in msg_lbl.styleSheet() or "color" in msg_lbl.styleSheet()
+        assert COLOR_TEXT_PRIMARY in msg_lbl.styleSheet()
 
     def test_message_font_size_sm(self, qt_widget):
         """Message label uses FONT_SIZE_SM."""
@@ -203,7 +216,7 @@ class TestMessageLabel:
         bubble = ChatBubbleWidget("Size test", parent=qt_widget)
         msg_lbl = _get_message_label(bubble)
         assert msg_lbl is not None
-        assert "FONT_SIZE_SM" in msg_lbl.styleSheet() or "font-size" in msg_lbl.styleSheet()
+        assert f"font-size: {FONT_SIZE_SM}px" in msg_lbl.styleSheet()
 
 
 # =============================================================================
@@ -270,7 +283,7 @@ class TestTimestamp:
         bubble = ChatBubbleWidget("Hi", parent=qt_widget)
         ts_lbl = _get_timestamp_label(bubble)
         assert ts_lbl is not None
-        assert "COLOR_TEXT_SECONDARY" in ts_lbl.styleSheet() or "color" in ts_lbl.styleSheet()
+        assert COLOR_TEXT_SECONDARY in ts_lbl.styleSheet()
 
 
 # =============================================================================
@@ -316,8 +329,9 @@ class TestUserVsAssistantStyling:
         frames = bubble.findChildren(QFrame)
         assert len(frames) >= 1
         inner = frames[0]
-        # Stylesheet should contain the user background colour reference
-        assert "COLOR_ACCENT_SUBTLE" in inner.styleSheet() or "background-color" in inner.styleSheet()
+        # The user bubble's background is driven by the accent-subtle token.
+        assert COLOR_ACCENT_SUBTLE in inner.styleSheet()
+        assert bubble._is_user is True
 
     def test_assistant_bubble_background(self, qt_widget):
         """Assistant bubble container uses elevated background colour."""
@@ -326,7 +340,8 @@ class TestUserVsAssistantStyling:
         frames = bubble.findChildren(QFrame)
         assert len(frames) >= 1
         inner = frames[0]
-        assert "COLOR_BG_ELEVATED" in inner.styleSheet() or "background-color" in inner.styleSheet()
+        assert COLOR_BG_ELEVATED in inner.styleSheet()
+        assert bubble._is_user is False
 
     def test_bubble_has_border(self, qt_widget):
         """Bubble container has a border."""
@@ -335,7 +350,7 @@ class TestUserVsAssistantStyling:
         frames = bubble.findChildren(QFrame)
         assert len(frames) >= 1
         inner = frames[0]
-        assert "border" in inner.styleSheet()
+        assert COLOR_BORDER_SUBTLE in inner.styleSheet()
 
     def test_bubble_rounded_corners(self, qt_widget):
         """Bubble container has rounded corners."""
@@ -344,7 +359,7 @@ class TestUserVsAssistantStyling:
         frames = bubble.findChildren(QFrame)
         assert len(frames) >= 1
         inner = frames[0]
-        assert "border-radius" in inner.styleSheet()
+        assert f"border-radius: {RADIUS_LG}px" in inner.styleSheet()
 
     def test_bubble_max_width(self, qt_widget):
         """Bubble container has a maximum width of 480px."""
@@ -507,9 +522,7 @@ class TestBubbleContainer:
         frames = bubble.findChildren(QFrame)
         assert len(frames) >= 1
         inner = frames[0]
-        # The stylesheet should contain RADIUS_LG reference
-        ss = inner.styleSheet()
-        assert "RADIUS_LG" in ss or "border-radius" in ss
+        assert f"border-radius: {RADIUS_LG}px" in inner.styleSheet()
 
 
 # =============================================================================
@@ -533,7 +546,7 @@ class TestErrorStateBubble:
         frames = bubble.findChildren(QFrame)
         assert len(frames) >= 1
         inner = frames[0]
-        assert "COLOR_BG_ELEVATED" in inner.styleSheet() or "background-color" in inner.styleSheet()
+        assert COLOR_BG_ELEVATED in inner.styleSheet()
 
     def test_error_prefix_detection(self, qt_widget):
         """Bubble correctly renders text that starts with '[Error]'."""

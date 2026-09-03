@@ -201,10 +201,13 @@ class TestQtAutoMailViewPlaceholderPanel:
 
     def test_placeholder_creation(self, qt_widget, qtbot):
         from ui.views.automail_view import _PlaceholderPanel
+        from ui.design_tokens import COLOR_BG_OVERLAY, COLOR_BORDER_SUBTLE
 
         panel = _PlaceholderPanel(qt_widget, "Test Label")
         qtbot.addWidget(panel)
 
         assert panel.property("role") == "automail-placeholder"
-        assert len(panel.styleSheet()) > 0
+        # The placeholder's visible chrome is token-driven inline styling.
+        assert COLOR_BG_OVERLAY in panel.styleSheet()
+        assert COLOR_BORDER_SUBTLE in panel.styleSheet()
         panel.close()

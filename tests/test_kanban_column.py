@@ -7,6 +7,9 @@ import pytest
 from PySide6.QtCore import QMimeData, Qt
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 
+from ui.design_tokens import COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT
+from ui.theme_engine import QtTheme
+
 
 # =========================================================================
 # Fixtures
@@ -68,6 +71,9 @@ class TestInit:
         assert kanban_column.status_key == "Planned"
         assert kanban_column.title_key == "dispatch_board.col_planned"
         assert kanban_column.accent_color == "#6366F1"
+        # Static column styling is theme-driven via the role property.
+        assert kanban_column.property("role") == "kanban-column"
+        assert 'QFrame[role="kanban-column"]' in QtTheme.qss()
 
     def test_accepts_drops(self, kanban_column):
         assert kanban_column.acceptDrops() is True
@@ -390,8 +396,9 @@ class TestDragDrop:
             Qt.LeftButton, Qt.NoModifier,
         )
         kanban_column.dragEnterEvent(event)
-        # After drag enter, the column should have a stylesheet set
-        assert "border" in (kanban_column.styleSheet() or "")
+        # Drag-enter with a valid payload applies the success drop-zone
+        # border — a widget-owned dynamic style driven by the success token.
+        assert COLOR_SUCCESS_DEFAULT in (kanban_column.styleSheet() or "")
 
     def test_drag_leave_removes_highlight(self, kanban_column, qtbot):
         from PySide6.QtGui import QDragLeaveEvent
@@ -404,7 +411,7 @@ class TestDragDrop:
             Qt.LeftButton, Qt.NoModifier,
         )
         kanban_column.dragEnterEvent(enter_event)
-        assert kanban_column.styleSheet() != ""
+        assert COLOR_SUCCESS_DEFAULT in kanban_column.styleSheet()
 
         # Now leave event should clear it
         leave_event = QDragLeaveEvent()
@@ -422,9 +429,8 @@ class TestHighlight:
 
     def test_highlight_drop_zone(self, kanban_column):
         kanban_column.highlight_drop_zone()
-        ss = kanban_column.styleSheet()
-        assert "border" in ss
-        assert kanban_column.accent_color in ss
+        # The drop-zone border is rendered with the column's stored accent color.
+        assert kanban_column.accent_color in kanban_column.styleSheet()
 
     def test_unhighlight_drop_zone(self, kanban_column):
         kanban_column.highlight_drop_zone()
@@ -433,13 +439,13 @@ class TestHighlight:
 
     def test_highlight_valid(self, kanban_column):
         kanban_column.highlight_valid()
-        ss = kanban_column.styleSheet()
-        assert "border" in ss
+        # Valid drop targets get the success-token border.
+        assert COLOR_SUCCESS_DEFAULT in kanban_column.styleSheet()
 
     def test_highlight_invalid(self, kanban_column):
         kanban_column.highlight_invalid()
-        ss = kanban_column.styleSheet()
-        assert "border" in ss
+        # Invalid drop targets get the error-token border.
+        assert COLOR_ERROR_DEFAULT in kanban_column.styleSheet()
 
 
 # =========================================================================

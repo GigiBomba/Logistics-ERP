@@ -290,9 +290,11 @@ class TestCountryExclusionsPanelEdgeCases:
         mock_avoidance.toggle.assert_not_called()
 
     def test_count_label_styled(self, panel):
-        """Count label has background-color in stylesheet."""
-        ss = panel._count_label.styleSheet()
-        assert "background-color" in ss
+        """Count label is muted-role styled with the elevated surface token."""
+        from ui.design_tokens import BG_ELEVATED
+
+        assert panel._count_label.property("role") == "muted"
+        assert BG_ELEVATED in panel._count_label.styleSheet()
 
     def test_stylesheet_applied_to_frame(self, panel):
         """Section QFrame has role='card' property."""

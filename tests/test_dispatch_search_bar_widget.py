@@ -69,7 +69,7 @@ class TestQtDispatchSearchBarInit:
             assert cb.isChecked(), f"Checkbox for {status} should be checked"
 
     def test_colored_dots_exist(self, search_bar):
-        """Each status should have a colored dot QLabel with correct style."""
+        """Each status should have a colored dot QLabel with token-driven style."""
         bar, _ = search_bar
         # Find all 8x8 QLabel dots in the widget hierarchy
         dots = [
@@ -79,11 +79,10 @@ class TestQtDispatchSearchBarInit:
         ]
         # We expect at least one dot per status
         assert len(dots) >= len(STATUS_OPTIONS)
-        # Verify each dot has a background-color stylesheet matching the status color
-        stylesheets = {d.styleSheet() for d in dots if "background-color" in (d.styleSheet() or "")}
+        # Verify each dot's rendered background carries the status token value
+        rendered = {d.styleSheet() for d in dots}
         for status, color in _STATUS_COLORS.items():
-            expected = f"background-color: {color}"
-            assert any(expected in ss for ss in stylesheets), (
+            assert any(color in ss for ss in rendered), (
                 f"No dot found with color style for {status} ({color})"
             )
 

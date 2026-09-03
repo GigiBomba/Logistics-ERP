@@ -1868,13 +1868,15 @@ class TestAnalyticsViewWakeup:
         view = QtAnalyticsView(parent=qt_widget, db=db)
         # Force the first tab to be created and rendered.
         view._on_tab_changed(0)
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.processEvents()
+        # Tab creation is synchronous inside _load_tab; waitUntil is a
+        # safety net that also drains the async render submission.
+        qtbot.waitUntil(lambda: view._tabs.get(0) is not None, timeout=2000)
         # At this point the first tab has been rendered.
         first_tab = view._tabs.get(0)
         if first_tab is None:
             # No tab was created (no data); skip the assertion.
             return
+        qtbot.waitUntil(lambda: first_tab._last_render_ts > 0.0, timeout=2000)
         first_ts = first_tab._last_render_ts
         if first_ts == 0.0:
             # ``_do_refresh`` was never reached (the service was a
@@ -2022,7 +2024,7 @@ class TestSparklineLabelAsync:
             f"Sparkline render blocked the main thread for {elapsed:.2f}s"
         )
 
-    def test_second_render_skips_when_in_flight(self):
+    def test_second_render_skips_when_in_flight(self, qtbot):
         """A second ``render_async`` while a render is in flight is a no-op.
 
         The first render's pixmap will be applied when it completes.
@@ -2041,8 +2043,9 @@ class TestSparklineLabelAsync:
         # actually submitted (not deferred to ``showEvent``).
         label.resize(260, 36)
         label.show()
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.processEvents()
+        # render_async submits only when the label is visible; waitUntil
+        # polls visibility instead of a fixed processEvents drain.
+        qtbot.waitUntil(lambda: label.isVisible(), timeout=2000)
 
         fig1 = make_sparkline_chart([1, 2, 3], color="#6366f1")
         fig2 = make_sparkline_chart([10, 20, 30], color="#ef4444")
@@ -2109,7 +2112,9 @@ class TestShowEventIsIdempotent:
         w = PlotlyChartWidget(parent=parent, min_height=180)
         w.resize(420, 170)
         w.show()
-        # Force a first show to populate ``_pending_tag``.
+        # Force a first show to populate ``_pending_tag``.  Kept as a plain
+        # event drain: no figure is set yet, so showEvent short-circuits
+        # (``_fig is None``) and no render/state predicate exists to wait on.
         from PySide6.QtCore import QCoreApplication
         QCoreApplication.processEvents()
         before = manager.stats()["total_requests"]
@@ -2133,14 +2138,13 @@ class TestAutoRenderFirstTab:
         view = QtAnalyticsView(parent=qt_widget, db=MagicMock())
         view.show()
         view.raise_()
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.processEvents()
-        # Ensure the view is visible so showEvent fires
+        # showEvent is not guaranteed to fire in the offscreen environment,
+        # so keep the explicit start the original test relied on.
         if not view._load_started:
             view._start_loading()
-        # Process pending events so all stagger timers fire.
-        for _ in range(20):
-            QCoreApplication.processEvents()
+        # Tab 0 is created eagerly (QTabWidget.currentChanged fires during
+        # construction); waitUntil replaces the 20 fixed processEvents drains.
+        qtbot.waitUntil(lambda: len(view._tabs) > 0, timeout=2000)
         assert len(view._tabs) > 0, "At least the first tab should load"
 
 
@@ -2152,6 +2156,9 @@ class TestWakeupFirstOpen:
         from ui.views.analytics import QtAnalyticsView
 
         view = QtAnalyticsView(parent=qt_widget, db=MagicMock())
+        # Drain deferred start-up events.  ``_first_open`` is set during
+        # construction (not event-driven), so there is no state predicate
+        # to wait on — kept as a plain drain.
         from PySide6.QtCore import QCoreApplication
         QCoreApplication.processEvents()
         # ``_first_open`` is True after construction.
@@ -2166,6 +2173,9 @@ class TestWakeupFirstOpen:
         import time as time_mod
 
         view = QtAnalyticsView(parent=qt_widget, db=MagicMock())
+        # Drain deferred start-up events.  The ``if 0 in view._tabs`` guards
+        # below intentionally tolerate tabs not being loaded yet, so forcing
+        # a waitUntil would change the test's skip semantics.
         from PySide6.QtCore import QCoreApplication
         QCoreApplication.processEvents()
         # First wakeup: no-op.
@@ -2189,8 +2199,9 @@ class TestChartLoadingOverlayAPI:
         parent = QWidget()
         parent.resize(400, 300)
         parent.show()
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.processEvents()
+        # The overlay's ``isVisible()`` assertions need the parent visible;
+        # waitUntil replaces the render-sync processEvents.
+        qtbot.waitUntil(lambda: parent.isVisible(), timeout=2000)
         overlay = ChartLoadingOverlay(parent)
         overlay.setGeometry(0, 0, 400, 300)
         overlay.start(expected=5, tab_index=0)
@@ -2207,23 +2218,28 @@ class TestChartLoadingOverlayAPI:
 
         parent = QWidget()
         parent.show()
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.processEvents()
+        # Same parent-visibility sync as test_overlay_start_stop.
+        qtbot.waitUntil(lambda: parent.isVisible(), timeout=2000)
         overlay = ChartLoadingOverlay(parent)
         overlay.setGeometry(0, 0, 400, 300)
         overlay.start(expected=10, tab_index=0)
         # Send 3 deliveries.  Progress should show 3 / 10.
         for _ in range(3):
             overlay.on_render_delivered(None, None)
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.processEvents()
+        # Event-driven wait for the progress label to reach "3 / 10".
+        qtbot.waitUntil(
+            lambda: "3" in overlay._progress.text()
+            and "10" in overlay._progress.text(),
+            timeout=2000,
+        )
         assert "3" in overlay._progress.text()
         assert "10" in overlay._progress.text()
         assert overlay.isVisible()
         # Send 7 more to reach the expected count.
         for _ in range(7):
             overlay.on_render_delivered(None, None)
-        QCoreApplication.processEvents()
+        # Event-driven wait for the overlay to auto-hide at 10 / 10.
+        qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)
         # After reaching expected, overlay should hide.
         assert not overlay.isVisible()
 
@@ -2282,7 +2298,6 @@ class TestCacheHitNotifiesOwner:
     """
 
     def test_set_figure_cache_hit_notifies_owner(self, qtbot, qt_widget):
-        from PySide6.QtCore import QCoreApplication
         from PySide6.QtGui import QPixmap
         from PySide6.QtWidgets import QVBoxLayout
         from ui.plotly_renderer import PlotlyChartWidget
@@ -2296,7 +2311,10 @@ class TestCacheHitNotifiesOwner:
         qtbot.waitExposed(qt_widget)
         widget.show()
         widget.resize(400, 300)
-        QCoreApplication.processEvents()
+        # set_figure's cache-hit path runs only when the widget is visible
+        # (otherwise the render is deferred to showEvent) — waitUntil polls
+        # visibility instead of a fixed processEvents drain.
+        qtbot.waitUntil(lambda: widget.isVisible(), timeout=2000)
 
         fig = make_line_chart(
             ["a", "b", "c"],
@@ -2319,7 +2337,9 @@ class TestCacheHitNotifiesOwner:
 
         # Set the same figure at the same size — must hit cache.
         widget.set_figure(fig)
-        QCoreApplication.processEvents()
+        # The cache-hit path notifies the owner synchronously; waitUntil is
+        # the event-driven replacement for the render-sync processEvents.
+        qtbot.waitUntil(lambda: len(received) >= 1, timeout=2000)
 
         assert len(received) == 1, (
             f"Cache hit in set_figure should notify owner once "
@@ -2328,7 +2348,6 @@ class TestCacheHitNotifiesOwner:
         assert received[0] is widget
 
     def test_show_event_cache_hit_notifies_owner(self, qtbot, qt_widget):
-        from PySide6.QtCore import QCoreApplication
         from PySide6.QtGui import QPixmap
         from PySide6.QtWidgets import QVBoxLayout
         from ui.plotly_renderer import PlotlyChartWidget
@@ -2342,7 +2361,9 @@ class TestCacheHitNotifiesOwner:
         qt_widget.show()
         qtbot.waitExposed(qt_widget)
         widget.resize(400, 300)
-        QCoreApplication.processEvents()
+        # Show-settle drain: waitUntil on the widget being visible (so the
+        # subsequent ``widget.show()`` fires ``showEvent`` with a real size).
+        qtbot.waitUntil(lambda: widget.isVisible(), timeout=2000)
 
         fig = make_line_chart(
             ["a", "b", "c"],
@@ -2365,7 +2386,9 @@ class TestCacheHitNotifiesOwner:
         # Trigger the show event (this is the path that fires when
         # the tab becomes visible to the user).
         widget.show()
-        QCoreApplication.processEvents()
+        # showEvent hits the cache and notifies the owner; waitUntil is
+        # the event-driven replacement for the render-sync processEvents.
+        qtbot.waitUntil(lambda: len(received) >= 1, timeout=2000)
 
         assert len(received) == 1, (
             f"Cache hit in showEvent should notify owner once "
@@ -2373,7 +2396,6 @@ class TestCacheHitNotifiesOwner:
         )
 
     def test_sparkline_cache_hit_notifies_owner(self, qtbot, qt_widget):
-        from PySide6.QtCore import QCoreApplication
         from PySide6.QtGui import QPixmap
         from ui.views.analytics._tab_base import _SparklineLabel
         from ui.plotly_charts import make_sparkline_chart
@@ -2395,7 +2417,9 @@ class TestCacheHitNotifiesOwner:
 
         label.resize(w, h)
         label.show()
-        QCoreApplication.processEvents()
+        # render_async's cache-hit path runs only when the label is visible;
+        # waitUntil polls visibility instead of a fixed processEvents drain.
+        qtbot.waitUntil(lambda: label.isVisible(), timeout=2000)
         label.render_async(fig, w, h)
 
         # Both ``showEvent`` and the explicit ``render_async`` above

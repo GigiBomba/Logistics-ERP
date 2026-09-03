@@ -78,7 +78,6 @@ def _make_card_mock(
     # -- widget references (mocked) --
     card._accent_bar = MagicMock()
     card._content_widget = MagicMock()
-    card._chip_frame = MagicMock()
     card._chip_lbl = MagicMock()
     card._delayed_chip = MagicMock()
     card._date_lbl = MagicMock()

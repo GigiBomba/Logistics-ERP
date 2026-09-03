@@ -162,6 +162,9 @@ class TestDispatchBoardKeyboard:
 
         # Send Tab to verify focus progression is wired
         QTest.keyClick(focusable[0], Qt.Key_Tab)
+        # Drain the key event before teardown.  No awaited state exists —
+        # focus is not asserted (it is unreliable in headless CI), so a
+        # waitUntil predicate would be either a no-op or flaky.
         QApplication.processEvents()
 
         view.shutdown()
@@ -251,9 +254,14 @@ class TestDashboardKeyboard:
 
         # Verify Tab moves focus from the first button
         buttons[0].setFocus()
+        # Drain so ``focusWidget()`` reflects the new focus.  Cannot be a
+        # waitUntil: ``focusWidget()`` may be None in headless CI (see the
+        # note below), so waiting on it would be flaky.
         QApplication.processEvents()
         prev_focus = QApplication.focusWidget()
         QTest.keyClick(buttons[0], Qt.Key_Tab)
+        # Same rationale as above: drain the Tab key event; the focus read
+        # is best-effort and is not the asserted state.
         QApplication.processEvents()
         new_focus = QApplication.focusWidget()
         # In headless test environments focusWidget may return None;
@@ -349,6 +357,8 @@ class TestRoutePlannerKeyboard:
 
         # Verify Tab moves focus from origin
         origin_field.setFocus()
+        # Drain the key/focus events.  No focus assertion follows (focus is
+        # unreliable in headless), so there is no waitUntil predicate.
         QApplication.processEvents()
         QTest.keyClick(origin_field, Qt.Key_Tab)
         QApplication.processEvents()
@@ -485,10 +495,14 @@ class TestRoutePlannerKeyboard:
         assert _is_focusable(combo), "Truck combo should accept focus"
 
         combo.setFocus()
+        # Drain so the combo is focused before the Down key; no asserted
+        # state to wait on (the assertion below is intentionally lax).
         QApplication.processEvents()
 
         # Pressing Down should open the dropdown (or at least not crash)
         qtbot.keyClick(combo, Qt.Key_Down)
+        # Drain the Down-key event; the popup state is not asserted, so
+        # waitUntil would have no reliable predicate.
         QApplication.processEvents()
 
         # Verify interaction was safe — combo still exists and has items
@@ -506,9 +520,13 @@ class TestRoutePlannerKeyboard:
         assert _is_focusable(combo), "Profile combo should accept focus"
 
         combo.setFocus()
+        # Drain so the combo is focused before the Down key; the item-count
+        # assertion below is static (set at construction), so no waitUntil
+        # predicate applies.
         QApplication.processEvents()
 
         qtbot.keyClick(combo, Qt.Key_Down)
+        # Drain the Down-key event before the (static) item-count check.
         QApplication.processEvents()
 
         # Profile combo has items from the profile_map

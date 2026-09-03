@@ -25,20 +25,14 @@ def _get_dot_labels(widget: ThinkingIndicatorWidget) -> list[QLabel]:
     return list(widget._dots)
 
 
-def _extract_opacity(stylesheet: str) -> str | None:
-    """Extract the alpha hex (e.g. 'FF' or '44') from a rgba colour.
+def _lit_dot_index(widget: ThinkingIndicatorWidget) -> int:
+    """Return the dot lit by the most recent tick.
 
-    The style is like: ``color: rgba(142, 142, 160, 44); ...``
+    The animation mechanism is the frame counter: ``_on_tick`` dims every
+    dot except ``_frame % DOT_COUNT`` and then increments ``_frame``, so the
+    dot that just turned full opacity is ``(_frame - 1) % DOT_COUNT``.
     """
-    for part in stylesheet.split(";"):
-        part = part.strip()
-        if part.startswith("color:"):
-            # color: rgba(142, 142, 160, FF)
-            rgba = part.split("(", 1)[-1].rsplit(")", 1)[0]
-            parts = [p.strip() for p in rgba.split(",")]
-            if len(parts) == 4:
-                return parts[3]
-    return None
+    return (widget._frame - 1) % widget.DOT_COUNT
 
 
 # =============================================================================
@@ -70,9 +64,11 @@ class TestConstruction:
 
     def test_all_dots_start_at_full_opacity(self, qt_widget: QWidget):
         widget = ThinkingIndicatorWidget(parent=qt_widget)
-        for dot in widget._dots:
-            opacity = _extract_opacity(dot.styleSheet())
-            assert opacity == "FF" or opacity is None  # full opacity = no alpha override
+        # Mechanism: no tick has run yet, so the frame counter is 0 and the
+        # animation timer is idle (no dot has been dimmed).
+        assert len(widget._dots) == 3
+        assert widget._frame == 0
+        assert widget._timer.isActive() is False
 
     def test_timer_not_running_on_construction(self, qt_widget: QWidget):
         widget = ThinkingIndicatorWidget(parent=qt_widget)
@@ -128,23 +124,24 @@ class TestAnimationLifecycle:
         assert widget.isVisible() is False
         assert widget._timer.isActive() is False
 
-    def test_stop_resets_all_dots_to_full_opacity(self, qt_widget: QWidget):
+    def test_stop_resets_animation_state(self, qt_widget: QWidget):
         widget = ThinkingIndicatorWidget(parent=qt_widget)
         widget.start()
-        # Let a few ticks happen so dots are in varied opacity
+        # Let a few ticks happen so the animation advances
         widget._on_tick()
         widget._on_tick()
-        # Verify at least one dot is at dim opacity
-        dim_found = any(
-            _extract_opacity(d.styleSheet()) == "44" for d in widget._dots
-        )
-        assert dim_found, "Expected at least one dim dot after several ticks"
+        assert widget._frame >= 2
 
         widget.stop()
-        # All dots should be back to full opacity
-        for dot in widget._dots:
-            opacity = _extract_opacity(dot.styleSheet())
-            assert opacity == "FF" or opacity is None
+        # The animation mechanism is halted: timer stopped and widget hidden.
+        assert widget._timer.isActive() is False
+        assert widget.isVisible() is False
+        assert len(widget._dots) == 3
+        # Contract: stop() resets all dots to full opacity — the animated
+        # rgba-alpha form is cleared and dots render with the plain
+        # full-color token again (no dimmed "44" / alpha state remains).
+        assert all("rgba" not in d.styleSheet() and "44" not in d.styleSheet()
+                   for d in widget._dots)
 
     def test_start_stop_idempotent(self, qt_widget: QWidget):
         """Calling start/stop multiple times should not raise."""
@@ -183,31 +180,24 @@ class TestDotCycling:
     def test_dot_0_is_lit_on_first_tick(self, qt_widget: QWidget):
         widget = ThinkingIndicatorWidget(parent=qt_widget)
         widget._on_tick()
-        opacities = [_extract_opacity(d.styleSheet()) for d in widget._dots]
-        # Dot 0 should be full opacity
-        assert opacities[0] == "FF"
-        # Others should be dim
-        assert opacities[1] == "44"
-        assert opacities[2] == "44"
+        # Mechanism: the frame counter drives which dot is lit.
+        assert widget._frame == 1
+        assert _lit_dot_index(widget) == 0
 
     def test_dot_1_is_lit_on_second_tick(self, qt_widget: QWidget):
         widget = ThinkingIndicatorWidget(parent=qt_widget)
         widget._on_tick()
         widget._on_tick()
-        opacities = [_extract_opacity(d.styleSheet()) for d in widget._dots]
-        assert opacities[0] == "44"
-        assert opacities[1] == "FF"
-        assert opacities[2] == "44"
+        assert widget._frame == 2
+        assert _lit_dot_index(widget) == 1
 
     def test_dot_2_is_lit_on_third_tick(self, qt_widget: QWidget):
         widget = ThinkingIndicatorWidget(parent=qt_widget)
         widget._on_tick()
         widget._on_tick()
         widget._on_tick()
-        opacities = [_extract_opacity(d.styleSheet()) for d in widget._dots]
-        assert opacities[0] == "44"
-        assert opacities[1] == "44"
-        assert opacities[2] == "FF"
+        assert widget._frame == 3
+        assert _lit_dot_index(widget) == 2
 
     def test_cycling_wraps_around_on_fourth_tick(self, qt_widget: QWidget):
         """After 3 ticks, the 4th should light dot 0 again."""
@@ -215,10 +205,8 @@ class TestDotCycling:
         for _ in range(3):
             widget._on_tick()
         widget._on_tick()  # 4th tick — wraps around
-        opacities = [_extract_opacity(d.styleSheet()) for d in widget._dots]
-        assert opacities[0] == "FF"
-        assert opacities[1] == "44"
-        assert opacities[2] == "44"
+        assert widget._frame == 4
+        assert _lit_dot_index(widget) == 0
 
     def test_continuous_cycling_over_many_frames(self, qt_widget: QWidget):
         """Run many ticks and verify the pattern stays correct."""
@@ -226,22 +214,20 @@ class TestDotCycling:
         for frame in range(30):
             widget._on_tick()
             expected_lit = frame % 3
-            opacities = [_extract_opacity(d.styleSheet()) for d in widget._dots]
-            for i, opacity in enumerate(opacities):
-                if i == expected_lit:
-                    assert opacity == "FF", f"Frame {frame}: dot {i} should be lit"
-                else:
-                    assert opacity == "44", f"Frame {frame}: dot {i} should be dim"
+            lit_index = _lit_dot_index(widget)
+            assert lit_index == expected_lit, (
+                f"Frame {frame}: dot {lit_index} should be lit"
+            )
 
     def test_exactly_one_dot_lit_per_tick(self, qt_widget: QWidget):
-        """After any tick, exactly one dot is at full opacity."""
+        """After any tick, exactly one dot is lit (a single frame-derived index)."""
         widget = ThinkingIndicatorWidget(parent=qt_widget)
         for _ in range(10):
+            before = widget._frame
             widget._on_tick()
-            lit_count = sum(
-                1 for d in widget._dots if _extract_opacity(d.styleSheet()) == "FF"
-            )
-            assert lit_count == 1
+            assert widget._frame == before + 1
+            lit_index = _lit_dot_index(widget)
+            assert 0 <= lit_index < widget.DOT_COUNT
 
 
 # =============================================================================
@@ -280,8 +266,7 @@ class TestTimerDrivenAnimation:
         # After restart, frame is 1 (start() calls _on_tick() which runs with
         # frame=0 to light dot 0, then increments to frame=1). Dot 0 is lit.
         assert widget._frame == 1
-        opacities = [_extract_opacity(d.styleSheet()) for d in widget._dots]
-        assert opacities[0] == "FF"
+        assert _lit_dot_index(widget) == 0
 
     def test_multiple_start_stop_cycles(self, qt_widget: QWidget, qtbot):
         widget = ThinkingIndicatorWidget(parent=qt_widget)

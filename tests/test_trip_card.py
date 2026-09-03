@@ -1,7 +1,9 @@
 """Tests for the trip card widget."""
 from __future__ import annotations
 from unittest.mock import MagicMock
+
 import pytest
+from ui.components import StatusBadge
 
 @pytest.fixture
 def trip_card(qt_widget, qtbot):
@@ -40,7 +42,9 @@ class TestQtTripCard:
         assert "price" in trip_card.trip_data
 
     def test_status_badge_shown(self, trip_card):
-        assert hasattr(trip_card, "_chip_frame")
+        # Status chip migrated to the canonical StatusBadge component; the live
+        # attribute is ``_chip_lbl`` (a StatusBadge), not ``_chip_frame``.
+        assert isinstance(trip_card._chip_lbl, StatusBadge)
 
     def test_truck_info_shown(self, trip_card):
         assert hasattr(trip_card, "_truck_lbl")

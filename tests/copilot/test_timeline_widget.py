@@ -29,6 +29,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ACCENT_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_NEUTRAL_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+)
+
 # =============================================================================
 # Helper factories
 # =============================================================================
@@ -45,6 +55,7 @@ def make_step(
 ) -> "ExecutionStep":
     """Build an ExecutionStep with minimal boilerplate."""
     from ui.copilot.models import ExecutionStep, ConfirmationLevel
+
     return ExecutionStep(
         step_id=step_id,
         tool_name=tool_name,
@@ -135,18 +146,18 @@ class TestStepStatusDot:
         assert dot._timer is None
 
     def test_pulse_toggle_alternates_appearance(self, qt_widget):
-        """The _toggle_pulse method flips _pulse_on and updates stylesheet."""
+        """The _toggle_pulse method flips _pulse_on and the token-driven bg."""
         from ui.copilot.widgets.timeline_widget import _StepStatusDot
         dot = _StepStatusDot(qt_widget)
         dot.set_status("running")
-        initial_style = dot.styleSheet()
         dot._toggle_pulse()
         assert dot._pulse_on is True
-        pulsed_style = dot.styleSheet()
-        assert pulsed_style != initial_style
+        # Pulsed running dot uses the accent-subtle background token.
+        assert COLOR_ACCENT_SUBTLE in dot.styleSheet()
         dot._toggle_pulse()
         assert dot._pulse_on is False
-        assert dot.styleSheet() == initial_style
+        # Unpulsed running dot uses the solid accent token.
+        assert COLOR_ACCENT_PRIMARY in dot.styleSheet()
 
     def test_detach_stops_timer(self, qt_widget):
         """detach() stops and clears the pulse timer."""
@@ -165,20 +176,20 @@ class TestStepStatusDot:
         dot = _StepStatusDot(qt_widget)
         dot.detach()  # Should not raise
 
-    @pytest.mark.parametrize("status,expected_color_prefix", [
-        ("pending", "#6B"),
-        ("running", "#63"),
-        ("succeeded", "#10"),
-        ("failed", "#EF"),
-        ("skipped", "#5A"),
-        ("awaiting_confirmation", "#F5"),
+    @pytest.mark.parametrize("status,expected_color", [
+        ("pending", COLOR_NEUTRAL_DEFAULT),
+        ("running", COLOR_ACCENT_PRIMARY),
+        ("succeeded", COLOR_SUCCESS_DEFAULT),
+        ("failed", COLOR_ERROR_DEFAULT),
+        ("skipped", COLOR_TEXT_TERTIARY),
+        ("awaiting_confirmation", COLOR_WARNING_DEFAULT),
     ])
-    def test_status_colors_in_stylesheet(self, qt_widget, status, expected_color_prefix):
-        """Each status produces a stylesheet referencing the expected colour."""
+    def test_status_colors_in_stylesheet(self, qt_widget, status, expected_color):
+        """Each status renders a token-driven dot background."""
         from ui.copilot.widgets.timeline_widget import _StepStatusDot
         dot = _StepStatusDot(qt_widget)
         dot.set_status(status)
-        assert expected_color_prefix in dot.styleSheet()
+        assert expected_color in dot.styleSheet()
 
 
 # =============================================================================
@@ -1124,11 +1135,12 @@ class TestErrorState:
         assert "Connection refused" in card._error_lbl.text()
 
     def test_failed_step_has_error_color_dot(self, qt_widget):
-        """Failed status on card shows appropriate error colour."""
+        """Failed status on card shows the error-token dot."""
         from ui.copilot.widgets.timeline_widget import _StepCard
         step = make_step(step_id="fail-step", status="failed", error="Timeout")
         card = _StepCard(step, 1, parent=qt_widget)
-        assert "#EF" in card._dot.styleSheet() or "red" in card._dot.styleSheet().lower()
+        assert card._dot._status == "failed"
+        assert COLOR_ERROR_DEFAULT in card._dot.styleSheet()
 
     def test_failed_node_in_tree(self, qt_widget):
         """A failed node in the reasoning graph has red foreground."""

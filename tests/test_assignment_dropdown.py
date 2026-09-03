@@ -222,18 +222,24 @@ class TestItemRow:
         on_select.assert_not_called()
 
     def test_hover_changes_background(self):
-        """enterEvent -> stylesheet set."""
+        """enterEvent applies the hover overlay to the role-styled row."""
+        from ui.design_tokens import COLOR_BG_OVERLAY
+
         row = self._make_available_row({"id": 1, "label": "Test"})
         row.enterEvent(None)
-        assert row.styleSheet() != ""
+        # The row is role-styled; hover paints a dynamic overlay background.
+        assert row.property("role") == "assignment-row"
+        assert COLOR_BG_OVERLAY in row.styleSheet()
 
     def test_leave_clears_stylesheet(self):
-        """leaveEvent -> stylesheet cleared."""
+        """leaveEvent removes the hover overlay."""
+        from ui.design_tokens import COLOR_BG_OVERLAY
+
         row = self._make_available_row({"id": 1, "label": "Test"})
         row.enterEvent(None)
-        assert row.styleSheet() != ""
+        assert COLOR_BG_OVERLAY in row.styleSheet()
         row.leaveEvent(None)
-        assert row.styleSheet() == ""
+        assert COLOR_BG_OVERLAY not in (row.styleSheet() or "")
 
 
 # =========================================================================
