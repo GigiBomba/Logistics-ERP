@@ -32,10 +32,10 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
+from ui.components import IconButton, StatusBadge
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
     COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
@@ -55,6 +55,18 @@ from ui.design_tokens import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Quick-action icon-button size. The action row is pinned to 20px; each button
+# is a tiny square glyph. Width stays a hard cap (square click target); height
+# is a minimum floor. Intentional icon-button geometry (Phase 2).
+_ACTION_BTN_SIZE = 18
+
+
+def _set_accent_bar_color(accent_bar: QFrame, color: str) -> None:
+    """Apply a status colour to a trip card's left accent bar."""
+    accent_bar.setStyleSheet(
+        f"background-color: {color}; border: none; border-radius: 0px;"
+    )
 
 
 class QtTripCard(QFrame):
@@ -178,9 +190,7 @@ class QtTripCard(QFrame):
         # ── Left accent bar ─────────────────────────────────────────────
         self._accent_bar = QFrame()
         self._accent_bar.setFixedWidth(self.LEFT_ACCENT_WIDTH)
-        self._accent_bar.setStyleSheet(
-            f"background-color: {accent_color}; border: none; border-radius: 0px;"
-        )
+        _set_accent_bar_color(self._accent_bar, accent_color)
         outer_layout.addWidget(self._accent_bar)
 
         # ── Content area ────────────────────────────────────────────────
@@ -202,7 +212,6 @@ class QtTripCard(QFrame):
         truck_icon.setPixmap(
             qta.icon("fa5s.truck", color=accent_color).pixmap(14, 14)
         )
-        truck_icon.setStyleSheet("background: transparent; border: none;")
         row1_layout.addWidget(truck_icon)
 
         row1_layout.addSpacing(SP["1"])
@@ -210,43 +219,39 @@ class QtTripCard(QFrame):
         trip_id = d.get("trip_id", t("common.na"))
         id_lbl = QLabel(str(trip_id))
         id_lbl.setProperty("fontRole", "small")
+        id_lbl.setToolTip(str(trip_id))
         row1_layout.addWidget(id_lbl)
 
         row1_layout.addStretch(1)
 
-        # Delayed chip (hidden by default)
-        self._delayed_chip = QFrame()
-        self._delayed_chip.setStyleSheet(
-            f"background-color: {self.DELAYED_COLOR}; border-radius: {RADIUS_SM}px;"
+        # Delayed chip (hidden by default) — canonical StatusBadge (solid red).
+        self._delayed_chip = StatusBadge(
+            self,
+            status_key=None,
+            text=t("dispatch_board.delayed"),
+            solid=True,
+            uppercase=False,
+            bg_color=self.DELAYED_COLOR,
+            text_color=COLOR_TEXT_PRIMARY,
         )
-        delayed_chip_layout = QHBoxLayout(self._delayed_chip)
-        delayed_chip_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
-        delayed_chip_layout.setSpacing(0)
-        delayed_lbl = QLabel(t("dispatch_board.delayed"))
-        delayed_lbl.setProperty("fontRole", "label")
-        delayed_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
-        delayed_chip_layout.addWidget(delayed_lbl)
         if d.get("delayed", False):
             row1_layout.addWidget(self._delayed_chip)
         else:
             self._delayed_chip.hide()
 
-        # Status chip
-        self._chip_frame = QFrame()
-        self._chip_frame.setStyleSheet(
-            f"background-color: {accent_color}; border-radius: {RADIUS_SM}px;"
-        )
-        chip_frame_layout = QHBoxLayout(self._chip_frame)
-        chip_frame_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
-        chip_frame_layout.setSpacing(0)
+        # Status chip — canonical StatusBadge (solid subtle bg, white text).
         translation_key = self.STATUS_TRANSLATION_KEYS.get(status)
-        self._chip_lbl = QLabel(
-            t(translation_key if translation_key is not None else status)
+        self._chip_lbl = StatusBadge(
+            self,
+            status_key=status,
+            text=t(translation_key if translation_key is not None else status),
+            solid=True,
+            uppercase=False,
+            text_color=COLOR_TEXT_PRIMARY,
         )
-        self._chip_lbl.setProperty("fontRole", "label")
-        self._chip_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
-        chip_frame_layout.addWidget(self._chip_lbl)
-        row1_layout.addWidget(self._chip_frame)
+        self._chip_frame = self._chip_lbl  # compat alias (referenced by tests)
+        self._set_status_chip(accent_color)
+        row1_layout.addWidget(self._chip_lbl)
 
         content_layout.addWidget(row1)
 
@@ -257,62 +262,58 @@ class QtTripCard(QFrame):
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(2)
 
-        def _make_action_btn(symbol: str, tooltip: str, target_status: str | None) -> QPushButton:
-            btn = QPushButton(symbol)
-            btn.setFixedSize(18, 18)
-            btn.setFlat(True)
-            btn.setToolTip(tooltip)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(
-                "QPushButton {"
-                f"  border: none; border-radius: {RADIUS_SM}px; font-size: 10px;"
-                f"  color: {COLOR_TEXT_TERTIARY}; background: transparent;"
-                "}"
-                "QPushButton:hover {"
-                f"  background-color: {COLOR_BG_HOVER};"
-                f"  color: {COLOR_TEXT_PRIMARY};"
-                "}"
-            )
+        def _add_action(symbol: str, tooltip: str, target_status: str | None) -> QPushButton:
+            command = None
             if target_status is not None:
-                btn.clicked.connect(
+                command = (
                     lambda checked=False, ts=target_status: self._on_status_change_clicked(ts)
                 )
+            btn = IconButton(
+                self._actions_container,
+                text=symbol,
+                tooltip=tooltip,
+                variant="flat",
+                size=18,
+                command=command,
+            )
             actions_layout.addWidget(btn)
             return btn
 
-        self._btn_view = _make_action_btn("\U0001f441", t("dispatch_board.view_details", default="View Details"), None)
+        self._btn_view = _add_action(
+            "\U0001f441", t("dispatch_board.view_details", default="View Details"), None
+        )
         self._btn_view.clicked.connect(self._on_view_clicked)
 
         status = d.get("status", "Planned")
-        self._btn_start = _make_action_btn("\u25b6", "Start Loading", "Loading")
+        self._btn_start = _add_action("\u25b6", "Start Loading", "Loading")
         self._btn_start.setVisible(status == "Planned")
 
-        self._btn_transit = _make_action_btn("\U0001f69a", "Mark In Transit", "In Transit")
+        self._btn_transit = _add_action("\U0001f69a", "Mark In Transit", "In Transit")
         self._btn_transit.setVisible(status == "Loading")
 
-        self._btn_deliver = _make_action_btn("\u2713", "Mark Delivered", "Delivered")
+        self._btn_deliver = _add_action("\u2713", "Mark Delivered", "Delivered")
         self._btn_deliver.setVisible(status == "In Transit")
 
-        self._btn_cancel = _make_action_btn("\u2715", "Cancel Trip", "Cancelled")
+        self._btn_cancel = _add_action("\u2715", "Cancel Trip", "Cancelled")
         self._btn_cancel.setVisible(status in ("Planned", "Loading"))
 
-        # Documents button — visible for all statuses
+        # Documents button — visible for all statuses.
+        # Kept hand-rolled (not migrated to IconButton): IconButton's icon-mode
+        # recolours the icon to the hover colour on hover, whereas the original
+        # keeps its icon TERTIARY and only brightens the background — a subtle
+        # hover-state difference that cannot be reproduced exactly via the
+        # canonical component without shipping a visual change.
         self._btn_docs = QPushButton()
         self._btn_docs.setIcon(qta.icon("fa5s.file-invoice", color=COLOR_TEXT_TERTIARY))
-        self._btn_docs.setFixedSize(18, 18)
+        self._btn_docs.setFixedWidth(_ACTION_BTN_SIZE)
+        self._btn_docs.setMinimumHeight(_ACTION_BTN_SIZE)
         self._btn_docs.setFlat(True)
         self._btn_docs.setToolTip(t("dispatch_board.documents", default="Documents"))
         self._btn_docs.setCursor(Qt.PointingHandCursor)
-        self._btn_docs.setStyleSheet(
-            "QPushButton {"
-            f"  border: none; border-radius: {RADIUS_SM}px;"
-            f"  color: {COLOR_TEXT_TERTIARY}; background: transparent;"
-            "}"
-            "QPushButton:hover {"
-            f"  background-color: {COLOR_BG_HOVER};"
-            f"  color: {COLOR_TEXT_PRIMARY};"
-            "}"
-        )
+        self._btn_docs.setProperty("role", "icon-btn")
+        if self._btn_docs.style():
+            self._btn_docs.style().unpolish(self._btn_docs)
+            self._btn_docs.style().polish(self._btn_docs)
         self._btn_docs.clicked.connect(self._on_documents_clicked)
         actions_layout.addWidget(self._btn_docs)
 
@@ -332,7 +333,6 @@ class QtTripCard(QFrame):
 
         truck_icon = QLabel("\U0001f69a")
         truck_icon.setProperty("fontRole", "label")
-        truck_icon.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         truck_row_layout.addWidget(truck_icon)
 
         plate = d.get("truck_plate", "")
@@ -342,6 +342,10 @@ class QtTripCard(QFrame):
         self._truck_lbl.setProperty("fontRole", "small")
         self._truck_lbl.setStyleSheet(f"color: {plate_color};")
         self._truck_lbl.setCursor(Qt.PointingHandCursor)
+        self._truck_lbl.setWordWrap(True)
+        # Keep "Assign Truck" / plate labels on a single readable line.
+        self._truck_lbl.setMinimumWidth(90)
+        self._truck_lbl.setToolTip(plate if plate else "")
         self._truck_lbl.mousePressEvent = self._on_truck_click  # type: ignore[assignment]
         truck_row_layout.addWidget(self._truck_lbl)
 
@@ -351,7 +355,6 @@ class QtTripCard(QFrame):
         if plate:
             self._truck_clear_btn = QLabel("\u2715")
             self._truck_clear_btn.setProperty("fontRole", "label")
-            self._truck_clear_btn.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             self._truck_clear_btn.setCursor(Qt.PointingHandCursor)
             self._truck_clear_btn.mousePressEvent = self._on_truck_clear  # type: ignore[assignment]
             truck_row_layout.addWidget(self._truck_clear_btn)
@@ -382,7 +385,6 @@ class QtTripCard(QFrame):
 
         driver_icon = QLabel("\U0001f464")
         driver_icon.setProperty("fontRole", "label")
-        driver_icon.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         driver_row_layout.addWidget(driver_icon)
 
         driver = d.get("driver_name", "")
@@ -392,6 +394,8 @@ class QtTripCard(QFrame):
         self._driver_lbl.setProperty("fontRole", "small")
         self._driver_lbl.setStyleSheet(f"color: {driver_color};")
         self._driver_lbl.setCursor(Qt.PointingHandCursor)
+        self._driver_lbl.setWordWrap(True)
+        self._driver_lbl.setToolTip(driver if driver else "")
         self._driver_lbl.mousePressEvent = self._on_driver_click  # type: ignore[assignment]
         driver_row_layout.addWidget(self._driver_lbl)
 
@@ -401,7 +405,6 @@ class QtTripCard(QFrame):
         if driver:
             self._driver_clear_btn = QLabel("\u2715")
             self._driver_clear_btn.setProperty("fontRole", "label")
-            self._driver_clear_btn.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             self._driver_clear_btn.setCursor(Qt.PointingHandCursor)
             self._driver_clear_btn.mousePressEvent = self._on_driver_clear  # type: ignore[assignment]
             driver_row_layout.addWidget(self._driver_clear_btn)
@@ -447,19 +450,7 @@ class QtTripCard(QFrame):
         # Row 7 — alerts count (conditional)
         alerts_count = d.get("alerts_count", 0)
         if alerts_count and alerts_count > 0:
-            self._alert_frame = QFrame()
-            self._alert_frame.setStyleSheet(
-                f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: {RADIUS_SM}px;"
-            )
-            alert_layout = QHBoxLayout(self._alert_frame)
-            alert_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
-            alert_layout.setSpacing(0)
-            alert_lbl = QLabel(
-                f"\u26a0 {alerts_count} {t('dispatch_board.alerts')}"
-            )
-            alert_lbl.setProperty("fontRole", "label")
-            alert_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
-            alert_layout.addWidget(alert_lbl)
+            self._alert_frame = self._build_alert_banner(alerts_count)
             content_layout.addWidget(self._alert_frame)
 
         # Row 8 — live position indicator (hidden by default)
@@ -507,23 +498,23 @@ class QtTripCard(QFrame):
 
         if truck_plate:
             self._truck_lbl.setText(truck_plate)
-            self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+            self._truck_lbl.setToolTip(truck_plate)
             if self._truck_clear_btn is None:
                 truck_row = self._truck_lbl.parent()
                 if truck_row is not None:
                     self._truck_clear_btn = QLabel("\u2715")
                     self._truck_clear_btn.setProperty("fontRole", "label")
-                    self._truck_clear_btn.setStyleSheet(
-                        f"color: {COLOR_TEXT_TERTIARY};"
-                    )
                     self._truck_clear_btn.setCursor(Qt.PointingHandCursor)
                     self._truck_clear_btn.mousePressEvent = self._on_truck_clear  # type: ignore[assignment]
                     # Insert clear button before the stretch (last widget)
                     truck_row.layout().addWidget(self._truck_clear_btn)
         else:
             self._truck_lbl.setText(t("dispatch_board.assign_truck"))
+            self._truck_lbl.setToolTip("")
             self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             if self._truck_clear_btn is not None:
+                self._truck_clear_btn.hide()
+                self._truck_clear_btn.setParent(None)
                 self._truck_clear_btn.deleteLater()
                 self._truck_clear_btn = None
 
@@ -535,22 +526,22 @@ class QtTripCard(QFrame):
 
         if driver_name:
             self._driver_lbl.setText(driver_name)
-            self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+            self._driver_lbl.setToolTip(driver_name)
             if self._driver_clear_btn is None:
                 driver_row = self._driver_lbl.parent()
                 if driver_row is not None:
                     self._driver_clear_btn = QLabel("\u2715")
                     self._driver_clear_btn.setProperty("fontRole", "label")
-                    self._driver_clear_btn.setStyleSheet(
-                        f"color: {COLOR_TEXT_TERTIARY};"
-                    )
                     self._driver_clear_btn.setCursor(Qt.PointingHandCursor)
                     self._driver_clear_btn.mousePressEvent = self._on_driver_clear  # type: ignore[assignment]
                     driver_row.layout().addWidget(self._driver_clear_btn)
         else:
             self._driver_lbl.setText(t("dispatch_board.assign_driver"))
+            self._driver_lbl.setToolTip("")
             self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             if self._driver_clear_btn is not None:
+                self._driver_clear_btn.hide()
+                self._driver_clear_btn.setParent(None)
                 self._driver_clear_btn.deleteLater()
                 self._driver_clear_btn = None
 
@@ -561,9 +552,7 @@ class QtTripCard(QFrame):
         self._delayed = delayed
 
         if delayed:
-            self._accent_bar.setStyleSheet(
-                f"background-color: {self.DELAYED_COLOR}; border: none; border-radius: 0px;"
-            )
+            _set_accent_bar_color(self._accent_bar, self.DELAYED_COLOR)
             self._delayed_chip.show()
             self._update_card_style()
             if self._date_lbl is not None:
@@ -579,9 +568,7 @@ class QtTripCard(QFrame):
         else:
             status = self.trip_data.get("status", "Planned")
             accent_color = self.STATUS_COLORS.get(status, COLOR_NEUTRAL_SUBTLE)
-            self._accent_bar.setStyleSheet(
-                f"background-color: {accent_color}; border: none; border-radius: 0px;"
-            )
+            _set_accent_bar_color(self._accent_bar, accent_color)
             self._delayed_chip.hide()
             self._update_card_style()
             if self._date_lbl is not None:
@@ -594,7 +581,6 @@ class QtTripCard(QFrame):
                     date_parts.append(f"\u25c0 {eta}")
                 date_text = "  ".join(date_parts) if date_parts else ""
                 self._date_lbl.setText(date_text)
-                self._date_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
 
     def update_data(self, new_data: dict[str, Any]) -> None:
         """Bulk-update the card from a new data dictionary.
@@ -614,9 +600,10 @@ class QtTripCard(QFrame):
             self.trip_data["truck_plate"] = new_plate
             if new_plate:
                 self._truck_lbl.setText(new_plate)
-                self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+                self._truck_lbl.setToolTip(new_plate)
             else:
                 self._truck_lbl.setText(t("dispatch_board.assign_truck"))
+                self._truck_lbl.setToolTip("")
                 self._truck_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
 
         if self._driver_lbl is not None:
@@ -624,9 +611,10 @@ class QtTripCard(QFrame):
             self.trip_data["driver_name"] = new_driver
             if new_driver:
                 self._driver_lbl.setText(new_driver)
-                self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
+                self._driver_lbl.setToolTip(new_driver)
             else:
                 self._driver_lbl.setText(t("dispatch_board.assign_driver"))
+                self._driver_lbl.setToolTip("")
                 self._driver_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
 
         new_alerts = new_data.get("alerts_count", 0)
@@ -650,7 +638,6 @@ class QtTripCard(QFrame):
                 date_parts_local.append(f"\u25c0 {eta}")
             date_text = "  ".join(date_parts_local) if date_parts_local else ""
             self._date_lbl.setText(date_text)
-            self._date_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
 
         # Update clear buttons for truck/driver
         self._sync_truck_clear_button()
@@ -669,11 +656,12 @@ class QtTripCard(QFrame):
             if truck_row is not None:
                 self._truck_clear_btn = QLabel("\u2715")
                 self._truck_clear_btn.setProperty("fontRole", "label")
-                self._truck_clear_btn.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
                 self._truck_clear_btn.setCursor(Qt.PointingHandCursor)
                 self._truck_clear_btn.mousePressEvent = self._on_truck_clear  # type: ignore[assignment]
                 truck_row.layout().addWidget(self._truck_clear_btn)
         elif not has_plate and self._truck_clear_btn is not None:
+            self._truck_clear_btn.hide()
+            self._truck_clear_btn.setParent(None)
             self._truck_clear_btn.deleteLater()
             self._truck_clear_btn = None
 
@@ -687,11 +675,12 @@ class QtTripCard(QFrame):
             if driver_row is not None:
                 self._driver_clear_btn = QLabel("\u2715")
                 self._driver_clear_btn.setProperty("fontRole", "label")
-                self._driver_clear_btn.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
                 self._driver_clear_btn.setCursor(Qt.PointingHandCursor)
                 self._driver_clear_btn.mousePressEvent = self._on_driver_clear  # type: ignore[assignment]
                 driver_row.layout().addWidget(self._driver_clear_btn)
         elif not has_driver and self._driver_clear_btn is not None:
+            self._driver_clear_btn.hide()
+            self._driver_clear_btn.setParent(None)
             self._driver_clear_btn.deleteLater()
             self._driver_clear_btn = None
 
@@ -699,23 +688,13 @@ class QtTripCard(QFrame):
         """Recreate the alert banner with *count* alerts, or remove it."""
         if self._alert_frame is not None:
             self._content_widget.layout().removeWidget(self._alert_frame)
+            self._alert_frame.hide()
+            self._alert_frame.setParent(None)
             self._alert_frame.deleteLater()
             self._alert_frame = None
 
         if count > 0:
-            self._alert_frame = QFrame()
-            self._alert_frame.setStyleSheet(
-                f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: {RADIUS_SM}px;"
-            )
-            alert_layout = QHBoxLayout(self._alert_frame)
-            alert_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
-            alert_layout.setSpacing(0)
-            alert_lbl = QLabel(
-                f"\u26a0 {count} {t('dispatch_board.alerts')}"
-            )
-            alert_lbl.setProperty("fontRole", "label")
-            alert_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
-            alert_layout.addWidget(alert_lbl)
+            self._alert_frame = self._build_alert_banner(count)
             self._content_widget.layout().addWidget(self._alert_frame)
 
     def update_alert_count(self, count: int) -> None:
@@ -765,27 +744,42 @@ class QtTripCard(QFrame):
         """Remove the error banner and stop the dismiss timer."""
         if self._error_lbl is not None:
             self._content_widget.layout().removeWidget(self._error_lbl)
+            self._error_lbl.hide()
+            self._error_lbl.setParent(None)
             self._error_lbl.deleteLater()
             self._error_lbl = None
         if self._error_timer is not None:
             self._error_timer.stop()
             self._error_timer = None
 
+    def _set_status_chip(self, accent_color: str) -> None:
+        """Apply a status colour to the status chip (filled bg + white text)."""
+        self._chip_lbl.set_colors(bg_color=accent_color, text_color=COLOR_TEXT_PRIMARY)
+
+    def _build_alert_banner(self, count: int) -> QFrame:
+        """Build the red alert-count banner used in the card body."""
+        frame = QFrame()
+        frame.setStyleSheet(
+            f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: {RADIUS_SM}px;"
+        )
+        alert_layout = QHBoxLayout(frame)
+        alert_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
+        alert_layout.setSpacing(0)
+        alert_lbl = QLabel(f"\u26a0 {count} {t('dispatch_board.alerts')}")
+        alert_lbl.setProperty("fontRole", "sm")
+        alert_layout.addWidget(alert_lbl)
+        return frame
+
     def _set_status(self, status: str) -> None:
         """Update accent bar, chip colour, and chip text for a new status."""
         self.trip_data["status"] = status
         accent_color = self.STATUS_COLORS.get(status, COLOR_NEUTRAL_SUBTLE)
-        self._accent_bar.setStyleSheet(
-            f"background-color: {accent_color}; border: none; border-radius: 0px;"
-        )
-        self._chip_frame.setStyleSheet(
-            f"background-color: {accent_color}; border-radius: {RADIUS_SM}px;"
-        )
+        _set_accent_bar_color(self._accent_bar, accent_color)
+        self._set_status_chip(accent_color)
         translation_key = self.STATUS_TRANSLATION_KEYS.get(status)
         self._chip_lbl.setText(
             t(translation_key if translation_key is not None else status)
         )
-        self._chip_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
 
     def _update_card_style(self) -> None:
         """Recompute the card background and border from current state."""
@@ -844,8 +838,6 @@ class QtTripCard(QFrame):
         """Show a context menu with document generation options."""
         menu = QMenu(self)
         menu.setStyleSheet(
-            f"background-color: {COLOR_BG_ELEVATED};"
-            f"color: {COLOR_TEXT_PRIMARY};"
             f"border: 1px solid {COLOR_BORDER_SUBTLE};"
             f"border-radius: {RADIUS_SM}px;"
         )

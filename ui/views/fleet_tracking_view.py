@@ -39,16 +39,15 @@ from services.i18n import t
 from ui.components import Btn, EmptyState, UniversalCard
 from ui.performance_timer import PerfTimer
 from ui.design_tokens import (
-    COLOR_BG_ELEVATED,
     COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
-    COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
     SP,
 )
 from ui.map.map_widget import MapWidget
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +106,13 @@ class QtFleetTrackingView(QWidget):
 
         # ── State ──────────────────────────────────────────────────────
         self._map: MapWidget | None = None
+        self._map_container: QFrame | None = None
+        self._map_loading: QFrame | None = None
+        self._map_error_panel: QFrame | None = None
+        # Fallback timer: if the map HTML never finishes loading (nor fails),
+        # switch to the error+retry panel so the map is never stuck on
+        # an eternal "Loading map…" state.
+        self._map_timeout_timer: QTimer | None = None
         self._vehicle_list_scroll: QScrollArea | None = None
         self._vehicle_list_content: QWidget | None = None
         self._vehicle_list_layout: QVBoxLayout | None = None
@@ -144,10 +150,19 @@ class QtFleetTrackingView(QWidget):
         self._stop_polling()
         with self._lock:
             self._fetching = False
+        self._stop_map_timeout()
         if hasattr(self, "_map") and self._map:
             with contextlib.suppress(Exception):
                 self._map._destroy()
             self._map = None
+        if self._map_loading is not None:
+            with contextlib.suppress(Exception):
+                self._map_loading.deleteLater()
+            self._map_loading = None
+        if self._map_error_panel is not None:
+            with contextlib.suppress(Exception):
+                self._map_error_panel.deleteLater()
+            self._map_error_panel = None
 
     # ── Build ─────────────────────────────────────────────────────────
 
@@ -178,10 +193,10 @@ class QtFleetTrackingView(QWidget):
         splitter.addWidget(map_container)
 
         panel = QFrame()
-        panel.setStyleSheet(
-            f"background-color: {COLOR_BG_ELEVATED};"
-            f"border-left: 1px solid {COLOR_BORDER_SUBTLE};"
-        )
+        panel.setProperty("role", "detail-drawer")
+        if panel.style():
+            panel.style().unpolish(panel)
+            panel.style().polish(panel)
         panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         panel.setMinimumWidth(240)
 
@@ -215,16 +230,14 @@ class QtFleetTrackingView(QWidget):
         title_lbl = QLabel(t("tracking.not_configured_title"))
         title_lbl.setProperty("fontRole", "h2")
         title_lbl.setAlignment(Qt.AlignCenter)
-        title_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         cl.addWidget(title_lbl)
 
         # Hint
         hint_lbl = QLabel(t("tracking.not_configured_hint"))
-        hint_lbl.setProperty("fontRole", "body")
+        hint_lbl.setProperty("fontRole", "muted")
         hint_lbl.setAlignment(Qt.AlignCenter)
         hint_lbl.setMaximumWidth(360)
         hint_lbl.setWordWrap(True)
-        hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         cl.addWidget(hint_lbl)
 
         # Settings button
@@ -380,16 +393,143 @@ class QtFleetTrackingView(QWidget):
                 item = layout.takeAt(0)
                 widget = item.widget()
                 if widget is not None:
+                    widget.hide()
+                    widget.setParent(None)
                     widget.deleteLater()
         self._build_ui()
 
     def _build_map(self, parent: QFrame) -> None:
+        self._map_container = parent
         map_layout = QVBoxLayout(parent)
         map_layout.setContentsMargins(0, 0, 0, 0)
         map_layout.setSpacing(0)
 
+        # Skeleton-style loading panel shown while the map initialises so
+        # the area never reads as a black void during QWebEngineView spin-up.
+        self._map_loading = self._build_map_loading_panel(parent)
+        map_layout.addWidget(self._map_loading, 1)
+
         self._map = MapWidget(parent)
+        # Guarded with getattr so construction also works when MapWidget is
+        # replaced by a mock/stub without the QWebEngineView loadFinished
+        # signal (used by tests). The real MapWidget always has it.
+        load_finished = getattr(self._map, "loadFinished", None)
+        if load_finished is not None:
+            load_finished.connect(self._on_map_load_finished)
         map_layout.addWidget(self._map, 1)
+        self._start_map_timeout()
+
+    def _start_map_timeout(self) -> None:
+        """Arm the 15 s fallback timer for the map load."""
+        if self._map_timeout_timer is None:
+            self._map_timeout_timer = QTimer(self)
+            self._map_timeout_timer.setSingleShot(True)
+            self._map_timeout_timer.timeout.connect(self._on_map_timeout)
+        self._map_timeout_timer.start(15_000)
+
+    def _stop_map_timeout(self) -> None:
+        """Stop the fallback timer (map loaded, errored, or view shutting down)."""
+        if self._map_timeout_timer is not None:
+            self._map_timeout_timer.stop()
+
+    def _on_map_timeout(self) -> None:
+        """The map never finished loading — fall back to the error panel."""
+        logger.warning("Fleet tracking map load timed out — showing error state")
+        self._show_map_error_state()
+
+    def _build_map_loading_panel(self, parent: QFrame) -> QFrame:
+        """Skeleton-style loading panel shown while the map initialises."""
+        from ui.skeleton_widgets import SkeletonWidget
+
+        panel = QFrame(parent)
+        panel.setProperty("role", "surface-overlay")
+        if panel.style():
+            panel.style().unpolish(panel)
+            panel.style().polish(panel)
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setAlignment(Qt.AlignCenter)
+        panel_layout.setSpacing(SP["3"])
+
+        lbl = QLabel(t("tracking.map_loading", default="Loading map\u2026"))
+        lbl.setProperty("fontRole", "muted")
+        lbl.setAlignment(Qt.AlignCenter)
+        panel_layout.addWidget(lbl)
+
+        for _ in range(2):
+            bar = SkeletonWidget(panel, width=220, height=10, rounded=True)
+            panel_layout.addWidget(bar, 0, Qt.AlignCenter)
+
+        return panel
+
+    def _on_map_load_finished(self, ok: bool) -> None:
+        """Hide the loading panel on success; show an error panel on failure."""
+        self._stop_map_timeout()
+        if self._map_loading is not None:
+            self._map_loading.hide()
+            self._map_loading.setParent(None)
+            self._map_loading.deleteLater()
+            self._map_loading = None
+        if not ok:
+            logger.warning("Fleet tracking map failed to load")
+            self._show_map_error_state()
+
+    def _show_map_error_state(self) -> None:
+        """Replace the failed map widget with a muted error + retry panel."""
+        if self._map_error_panel is not None:
+            return  # already showing the error state
+        self._stop_map_timeout()
+        if self._map is None:
+            return
+        parent = self._map.parentWidget()
+        layout = parent.layout() if parent is not None else None
+        if layout is not None:
+            layout.removeWidget(self._map)
+        self._map.hide()
+        self._map.setParent(None)
+        with contextlib.suppress(Exception):
+            self._map._destroy()
+        self._map = None
+
+        err = QFrame(parent if parent is not None else self)
+        err.setProperty("role", "surface-overlay")
+        if err.style():
+            err.style().unpolish(err)
+            err.style().polish(err)
+        el = QVBoxLayout(err)
+        el.setAlignment(Qt.AlignCenter)
+        el.setSpacing(SP["3"])
+
+        lbl = QLabel(t("tracking.map_error", default="Map failed to load"))
+        lbl.setProperty("fontRole", "muted")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setWordWrap(True)
+        el.addWidget(lbl)
+
+        retry_btn = Btn(
+            err,
+            t("tracking.map_retry", default="Retry"),
+            variant="secondary",
+            command=self._retry_map,
+        )
+        el.addWidget(retry_btn, 0, Qt.AlignCenter)
+
+        if layout is not None:
+            layout.addWidget(err, 1)
+        self._map_error_panel = err
+
+    def _retry_map(self) -> None:
+        """Remove the error panel and re-create the map widget."""
+        if self._map_error_panel is not None:
+            panel = self._map_error_panel
+            self._map_error_panel = None
+            parent_layout = panel.parentWidget().layout() if panel.parentWidget() else None
+            if parent_layout is not None:
+                parent_layout.removeWidget(panel)
+            panel.hide()
+            panel.setParent(None)
+            panel.deleteLater()
+        if self._map_container is not None:
+            self._build_map(self._map_container)
 
     def _build_vehicle_panel(self, parent: QFrame) -> None:
         layout: QVBoxLayout = parent.layout()  # type: ignore[assignment]
@@ -410,7 +550,6 @@ class QtFleetTrackingView(QWidget):
         # Last-updated label
         self._updated_lbl = QLabel("")
         self._updated_lbl.setProperty("fontRole", "label")
-        self._updated_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         header_layout.addWidget(self._updated_lbl)
 
         # Refresh button
@@ -540,12 +679,13 @@ class QtFleetTrackingView(QWidget):
             item = self._detail_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
 
         # Name
         name_lbl = QLabel(position.name)
         name_lbl.setProperty("fontRole", "h3")
-        name_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         self._detail_layout.addWidget(name_lbl)
 
         # Detail rows
@@ -567,20 +707,17 @@ class QtFleetTrackingView(QWidget):
 
         for label_text, value_text in details:
             row_f = QFrame()
-            row_f.setStyleSheet("background-color: transparent;")
             row_f_layout = QHBoxLayout(row_f)
             row_f_layout.setContentsMargins(0, 0, 0, 0)
             row_f_layout.setSpacing(SP["2"])
 
             label_w = QLabel(label_text)
             label_w.setProperty("fontRole", "label")
-            label_w.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             label_w.setFixedWidth(90)
             row_f_layout.addWidget(label_w)
 
             value_w = QLabel(value_text)
             value_w.setProperty("fontRole", "small")
-            value_w.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
             row_f_layout.addWidget(value_w)
 
             row_f_layout.addStretch(1)
@@ -602,7 +739,6 @@ class QtFleetTrackingView(QWidget):
 
             # ── Quick action buttons ─────────────────────────────────
             action_row = QFrame()
-            action_row.setStyleSheet("background-color: transparent;")
             action_layout = QHBoxLayout(action_row)
             action_layout.setContentsMargins(0, SP["2"], 0, 0)
             action_layout.setSpacing(SP["2"])
@@ -821,6 +957,8 @@ class QtFleetTrackingView(QWidget):
             for name in to_remove:
                 widget = self._vehicle_rows.pop(name)
                 self._vehicle_list_layout.removeWidget(widget)
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
 
             if not positions:
@@ -836,6 +974,10 @@ class QtFleetTrackingView(QWidget):
                         variant="primary",
                     ),
                 )
+                # The sidebar is narrow — wrap the copy instead of clipping it
+                # to "…FIRST VEHICLE TO START TRACI".
+                for _lbl in empty.findChildren(QLabel):
+                    _lbl.setWordWrap(True)
                 self._vehicle_list_layout.addWidget(empty)
                 return
 
@@ -856,12 +998,11 @@ class QtFleetTrackingView(QWidget):
     # ── Polling ───────────────────────────────────────────────────────
 
     def _poll_and_update(self) -> None:
-        """Start a background thread to fetch positions."""
+        """Fetch positions on the shared thread pool."""
         with self._lock:
             if self._fetching:
                 return
-        thread = threading.Thread(target=self._fetch_positions, daemon=True)
-        thread.start()
+        WorkerPool.run(fn=self._fetch_positions)
 
     def _fetch_positions(self) -> None:
         """Fetch positions in background — emits signal to update UI."""

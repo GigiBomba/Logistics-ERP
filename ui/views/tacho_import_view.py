@@ -151,16 +151,7 @@ class QtTachoImportView(QWidget):
         self._drop_zone = QFrame()
         self._drop_zone.setAcceptDrops(True)
         self._drop_zone.setMinimumHeight(140)
-        self._drop_zone.setStyleSheet(
-            f"QFrame{{"
-            f"  background: {COLOR_BG_ELEVATED};"
-            f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
-            f"  border-radius: 8px;"
-            f"}}"
-            f"QFrame:hover{{"
-            f"  border-color: {COLOR_INFO_DEFAULT};"
-            f"}}"
-        )
+        self._set_drop_zone_style(False)
         drop_layout = QVBoxLayout(self._drop_zone)
         drop_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
         drop_layout.setSpacing(SP["2"])
@@ -173,6 +164,7 @@ class QtTachoImportView(QWidget):
 
         drop_hint = QLabel(t("tacho.drop_hint", "Trage\u021Bi fi\u0219ierele aici sau ap\u0103sa\u021Bi pentru a selecta"))
         drop_hint.setAlignment(Qt.AlignCenter)
+        drop_hint.setWordWrap(True)
         drop_hint.setStyleSheet(
             f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
             f"color: {COLOR_TEXT_SECONDARY}; background: transparent; border: none;"
@@ -181,9 +173,8 @@ class QtTachoImportView(QWidget):
 
         drop_sub = QLabel(t("tacho.drop_supported", "DDD / TGD / alte fi\u0219iere tahograf"))
         drop_sub.setAlignment(Qt.AlignCenter)
-        drop_sub.setStyleSheet(
-            f"font-size: 11px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;"
-        )
+        drop_sub.setWordWrap(True)
+        drop_sub.setProperty("fontRole", "label")
         drop_layout.addWidget(drop_sub)
 
         # Click to select
@@ -239,40 +230,30 @@ class QtTachoImportView(QWidget):
         if file_path:
             self._run_import(file_path)
 
+    def _set_drop_zone_style(self, drag_active: bool) -> None:
+        """Apply the resting or drag-active drop-zone border (dynamic)."""
+        border = COLOR_INFO_DEFAULT if drag_active else COLOR_BORDER_MEDIUM
+        self._drop_zone.setStyleSheet(
+            f"QFrame{{"
+            f"  background: {COLOR_BG_ELEVATED};"
+            f"  border: 1px dashed {border};"
+            f"  border-radius: 8px;"
+            f"}}"
+            f"QFrame:hover{{"
+            f"  border-color: {COLOR_INFO_DEFAULT};"
+            f"}}"
+        )
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            self._drop_zone.setStyleSheet(
-                f"QFrame{{"
-                f"  background: {COLOR_BG_ELEVATED};"
-                f"  border: 1px dashed {COLOR_INFO_DEFAULT};"
-                f"  border-radius: 8px;"
-                f"}}"
-            )
+            self._set_drop_zone_style(True)
 
     def dragLeaveEvent(self, event):
-        self._drop_zone.setStyleSheet(
-            f"QFrame{{"
-            f"  background: {COLOR_BG_ELEVATED};"
-            f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
-            f"  border-radius: 8px;"
-            f"}}"
-            f"QFrame:hover{{"
-            f"  border-color: {COLOR_INFO_DEFAULT};"
-            f"}}"
-        )
+        self._set_drop_zone_style(False)
 
     def dropEvent(self, event: QDropEvent):
-        self._drop_zone.setStyleSheet(
-            f"QFrame{{"
-            f"  background: {COLOR_BG_ELEVATED};"
-            f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
-            f"  border-radius: 8px;"
-            f"}}"
-            f"QFrame:hover{{"
-            f"  border-color: {COLOR_INFO_DEFAULT};"
-            f"}}"
-        )
+        self._set_drop_zone_style(False)
         for url in event.mimeData().urls():
             path = url.toLocalFile()
             if path:
@@ -339,13 +320,14 @@ class QtTachoImportView(QWidget):
                 ("imported_at", t("tacho.hdr_date"), 110),
                 ("file_type", t("tacho.hdr_type"), 90),
                 ("file_name", t("tacho.hdr_file"), 160),
-                ("records_imported", t("tacho.hdr_records"), 70),
-                ("parse_status", t("tacho.hdr_status"), 70),
+                ("records_imported", t("tacho.hdr_records"), 90),
+                ("parse_status", t("tacho.hdr_status"), 90),
             ],
             prefs_key="tacho_import",
         )
         self._history_table.setSortingEnabled(True)
         self._history_table.horizontalHeader().setSortIndicatorShown(True)
+        self._history_table.horizontalHeader().setMinimumSectionSize(60)
         self._history_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._history_table.customContextMenuRequested.connect(self._show_history_context_menu)
         self._history_table.setMinimumHeight(120)
@@ -368,6 +350,10 @@ class QtTachoImportView(QWidget):
             title=t("tacho.history_empty_title", "Niciun import"),
             subtitle=t("tacho.history_empty_subtitle", "Importa\u021Bi un fi\u0219ier tahograf pentru a vedea istoricul"),
         )
+        # The shared EmptyState component caps its width but does not wrap long
+        # copy — enable wrapping so the empty-state text is never clipped.
+        for _lbl in self._history_empty.findChildren(QLabel):
+            _lbl.setWordWrap(True)
         self._history_table_container.addWidget(self._history_empty)
 
         self._history_card.layout().addWidget(self._history_table_container, 1)
@@ -713,11 +699,15 @@ class QtTachoImportView(QWidget):
 
         old_layout = self.layout()
         if old_layout is not None:
-            # Remove and delete all child widgets
+            # Remove and delete all child widgets — detach immediately
+            # (hide + setParent(None)) so deferred deletes cannot linger under
+            # processEvents-only pumping (Oracle gate-4 M1 idiom).
             while old_layout.count():
                 item = old_layout.takeAt(0)
                 w = item.widget()
                 if w is not None:
+                    w.hide()
+                    w.setParent(None)
                     w.deleteLater()
             # Force-delete the layout now so the widget is layout-free.
             sip.delete(old_layout)

@@ -39,6 +39,7 @@ from ui.components import (
     Btn,
     Card,
     CompactKPICard,
+    CompactRow,
     EmptyState,
     IconButton,
     Label,
@@ -68,13 +69,43 @@ from ui.design_tokens import (
     WARNING,
     WARNING_TEXT,
 )
-from ui.widgets.layout_utils import clear_layout
 from ui.performance_timer import PerfTimer
 from ui.plotly_renderer import PlotlyChartWidget
 from ui.worker_pool import WorkerPool
 from utils.formatters import fmt_currency, fmt_distance, fmt_percentage
 
 logger = logging.getLogger(__name__)
+
+
+class _ElidedLabel(QLabel):
+    """Single-line label that elides overflow text with '…' and exposes the
+    full value as a tooltip.
+
+    Paints the elided form directly so it always fits the current width
+    (window resizes, layout changes) instead of being truncated at build time.
+    """
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self._full_text = text or ""
+        self.setToolTip(self._full_text)
+        self.setWordWrap(False)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+
+    def setText(self, text: str) -> None:
+        self._full_text = text or ""
+        self.setToolTip(self._full_text)
+        super().setText(self._full_text)
+
+    def paintEvent(self, event) -> None:
+        from PySide6.QtGui import QPainter
+
+        painter = QPainter(self)
+        metrics = painter.fontMetrics()
+        elided = metrics.elidedText(self._full_text, Qt.ElideRight, self.width())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(self.rect(), Qt.AlignLeft | Qt.AlignVCenter, elided)
+        painter.end()
 
 
 class QtOverviewView(BaseView):
@@ -352,7 +383,7 @@ class QtOverviewView(BaseView):
         card_layout.addWidget(header)
 
         self._trips_list = QVBoxLayout()
-        self._trips_list.setSpacing(2)
+        self._trips_list.setSpacing(SP["1"])
         card_layout.addLayout(self._trips_list)
 
         layout.addWidget(card_widget)
@@ -366,7 +397,7 @@ class QtOverviewView(BaseView):
         card_layout.addWidget(title)
 
         self._alerts_layout = QVBoxLayout()
-        self._alerts_layout.setSpacing(2)
+        self._alerts_layout.setSpacing(SP["1"])
         card_layout.addLayout(self._alerts_layout)
 
         layout.addWidget(card_widget)
@@ -380,7 +411,7 @@ class QtOverviewView(BaseView):
         card_layout.addWidget(title)
 
         self._top_trucks_layout = QVBoxLayout()
-        self._top_trucks_layout.setSpacing(3)
+        self._top_trucks_layout.setSpacing(SP["1"])
         card_layout.addLayout(self._top_trucks_layout)
 
         layout.addWidget(card_widget)
@@ -394,7 +425,7 @@ class QtOverviewView(BaseView):
         card_layout.addWidget(title)
 
         self._activity_layout = QVBoxLayout()
-        self._activity_layout.setSpacing(2)
+        self._activity_layout.setSpacing(SP["1"])
         card_layout.addLayout(self._activity_layout)
 
         layout.addWidget(card_widget)
@@ -663,34 +694,31 @@ class QtOverviewView(BaseView):
             self._trips_list.addWidget(row)
 
     def _trip_row(self, trip: dict[str, Any]) -> QFrame:
-        row = QFrame()
-        row.setProperty("role", "card-elevated")
-        row.setFixedHeight(34)
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
-        layout.setSpacing(SP["2"])
+        """Build a compact trip row (canonical ``CompactRow`` component).
 
+        Kept as a thin adapter (referenced by tests); all layout/visual work
+        is delegated to ``ui.components.CompactRow``.
+        """
         plate = trip.get("truck_number", "—")
-        plate_lbl = QLabel(plate)
-        plate_lbl.setProperty("fontRole", "body_bold")
-        plate_lbl.setFixedWidth(72)
-        layout.addWidget(plate_lbl)
-
         client = trip.get("client_name", "?")
         origin = trip.get("origin", "?")
         dest = trip.get("destination", "?")
-        route = f"{origin} → {dest}" if origin != "?" else client
+        full_route = f"{origin} → {dest}" if origin != "?" else client
+        route = full_route
         if len(route) > 34:
             route = route[:31] + "…"
-        route_lbl = QLabel(route)
-        route_lbl.setProperty("fontRole", "small")
-        layout.addWidget(route_lbl, 1)
 
         status_key = trip.get("status", "Planned")
-        status_badge = StatusBadge(row, status_key=status_key)
-        layout.addWidget(status_badge)
+        badge = StatusBadge(None, status_key=status_key)
 
-        return row
+        return CompactRow(
+            self,
+            title=plate,
+            title_width=72,
+            secondary=route,
+            secondary_tooltip=full_route,
+            right_widget=badge,
+        )
 
     def _refresh_alerts(self):
         self._clear_layout(self._alerts_layout)
@@ -714,6 +742,7 @@ class QtOverviewView(BaseView):
             row.setFixedHeight(48)
             layout = QHBoxLayout(row)
             layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
+            layout.setSpacing(SP["2"])
 
             sev = getattr(a, "severity", "INFO")
             sev_icon = {
@@ -729,10 +758,12 @@ class QtOverviewView(BaseView):
             icon_lbl.setPixmap(qta.icon(sev_icon, color=sev_color).pixmap(14, 14))
             layout.addWidget(icon_lbl)
 
-            title = getattr(a, "title", getattr(a, "message", "Alert"))
+            full_title = getattr(a, "title", getattr(a, "message", "Alert"))
+            title = full_title
             if len(title) > 40:
                 title = title[:37] + "…"
             title_lbl = QLabel(title)
+            title_lbl.setToolTip(full_title)
             title_lbl.setStyleSheet(
                 f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};"
             )
@@ -741,9 +772,8 @@ class QtOverviewView(BaseView):
             ts = getattr(a, "created_at", "")
             if ts:
                 ts_lbl = QLabel(str(ts)[:16])
-                ts_lbl.setStyleSheet(
-                    f"font-size: {FONT_SIZE_SM}px; color: {COLOR_TEXT_TERTIARY};"
-                )
+                ts_lbl.setToolTip(str(ts))
+                ts_lbl.setProperty("fontRole", "label")
                 layout.addWidget(ts_lbl)
 
             self._alerts_layout.addWidget(row)
@@ -785,8 +815,10 @@ class QtOverviewView(BaseView):
             revenue = float(row.get("revenue", 0))
 
             r = QFrame()
+            r.setFixedHeight(SP["6"])
             layout = QHBoxLayout(r)
-            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setContentsMargins(SP["1"], 0, SP["1"], 0)
+            layout.setSpacing(SP["2"])
 
             idx = QLabel(f"#{i}")
             idx.setFixedWidth(24)
@@ -802,6 +834,7 @@ class QtOverviewView(BaseView):
             layout.addWidget(idx)
 
             plate_lbl = QLabel(plate)
+            plate_lbl.setToolTip(plate)
             plate_lbl.setStyleSheet(
                 f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};"
             )
@@ -811,7 +844,7 @@ class QtOverviewView(BaseView):
             rev_lbl.setStyleSheet(
                 f"font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_BASE}px; color: {SUCCESS_TEXT};"
             )
-            rev_lbl.setAlignment(Qt.AlignRight)
+            rev_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             layout.addWidget(rev_lbl)
 
             self._top_trucks_layout.addWidget(r)
@@ -867,22 +900,26 @@ class QtOverviewView(BaseView):
             date = fmt_date(date_raw)
 
             r = QFrame()
+            r.setFixedHeight(SP["6"])
             layout = QHBoxLayout(r)
-            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setContentsMargins(SP["1"], 0, SP["1"], 0)
+            layout.setSpacing(SP["2"])
 
             date_lbl = QLabel(date)
-            date_lbl.setStyleSheet(f"font-size: {FONT_SIZE_SM}px; color: {COLOR_TEXT_TERTIARY};")
-            date_lbl.setFixedWidth(80)
+            date_lbl.setProperty("fontRole", "label")
+            date_lbl.setFixedWidth(72)
+            date_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             layout.addWidget(date_lbl)
 
             plate_lbl = QLabel(plate)
             plate_lbl.setStyleSheet(
                 f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_SECONDARY}; font-weight: {FONT_WEIGHT_MEDIUM};"
             )
-            plate_lbl.setFixedWidth(70)
+            plate_lbl.setFixedWidth(64)
+            plate_lbl.setToolTip(plate)
             layout.addWidget(plate_lbl)
 
-            client_lbl = QLabel(client[:22])
+            client_lbl = _ElidedLabel(client)
             client_lbl.setStyleSheet(f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};")
             layout.addWidget(client_lbl, 1)
 
@@ -891,13 +928,25 @@ class QtOverviewView(BaseView):
             profit_lbl.setStyleSheet(
                 f"font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_BASE}px; color: {color};"
             )
-            profit_lbl.setAlignment(Qt.AlignRight)
+            profit_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             layout.addWidget(profit_lbl)
 
             self._activity_layout.addWidget(r)
 
     def _clear_layout(self, layout):
-        clear_layout(layout)
+        """Remove all widgets from *layout*, detaching them immediately.
+
+        ``hide()`` + ``setParent(None)`` detach before ``deleteLater()`` so
+        deferred deletes cannot linger under processEvents-only pumping
+        (Oracle gate-4 M1 idiom).
+        """
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
 
     # ── Chart rendering ────────────────────────────────────────────────────────
 
@@ -912,14 +961,7 @@ class QtOverviewView(BaseView):
                 self._chart_render_ts = now
             except Exception as exc:
                 logger.warning("Chart render failed: %s", exc)
-                self._clear_layout(self._chart_container.layout())
-                msg = t("home.profit_no_data", default="Chart unavailable.\nComplete trips to see analytics.")
-                lbl = QLabel(msg)
-                lbl.setProperty("role", "muted")
-                lbl.style().unpolish(lbl)
-                lbl.style().polish(lbl)
-                lbl.setAlignment(Qt.AlignCenter)
-                self._chart_container.layout().addWidget(lbl)
+                self._show_chart_no_data()
 
     def _do_render_chart(self):
         from ui.plotly_renderer import PlotlyChartWidget
@@ -964,11 +1006,22 @@ class QtOverviewView(BaseView):
         self._chart_last_render_ts = time.time()
 
     def _show_chart_no_data(self):
-        msg = t("home.profit_no_data", default="No analytics data available.\nComplete trips to see analytics.")
-        lbl = QLabel(msg)
-        lbl.setProperty("fontRole", "muted")
-        lbl.setAlignment(Qt.AlignCenter)
-        self._chart_container.layout().addWidget(lbl)
+        """Show a single, non-duplicated empty-state element in the chart slot.
+
+        Clears the container first so repeated refresh passes never stack
+        overlapping "no data" labels on top of each other.
+        """
+        layout = self._chart_container.layout()
+        if layout is None:
+            return
+        self._clear_layout(layout)
+        empty = EmptyState(
+            None,
+            icon_name="mdi6.chart-line",
+            title=t("home.profit_no_data", default="No profit data available yet"),
+            subtitle=t("home.profit_no_data_desc", default="Complete trips to see analytics."),
+        )
+        layout.addWidget(empty, 1)
 
     def _build_analytics_chart(self, key: str):
         from ui.plotly_charts import (
@@ -1244,10 +1297,16 @@ class QtOverviewView(BaseView):
                 self._handlers[ev_type] = handler
 
     def _on_data_changed(self, ev):
-        QTimer.singleShot(0, self, self.refresh)
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self.refresh)
+        _timer.start(0)
 
     def _on_language_changed(self, lang: str):
-        QTimer.singleShot(0, self, self.refresh)
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self.refresh)
+        _timer.start(0)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 

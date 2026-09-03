@@ -108,10 +108,7 @@ class DropZone(QFrame):
         self.setAcceptDrops(True)
         self.setObjectName("automationDropZone")
         self.setMinimumHeight(120)
-        self.setStyleSheet(
-            f"QFrame#automationDropZone {{ border: 2px dashed {BORDER_DEFAULT}; "
-            f"border-radius: 8px; background: {BG_SURFACE}; }}"
-        )
+        self._set_drag_style(False)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
         layout.setAlignment(Qt.AlignCenter)
@@ -138,25 +135,24 @@ class DropZone(QFrame):
             if files:
                 self.files_dropped.emit(files)
 
+    def _set_drag_style(self, active: bool) -> None:
+        """Apply the resting (dashed) or drag-active (solid) drop-zone border."""
+        border = f"2px solid {ACCENT}" if active else f"2px dashed {BORDER_DEFAULT}"
+        self.setStyleSheet(
+            f"QFrame#automationDropZone {{ border: {border}; "
+            f"border-radius: 8px; background: {BG_SURFACE}; }}"
+        )
+
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            self.setStyleSheet(
-                f"QFrame#automationDropZone {{ border: 2px solid {ACCENT}; "
-                f"border-radius: 8px; background: {BG_SURFACE}; }}"
-            )
+            self._set_drag_style(True)
 
     def dragLeaveEvent(self, event) -> None:
-        self.setStyleSheet(
-            f"QFrame#automationDropZone {{ border: 2px dashed {BORDER_DEFAULT}; "
-            f"border-radius: 8px; background: {BG_SURFACE}; }}"
-        )
+        self._set_drag_style(False)
 
     def dropEvent(self, event: QDropEvent) -> None:
-        self.setStyleSheet(
-            f"QFrame#automationDropZone {{ border: 2px dashed {BORDER_DEFAULT}; "
-            f"border-radius: 8px; background: {BG_SURFACE}; }}"
-        )
+        self._set_drag_style(False)
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if paths:
             self.files_dropped.emit(paths)
@@ -177,10 +173,10 @@ class _RunCard(QFrame):
         self.run_id = int(run["id"])
         self.setObjectName("automationRunCard")
         self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet(
-            f"QFrame#automationRunCard {{ background: {BG_SURFACE}; "
-            f"border: 1px solid {BORDER_FAINT}; border-radius: 6px; }}"
-        )
+        self.setProperty("role", "panel-elevated")
+        if self.style():
+            self.style().unpolish(self)
+            self.style().polish(self)
         self.setCursor(Qt.PointingHandCursor)
 
         layout = QVBoxLayout(self)
@@ -193,7 +189,7 @@ class _RunCard(QFrame):
 
         status_row = QHBoxLayout()
         self._status_dot = QLabel("\u25cf")
-        self._status_dot.setStyleSheet(f"color: {_RUN_STATUS_COLORS.get(run.get('status', 'imported'), TEXT_MUTED)};")
+        self._set_status_color(run.get("status", "imported"))
         status_row.addWidget(self._status_dot)
         self._stage_lbl = QLabel(run.get("stage") or "\u2014")
         self._stage_lbl.setProperty("fontRole", "small")
@@ -214,6 +210,12 @@ class _RunCard(QFrame):
         self._subtitle.setText(_subtitle_for_run(run))
         layout.addWidget(self._subtitle)
 
+    def _set_status_color(self, status: str) -> None:
+        """Paint the run-status dot with the status colour (dynamic)."""
+        self._status_dot.setStyleSheet(
+            f"color: {_RUN_STATUS_COLORS.get(status, TEXT_MUTED)};"
+        )
+
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
             self.clicked.emit(self.run_id)
@@ -224,9 +226,7 @@ class _RunCard(QFrame):
         if self._title.text() != new_title:
             self._title.setText(new_title)
         self._stage_lbl.setText(run.get("stage") or "\u2014")
-        self._status_dot.setStyleSheet(
-            f"color: {_RUN_STATUS_COLORS.get(run.get('status', ''), TEXT_MUTED)};"
-        )
+        self._set_status_color(run.get("status", ""))
         self._progress.setValue(_progress_from_status(run.get("status", "")))
         new_subtitle = _subtitle_for_run(run)
         if self._subtitle.text() != new_subtitle:
@@ -332,9 +332,8 @@ class _RunDetailPanel(QFrame):
 
         self._fields_box = QLabel()
         self._fields_box.setWordWrap(True)
-        self._fields_box.setProperty("fontRole", "body")
+        self._fields_box.setProperty("fontRole", "muted")
         self._fields_box.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
         layout.addWidget(self._fields_box)
 
         # Simple-mode status label (hidden by default)
@@ -372,9 +371,8 @@ class _RunDetailPanel(QFrame):
 
         # Related documents (hidden by default)
         self._related_label = QLabel()
-        self._related_label.setProperty("fontRole", "small")
+        self._related_label.setProperty("fontRole", "helper")
         self._related_label.setWordWrap(True)
-        self._related_label.setStyleSheet(f"color: {TEXT_MUTED};")
         self._related_label.hide()
         layout.addWidget(self._related_label)
 
@@ -432,7 +430,6 @@ class _RunDetailPanel(QFrame):
     def clear(self) -> None:
         self._title.setText(t("automation.detail_title", default="Select a run to view details"))
         self._fields_box.setText("")
-        self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
         self._simple_status.hide()
         self._current_trip_id = None
         self._current_run_id = None
@@ -446,8 +443,20 @@ class _RunDetailPanel(QFrame):
         self._copy_btn.hide()
         self._download_btn.hide()
         for link in self._candidate_links:
-            link.deleteLater()
+            self._detach_link(link)
         self._candidate_links.clear()
+
+    @staticmethod
+    def _detach_link(link: QPushButton) -> None:
+        """Immediately detach a candidate button before scheduling deletion.
+
+        ``hide()`` + ``setParent(None)`` detach the widget from the layout
+        right away so deferred deletes cannot linger under processEvents-only
+        pumping (Oracle gate-4 M1 idiom).
+        """
+        link.hide()
+        link.setParent(None)
+        link.deleteLater()
 
     def show_run(
         self,
@@ -492,7 +501,6 @@ class _RunDetailPanel(QFrame):
         if run.get("error_message"):
             body.append(f"<br><b>Error:</b> {run['error_message']}")
         self._fields_box.setText("<br>".join(body))
-        self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
 
         self._current_trip_id = int(trip_id) if trip_id else None
         self._current_run_id = int(run.get("id", 0)) if run.get("id") else None
@@ -504,7 +512,7 @@ class _RunDetailPanel(QFrame):
         self._candidate_links_container.hide()
         self._search_all_btn.hide()
         for link in self._candidate_links:
-            link.deleteLater()
+            self._detach_link(link)
         self._candidate_links.clear()
 
         # ------------------------------------------------------------------
@@ -532,7 +540,6 @@ class _RunDetailPanel(QFrame):
                 self._fields_box.setText(
                     f"<b>Status:</b> processed  \u00b7  Linked to trip #{trip_id}"
                 )
-                self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
             else:
                 self._candidates_box.setText(
                     t(
@@ -805,7 +812,13 @@ class QtAutomationView(QueueManagementMixin, QWidget):
 
         self._build_ui()
         self._refresh_from_db()
-        QTimer.singleShot(200, self._recover_stuck_runs)
+        # One-shot startup recovery.  Parented to self so the timer dies
+        # with the widget, and stopped in shutdown() — a dangling
+        # singleShot would fire against a closed/removed database.
+        self._recover_timer = QTimer(self)
+        self._recover_timer.setSingleShot(True)
+        self._recover_timer.timeout.connect(self._recover_stuck_runs)
+        self._recover_timer.start(200)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -927,6 +940,8 @@ class QtAutomationView(QueueManagementMixin, QWidget):
                 widget = item.widget() if item else None
                 if isinstance(widget, _RunCard):
                     self._run_list_layout.removeWidget(widget)
+                    widget.hide()
+                    widget.setParent(None)
                     widget.deleteLater()
             self._cards.clear()
             for run in runs:
@@ -968,6 +983,8 @@ class QtAutomationView(QueueManagementMixin, QWidget):
             if stale not in seen:
                 card = self._cards.pop(stale)
                 self._run_list_layout.removeWidget(card)
+                card.hide()
+                card.setParent(None)
                 card.deleteLater()
                 if self._selected_run_id == stale:
                     self._selected_run_id = None
@@ -1192,6 +1209,7 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         self._configure_folder_watcher()
 
     def shutdown(self) -> None:
+        self._recover_timer.stop()
         self._email_importer.stop()
         self._folder_watcher.stop()
         for worker in list(self._workers.values()):

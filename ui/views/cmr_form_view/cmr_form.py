@@ -31,11 +31,7 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.components import Btn, Card, CardHeader, Divider, EmptyState, Label, PageTitle
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_SECONDARY,
     SP,
-    SPACE_1,
 )
 from ui.form_utils import add_required_indicator
 from ui.widgets import (
@@ -339,8 +335,9 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
 
         # Subtitle label
         sub_lbl = QLabel(subtitle)
-        sub_lbl.setProperty("role", "muted")
-        sub_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 10px;")
+        sub_lbl.setProperty("role", "section-subtitle")
+        sub_lbl.style().unpolish(sub_lbl)
+        sub_lbl.style().polish(sub_lbl)
 
         # ── Divider ───────────────────────────────────────────────────
         div = Divider()
@@ -614,17 +611,10 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         self._progress_bar.setFixedHeight(4)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setVisible(False)
-        self._progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {COLOR_BORDER_SUBTLE};
-                border: none;
-                border-radius: 2px;
-            }}
-            QProgressBar::chunk {{
-                background: {COLOR_ACCENT_PRIMARY};
-                border-radius: 2px;
-            }}
-        """)
+        # Thin 2px-radius progress bar via the global theme.
+        self._progress_bar.setProperty("role", "thin-bar")
+        self._progress_bar.style().unpolish(self._progress_bar)
+        self._progress_bar.style().polish(self._progress_bar)
         bar_layout.addWidget(self._progress_bar)
 
         # ── Button row ────────────────────────────────────────────────

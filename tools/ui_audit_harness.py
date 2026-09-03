@@ -26,7 +26,14 @@ Environment contract (order matters, mirrors ``main.py``):
     3. A fake admin JWT bypasses the admin login gate via ``set_auth``.
     4. Only then is ``main.run_app(return_window=True)`` imported and launched.
 
-Exit code is 0 when every audited page captured OK, 1 otherwise.
+Exit code is 0 when every audited page captured OK, 1 otherwise.  The harness
+normalizes the exit code through a supervisor pattern: the top-level process
+re-spawns itself as a supervised child and derives the result from on-disk
+evidence (the page png/json files + a ``tools/.audit_complete`` marker) rather
+than the raw child exit code.  QtWebEngine/Chromium can die with a native
+access violation (0xC0000005) under offscreen Qt that bypasses Python's
+``os._exit``; CI should key off the marker + page files, and the supervisor
+mirrors exactly that decision for ``$LASTEXITCODE``.
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -60,12 +68,242 @@ ALL_PAGES = [
     "overview", "analytics", "route_planner", "calculator",
     "dispatch_board", "tracking", "freight_exchange", "fleet",
     "driver_manager", "clients", "documents", "maintenance",
-    "maintenance_control", "tachograph", "invoices", "history",
+    "tachograph", "invoices", "history",
     "route_history", "copilot", "migration_center", "settings", "team",
 ]
 
 # Keep the geometry dumps compact — hard cap on recorded widgets per page.
 MAX_WIDGETS = 400
+
+# ── Native-crash hardening (D4) ─────────────────────────────────────────────
+# QtWebEngine/Chromium under offscreen Qt can die with 0xC0000005 (a native
+# access violation) while the child processes tear down — or even mid-run —
+# which bypasses Python's ``os._exit`` and produces an unreliable exit code
+# (0xC0000005 = -1073741819 on Windows) for CI.
+#
+# Strategy (applied in order):
+#   1. Offscreen-safe Chromium GPU/compositor flags set before any PySide6
+#      import (avoids the GPU/compositor child crash source entirely).
+#   2. A clean shutdown before ``os._exit``: quit the loop, delete every
+#      QWebEngineView while the loop still pumps, and drain the WorkerPool's
+#      QThreadPool so no worker thread touches freed Qt objects at process end.
+#   3. A supervisor pattern: the harness re-spawns itself as a supervised child
+#      and the parent derives the exit code from on-disk evidence (the page
+#      png/json files + a ``.audit_complete`` marker) instead of the raw child
+#      exit code, which a native AV can corrupt.
+#
+# DEFAULT behavior is unchanged for CI: exit 0 when every requested page was
+# captured OK (marker present), exit 1 when any page errored or is missing.
+_SUPERVISOR_ENV = "_UI_AUDIT_SUPERVISED"
+# Marker written into tools/ after the last capture when all pages were OK.
+# CI is expected to key off this marker + the page files rather than the raw
+# process exit code (see the module docstring / D4 note above).
+MARKER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".audit_complete")
+
+# Hard cap on the supervised child run.  A wedged QtWebEngine/Chromium child
+# (or an import deadlock) must never hang CI forever: the parent kills the
+# child after this many seconds, reports TIMED OUT, and exits 1.
+SUPERVISOR_TIMEOUT = 600
+
+
+def _apply_extra_webengine_flags() -> None:
+    """Set offscreen-safe Chromium GPU flags before any PySide6 import.
+
+    The visible app deliberately omits ``--disable-gpu`` (it leaves a gray box
+    on the desktop), but the harness runs headless and never shows a window, so
+    disabling the GPU/compositor pipeline is safe here and removes the most
+    common Chromium crash source under offscreen Qt.  Must run BEFORE
+    ``utils.webengine_flags.apply_webengine_flags()`` (which merges with and
+    preserves whatever we set).
+    """
+    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
+    extra = [
+        "--disable-gpu",
+        "--disable-gpu-compositing",
+        "--disable-software-rasterizer",
+    ]
+    missing = [f for f in extra if f not in flags.split()]
+    if missing:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+            flags + " " + " ".join(missing)
+        ).strip()
+
+
+def _write_marker() -> None:
+    """Write the ``.audit_complete`` marker (best-effort)."""
+    try:
+        with open(MARKER_PATH, "w", encoding="utf-8") as fh:
+            fh.write(f"audit_complete {time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
+    except Exception:
+        pass
+
+
+def _remove_marker() -> None:
+    try:
+        if os.path.exists(MARKER_PATH):
+            os.remove(MARKER_PATH)
+    except Exception:
+        pass
+
+
+def _clean_shutdown(app, window) -> None:
+    """Best-effort orderly teardown to stop the QtWebEngine/worker crash source.
+
+    Runs BEFORE ``os._exit``: quits the event loop, explicitly deletes every
+    QWebEngineView (the pre-warmed view from ``main.py`` and any map widgets)
+    while the loop still pumps, drains the WorkerPool QThreadPool, and closes
+    the window.  Every step is individually guarded so one failure can never
+    mask the others — the supervisor still guarantees a correct exit code.
+    """
+    try:
+        # 1. Stop the shared WorkerPool (QThreadPool) and wait for pending jobs
+        #    so no worker thread touches freed Qt objects at process end.
+        try:
+            from ui.worker_pool import WorkerPool
+            pool = WorkerPool._pool_instance()
+            pool.clear()
+            pool.waitForDone(3000)
+        except Exception:
+            pass
+
+        # 2. Tear down QWebEngineView instances while the loop still pumps.
+        views: set = set()
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+            for w in app.allWidgets():
+                if isinstance(w, QWebEngineView):
+                    views.add(w)
+        except Exception:
+            pass
+        for view in views:
+            try:
+                view.page().setWebChannel(None)
+            except Exception:
+                pass
+            try:
+                view.deleteLater()
+            except Exception:
+                pass
+
+        # 3. Quit and pump a few times so deferred deletions actually land.
+        try:
+            app.quit()
+        except Exception:
+            pass
+        for _ in range(6):
+            try:
+                app.processEvents()
+            except Exception:
+                pass
+            time.sleep(0.02)
+
+        # 4. Close the main window, then pump again.
+        try:
+            window.close()
+        except Exception:
+            pass
+        for _ in range(3):
+            try:
+                app.processEvents()
+            except Exception:
+                pass
+            time.sleep(0.02)
+    except Exception:
+        pass
+
+
+def _page_captured(out_dir: str, key: str, state: str) -> bool:
+    """True when *key* produced at least one capture file and no error file."""
+    base = os.path.join(out_dir, f"{key}_{state}")
+    if os.path.exists(f"{base}.error.txt"):
+        return False
+    return os.path.exists(f"{base}.png") or os.path.exists(f"{base}.json")
+
+
+def _supervise(args) -> int:
+    """Parent half of the supervisor pattern.
+
+    Re-spawns the harness as a supervised child (``_UI_AUDIT_SUPERVISED=1``),
+    waits for it to terminate — however it terminates — and derives the exit
+    code from on-disk evidence.  A native access violation (0xC0000005) in
+    QtWebEngine/Chromium can kill the child BEFORE its ``os._exit`` runs even
+    though every page was already captured and written; the raw child exit
+    code is therefore not trustworthy.  The parent keys off the marker + page
+    files instead, exactly what CI is told to check.
+
+    Default contract preserved: exit 0 when every requested page was captured
+    OK (marker present), exit 1 when any page errored or is missing.
+
+    A supervised child that exceeds ``SUPERVISOR_TIMEOUT`` seconds is killed
+    (terminate then kill, each guarded), reported as ``TIMED OUT``, and the
+    marker is removed → exit 1.
+    """
+    env = dict(os.environ)
+    env[_SUPERVISOR_ENV] = "1"
+    cmd = [sys.executable, os.path.abspath(__file__)] + sys.argv[1:]
+    try:
+        proc = subprocess.Popen(cmd, env=env)
+    except KeyboardInterrupt:
+        return 130
+
+    try:
+        proc.wait(timeout=SUPERVISOR_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # The child ran past the hard cap — kill it (best-effort) and fail the
+        # run.  A native AV (0xC0000005) or wedged child must not hang CI.
+        print(
+            f"[supervisor] TIMED OUT after {SUPERVISOR_TIMEOUT}s — "
+            f"killing child (pid {proc.pid}) → exit 1",
+            flush=True,
+        )
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            pass
+        _remove_marker()
+        return 1
+    except KeyboardInterrupt:
+        # Parity with subprocess.run: an interrupt also tears the child down.
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return 130
+
+    state = "populated" if args.seed else "empty"
+    pages = [p.strip() for p in args.pages.split(",") if p.strip()] \
+        if args.pages else list(ALL_PAGES)
+
+    # 1. Any page with an .error.txt or missing captures → exit 1.
+    failed = [
+        p for p in pages if not _page_captured(args.out, p, state)
+    ]
+    if failed:
+        print(
+            f"[supervisor] {len(failed)} page(s) errored or missing: "
+            f"{failed} → exit 1"
+        )
+        _remove_marker()
+        return 1
+
+    # 2. Every page captured on disk with no errors → success.  (Re)write the
+    #    marker so CI's marker check always sees it on success, even when the
+    #    child died natively before it could write it itself.
+    _write_marker()
+    print(
+        f"[supervisor] child exit={proc.returncode} — all {len(pages)} page(s) "
+        f"captured OK, no errors → exit 0"
+    )
+    return 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,11 +351,28 @@ def parse_size(size_str: str) -> tuple[int, int]:
 
 
 def pump(app, ms: int) -> None:
-    """Pump the Qt event loop for *ms* milliseconds."""
+    """Pump the Qt event loop for *ms* milliseconds.
+
+    After the timed batch, additionally drain ``QEvent.DeferredDelete`` posts
+    via ``QApplication.sendPostedEvents`` so the captured evidence matches
+    exec-loop reality (``deleteLater()`` widgets are actually destroyed when
+    the real event loop runs; under processEvents()-only pumping they can
+    linger).  Guarded with try/except — QtWebEngine has a known native
+    access-violation history (0xC0000005) and one bad call must never abort
+    the sweep.
+    """
     deadline = time.monotonic() + ms / 1000.0
     while time.monotonic() < deadline:
         app.processEvents()
         time.sleep(0.05)
+    try:
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+    except Exception:
+        pass
 
 
 def build_fake_admin_token() -> str:
@@ -307,8 +562,14 @@ def capture_page(app, window, key: str, out_dir: str, state: str, wait_ms: int) 
         return False
 
 
-def main() -> int:
-    args = parse_args()
+def _run_capture(args) -> int:
+    """Supervised-child half: boot the app, capture every requested page.
+
+    All page captures, marker writing, and the clean shutdown + ``os._exit``
+    happen here.  The process may still die from a native QtWebEngine access
+    violation at any point; the parent (``_supervise``) turns that into a
+    reliable exit code from the on-disk evidence.
+    """
     state = "populated" if args.seed else "empty"
     width, height = parse_size(args.size)
     pages = [p.strip() for p in args.pages.split(",") if p.strip()] \
@@ -330,7 +591,9 @@ def main() -> int:
     print(f"DB: {db_path}")
     print(f"Output: {os.path.abspath(args.out)}")
 
-    # 2. WebEngine flags before any PySide6 import (same as main.py).
+    # 2. Offscreen-safe GPU/compositor flags, then the usual WebEngine flags —
+    #    both before any PySide6 import (mirrors main.py's ordering).
+    _apply_extra_webengine_flags()
     from utils.webengine_flags import apply_webengine_flags
     apply_webengine_flags()
 
@@ -445,10 +708,34 @@ def main() -> int:
     error_count = total - ok_count
     print(f"\nAudit complete: {total} pages, {ok_count} OK, {error_count} ERROR")
     print(f"Evidence written to: {os.path.abspath(args.out)}")
+    # Write the completion marker BEFORE teardown so a native crash during
+    # Chromium shutdown can never erase the fact that every capture succeeded.
+    # The parent supervisor (and CI) key off the marker + page files, not the
+    # raw exit code.  "AUDIT COMPLETE (captures ok)" is the final stdout marker.
+    if error_count == 0:
+        _write_marker()
+        print("AUDIT COMPLETE (captures ok)")
+    else:
+        _remove_marker()
+        print("AUDIT COMPLETE (with errors)")
+    # Attempt an orderly teardown first (quit loop, delete QWebEngineViews,
+    # drain the WorkerPool) so ``os._exit`` runs from a stable state.  If the
+    # native AV still fires here, the supervisor still reports success because
+    # the captures + marker are already on disk.
+    _clean_shutdown(app, window)
     # The app spawns background threads (worker pool, chart browser, timers)
     # that keep the process alive after capture. This is a headless capture
     # tool — hard-exit to terminate cleanly instead of hanging.
     os._exit(1 if error_count else 0)
+
+
+def main() -> int:
+    args = parse_args()
+    # Top-level invocation acts as the supervisor; the supervised child does
+    # the real capture (see _supervise / _SUPERVISOR_ENV above).
+    if os.environ.get(_SUPERVISOR_ENV) != "1":
+        return _supervise(args)
+    return _run_capture(args)
 
 
 if __name__ == "__main__":

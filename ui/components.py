@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from services.i18n import t
 from ui.design_tokens import (
-    BORDER_FAINT,
     BTN_HEIGHT,
     BTN_HEIGHT_LG,
     BTN_HEIGHT_SM,
@@ -39,6 +39,7 @@ from ui.design_tokens import (
     COLOR_ERROR_TEXT,
     COLOR_NEUTRAL_SUBTLE,
     COLOR_NEUTRAL_TEXT,
+    COLOR_SUCCESS_DEFAULT,
     COLOR_SUCCESS_SUBTLE,
     COLOR_SUCCESS_TEXT,
     COLOR_TEXT_PRIMARY,
@@ -48,8 +49,6 @@ from ui.design_tokens import (
     DANGER_TEXT,
     FADE_MS,
     FONT_MONO,
-    FONT_SIZE_BASE,
-    FONT_SIZE_MD,
     FONT_SIZE_SM,
     FONT_SIZE_XL,
     FONT_SIZE_XS,
@@ -59,7 +58,6 @@ from ui.design_tokens import (
     FONT_WEIGHT_SEMIBOLD,
     HOVER_MS,
     INPUT_HEIGHT,
-    RADIUS_LG,
     RADIUS_MD,
     RADIUS_PILL,
     RADIUS_SM,
@@ -126,6 +124,65 @@ def MonoLabel(parent, text="", size="body") -> QLabel:
     return lbl
 
 
+class StateLabel(QLabel):
+    """Theme-driven label: static typography via a ``role``/``fontRole`` plus
+    an optional ``state`` property for role+state stateful variants.
+
+    The static geometry/typography lives in the global QSS role catalog
+    (``ui/theme_engine.py``); callers pass the role name and may switch the
+    ``state`` at runtime followed by ``unpolish/polish``.
+    """
+
+    def __init__(self, parent=None, text="", role="", fontRole="", state=None):
+        super().__init__(text, parent)
+        self.setAccessibleName(text)
+        if role:
+            self.setProperty("role", role)
+        if fontRole:
+            self.setProperty("fontRole", fontRole)
+        if state is not None:
+            self.setProperty("state", state)
+        if (role or fontRole) and self.style():
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+    def set_state(self, state: str) -> None:
+        """Switch the stateful variant and re-resolve the style."""
+        self.setProperty("state", state)
+        if self.style():
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+
+class Dot(QLabel):
+    """Fixed-size coloured status/waypoint dot.
+
+    Static geometry (10x10 fixed size, 5px rounding) comes from the ``dot``
+    theme role; the fill colour is a runtime token parameter applied directly
+    (DYNAMIC, like every other runtime-colour component sheet).
+    """
+
+    def __init__(self, parent=None, color="", size=10):
+        super().__init__(parent)
+        self._color = color or COLOR_TEXT_TERTIARY
+        self.setFixedSize(size, size)
+        self.setProperty("role", "dot")
+        self.setAccessibleName("Status dot")
+        sheet = f"background-color: {self._color};"
+        self.setStyleSheet(sheet)
+        if self.style():
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+    def set_color(self, color: str) -> None:
+        self._color = color
+        sheet = f"background-color: {self._color};"
+        self.setStyleSheet(sheet)
+        if self.style():
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+
 class _Btn(QPushButton):
     """QPushButton that also activates on Enter/Return when focused.
 
@@ -161,6 +218,53 @@ def Btn(parent, text="", variant="secondary",
     if command:
         btn.clicked.connect(command)
     return btn
+
+
+class ActionButton(_Btn):
+    """Canonical action button — consolidated from ``ui/widgets/__init__.py``.
+
+    Same public API as the legacy class:
+    ``ActionButton(parent, text, command=None, color=None, hover_color=None,
+    width=None, variant="primary", **kwargs)`` so existing callers keep working
+    unchanged. Variants resolve through the global QSS ``variant`` property
+    (primary / secondary / danger / ghost / success) exactly like :func:`Btn`;
+    an explicit ``color`` is only honoured when it cannot be mapped onto a
+    variant (success / danger / primary).
+    """
+
+    _VARIANT_FROM_COLOR = {
+        COLOR_SUCCESS_DEFAULT.lower(): "success",
+        COLOR_ERROR_DEFAULT.lower(): "danger",
+        COLOR_ACCENT_PRIMARY.lower(): "primary",
+    }
+
+    def __init__(
+        self,
+        parent,
+        text,
+        command=None,
+        color=None,
+        hover_color=None,
+        width=None,
+        variant="primary",
+        **kwargs,
+    ):
+        super().__init__(text, parent)
+        if color:
+            inferred = self._VARIANT_FROM_COLOR.get(color.lower())
+            if inferred:
+                variant = inferred
+        self.setProperty("variant", variant)
+        if width is not None:
+            self.setFixedWidth(width)
+        if command:
+            self.clicked.connect(command)
+        # Explicit color override: only used when no variant could be inferred.
+        if color and color.lower() not in self._VARIANT_FROM_COLOR:
+            self.setStyleSheet(
+                f"QPushButton {{ background-color: {color}; }}\n"
+                f"QPushButton:hover {{ background-color: {hover_color or color}; }}"
+            )
 
 
 def Card(parent=None, padding=True) -> QFrame:
@@ -273,10 +377,9 @@ class UniversalCard(QFrame):
         if icon_name:
             icon_container = QFrame(header)
             icon_container.setFixedSize(32, 32)
-            icon_container.setStyleSheet(
-                f"background: {COLOR_BG_OVERLAY}; border-radius: {RADIUS_SM}px; "
-                f"border: none;"
-            )
+            icon_container.setProperty("role", "icon-container")
+            icon_container.style().unpolish(icon_container)
+            icon_container.style().polish(icon_container)
             icon_lyt = QHBoxLayout(icon_container)
             icon_lyt.setContentsMargins(0, 0, 0, 0)
             icon_lbl = QLabel()
@@ -291,10 +394,9 @@ class UniversalCard(QFrame):
 
         # Title
         self._title_lbl = QLabel(title)
-        self._title_lbl.setStyleSheet(
-            f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; "
-            f"color: {COLOR_TEXT_PRIMARY}; background: transparent; border: none;"
-        )
+        self._title_lbl.setProperty("fontRole", "base-semibold")
+        self._title_lbl.style().unpolish(self._title_lbl)
+        self._title_lbl.style().polish(self._title_lbl)
         header_layout.addWidget(self._title_lbl)
 
         header_layout.addStretch()
@@ -317,24 +419,24 @@ class UniversalCard(QFrame):
         self._primary_lbl = None
         if primary:
             self._primary_lbl = QLabel(primary)
-            self._primary_lbl.setStyleSheet(
-                f"font-size: {FONT_SIZE_MD}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
-                f"color: {COLOR_TEXT_PRIMARY}; background: transparent; border: none;"
-            )
+            self._primary_lbl.setProperty("role", "card-primary")
+            self._primary_lbl.style().unpolish(self._primary_lbl)
+            self._primary_lbl.style().polish(self._primary_lbl)
             layout.addWidget(self._primary_lbl)
 
         # ── Secondary info ───────────────────────────────────────────
         self._secondary_lbl = None
         if secondary:
             self._secondary_lbl = QLabel(secondary)
-            self._secondary_lbl.setStyleSheet(
-                f"font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_REGULAR}; "
-                f"color: {COLOR_TEXT_SECONDARY}; background: transparent; border: none;"
-            )
+            self._secondary_lbl.setProperty("fontRole", "sm-secondary")
+            self._secondary_lbl.style().unpolish(self._secondary_lbl)
+            self._secondary_lbl.style().polish(self._secondary_lbl)
             layout.addWidget(self._secondary_lbl)
 
         # ── Card styling ─────────────────────────────────────────────
-        self._apply_style(False)
+        self.setProperty("role", "universal-card")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     # ── Public setters ────────────────────────────────────────────────
 
@@ -359,22 +461,12 @@ class UniversalCard(QFrame):
 
     # ── Hover / style ────────────────────────────────────────────────
 
-    def _apply_style(self, hovered: bool) -> None:
-        border = COLOR_BORDER_STRONG if hovered else COLOR_BORDER_SUBTLE
-        self.setStyleSheet(f"""
-            UniversalCard {{
-                background: {COLOR_BG_ELEVATED};
-                border: 1px solid {border};
-                border-radius: {RADIUS_LG}px;
-            }}
-        """)
-
     def enterEvent(self, event) -> None:
-        self._apply_style(True)
+        # Hover border-brightening is handled by the theme's
+        # ``QFrame[role="universal-card"]:hover`` rule.
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
-        self._apply_style(False)
         super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
@@ -419,21 +511,21 @@ def SectionDivider(parent, title: str) -> QFrame:
     - 4px margin above text, 12px below the widget
     """
     container = QFrame(parent)
-    container.setStyleSheet("background: transparent;")
     layout = QHBoxLayout(container)
     layout.setContentsMargins(0, 4, 0, 0)
     layout.setSpacing(0)
 
     line = QFrame(container)
-    line.setStyleSheet(f"background: {BORDER_FAINT};")
+    line.setProperty("role", "faint-line")
+    line.style().unpolish(line)
+    line.style().polish(line)
     line.setFixedHeight(1)
     line.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     lbl = QLabel(f"  {title.upper()}  ", container)
-    lbl.setStyleSheet(
-        f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600; "
-        f"letter-spacing: 0.08em; background: transparent;"
-    )
+    lbl.setProperty("role", "section-divider-label")
+    lbl.style().unpolish(lbl)
+    lbl.style().polish(lbl)
     lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     layout.addWidget(line)
@@ -505,9 +597,9 @@ class CompactKPICard(QFrame):
         if icon_name:
             icon_container = QFrame(self)
             icon_container.setFixedSize(28, 28)
-            icon_container.setStyleSheet(
-                f"background: {COLOR_BG_OVERLAY}; border-radius: {RADIUS_SM}px;"
-            )
+            icon_container.setProperty("role", "icon-container")
+            icon_container.style().unpolish(icon_container)
+            icon_container.style().polish(icon_container)
             icon_layout = QHBoxLayout(icon_container)
             icon_layout.setContentsMargins(0, 0, 0, 0)
             icon_lbl = QLabel()
@@ -524,10 +616,9 @@ class CompactKPICard(QFrame):
         text_layout.setAlignment(Qt.AlignVCenter)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(
-            f"font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
-            f"color: {COLOR_TEXT_SECONDARY}; letter-spacing: 0.04em;"
-        )
+        lbl.setProperty("role", "compact-kpi-label")
+        lbl.style().unpolish(lbl)
+        lbl.style().polish(lbl)
         text_layout.addWidget(lbl)
 
         val = QLabel(value)
@@ -563,36 +654,88 @@ class CompactKPICard(QFrame):
 # Status badge (pill-shaped, per design system)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def StatusBadge(parent, status_key: str = "", text: str = "") -> QLabel:
-    """Create a pill-shaped status badge.
+class StatusBadge(QLabel):
+    """Pill or solid status badge label.
 
-    status_key: one of the keys in STATUS_STYLES (e.g. "Delivered", "Cancelled")
+    The default (``solid=False``) renders the classic pill-shaped outline badge
+    (1px tinted border, fully rounded, semibold uppercased text). ``solid=True``
+    renders a borderless filled chip with a compact radius and regular-weight
+    non-uppercased text by default — matching the dispatch trip-card status and
+    delayed chips. ``bg_color`` / ``text_color`` override the per-status colour
+    pair for special cases (e.g. the white-on-solid-red delayed chip).
+
+    ``status_key`` is one of the keys in STATUS_STYLES (e.g. "Delivered",
+    "Cancelled"); when it is unknown, ``text`` is used as the label.
     """
-    label, text_color, bg_color = STATUS_STYLES.get(
-        status_key.lower().replace(" ", "_"),
-        (status_key or text, COLOR_NEUTRAL_TEXT, COLOR_NEUTRAL_SUBTLE),
-    )
-    display = text or label
-    # 1px border at 30% opacity of text color
-    border_color = f"{text_color}4D"  # 30% alpha hex
 
-    badge = QLabel(display.upper(), parent)
-    badge.setAccessibleName(text or status_key or "Status badge")
-    badge.setAccessibleDescription(f"Status: {display}")
-    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    badge.setStyleSheet(f"""
-        background: {bg_color};
-        color: {text_color};
-        border-radius: {RADIUS_PILL}px;
-        border: 1px solid {border_color};
-        padding: 2px 8px;
-        font-size: {FONT_SIZE_SM}px;
-        font-weight: {FONT_WEIGHT_SEMIBOLD};
-        letter-spacing: 0.04em;
-    """)
-    badge.setFixedHeight(20)
-    badge.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-    return badge
+    def __init__(
+        self,
+        parent=None,
+        status_key: str = "",
+        text: str = "",
+        solid: bool = False,
+        uppercase: bool = True,
+        bg_color: str | None = None,
+        text_color: str | None = None,
+    ):
+        super().__init__(parent)
+        self._solid = bool(solid)
+        self._uppercase = bool(uppercase)
+        self._override_bg = bg_color
+        self._override_text = text_color
+        self.setProperty("role", "status-chip")
+        self.setProperty("solid", "true" if self._solid else "false")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.set_status(status_key, text)
+
+    def set_status(self, status_key: str = "", text: str = "") -> None:
+        """Re-resolve the status colours and label text, then re-render."""
+        self._status_key = status_key
+        label_key, _, _ = STATUS_STYLES.get(
+            (status_key or "").lower().replace(" ", "_"),
+            (status_key or text, COLOR_NEUTRAL_TEXT, COLOR_NEUTRAL_SUBTLE),
+        )
+        self._display = text or t(label_key)
+        self.setAccessibleName(text or status_key or "Status badge")
+        self.setAccessibleDescription(f"Status: {self._display}")
+        self._apply()
+
+    def set_colors(self, bg_color: str | None = None, text_color: str | None = None) -> None:
+        """Override the chip colour pair (keeps the current label text)."""
+        self._override_bg = bg_color
+        self._override_text = text_color
+        self._apply()
+
+    def _apply(self) -> None:
+        _, default_text_color, default_bg = STATUS_STYLES.get(
+            (self._status_key or "").lower().replace(" ", "_"),
+            (self._status_key or self._display, COLOR_NEUTRAL_TEXT, COLOR_NEUTRAL_SUBTLE),
+        )
+        bg = self._override_bg or default_bg
+        txt = self._override_text or default_text_color
+        radius = RADIUS_SM if self._solid else RADIUS_PILL
+        weight = FONT_WEIGHT_REGULAR if self._solid else FONT_WEIGHT_SEMIBOLD
+        # Solid chips use the trip-card inset (1px vertical / 4px horizontal);
+        # outline badges keep the pill's 2px/8px padding.
+        pad = "1px 4px" if self._solid else "2px 8px"
+        display = self._display.upper() if self._uppercase else self._display
+        sheet = (
+            f"background: {bg};\n"
+            f"color: {txt};\n"
+            f"border-radius: {radius}px;\n"
+            f"padding: {pad};\n"
+            f"font-size: {FONT_SIZE_SM}px;\n"
+            f"font-weight: {weight};\n"
+        )
+        if not self._solid:
+            # 1px border at 30% opacity of the text color
+            sheet += f"border: 1px solid {txt}4D;\n"
+            # Outline badges carry the design-system letter-spacing.
+            sheet += "letter-spacing: 0.04em;\n"
+        self.setText(display)
+        self.setStyleSheet(sheet)
+        self.setFixedHeight(20)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
 
 # Backward-compatible alias
@@ -635,20 +778,20 @@ class EmptyState(QFrame):
 
         if title:
             title_lbl = QLabel(title)
-            title_lbl.setStyleSheet(
-                "font-size: 15px; font-weight: 500; "
-                f"color: {COLOR_TEXT_SECONDARY};"
-            )
+            title_lbl.setProperty("role", "empty-title")
+            title_lbl.style().unpolish(title_lbl)
+            title_lbl.style().polish(title_lbl)
             title_lbl.setAlignment(Qt.AlignCenter)
+            title_lbl.setWordWrap(True)
             layout.addWidget(title_lbl)
 
         if subtitle:
             sub_lbl = QLabel(subtitle)
-            sub_lbl.setStyleSheet(
-                "font-size: 13px; font-weight: 400; "
-                f"color: {COLOR_TEXT_TERTIARY};"
-            )
+            sub_lbl.setProperty("fontRole", "muted")
+            sub_lbl.style().unpolish(sub_lbl)
+            sub_lbl.style().polish(sub_lbl)
             sub_lbl.setAlignment(Qt.AlignCenter)
+            sub_lbl.setWordWrap(True)
             layout.addWidget(sub_lbl)
 
         if cta_button:
@@ -696,24 +839,11 @@ def SearchInput(parent, placeholder="", on_text_changed=None) -> QLineEdit:
     search.setClearButtonEnabled(True)
     if on_text_changed:
         search.textChanged.connect(on_text_changed)
-    search.setStyleSheet(f"""
-        QLineEdit {{
-            background: {COLOR_BG_OVERLAY};
-            border: 1px solid {COLOR_BORDER_MEDIUM};
-            border-radius: {RADIUS_MD}px;
-            padding: 6px 10px;
-            color: {COLOR_TEXT_PRIMARY};
-        }}
-        QLineEdit:hover {{
-            border-color: {COLOR_BORDER_STRONG};
-        }}
-        QLineEdit:focus {{
-            border-color: {COLOR_ACCENT_PRIMARY};
-        }}
-        QLineEdit::placeholder {{
-            color: {COLOR_TEXT_TERTIARY};
-        }}
-    """)
+    # Renders through the global QLineEdit rules + the search-input hover/focus
+    # overrides in ui/theme_engine.py (bg, border, radius, padding, placeholder).
+    search.setProperty("role", "search-input")
+    search.style().unpolish(search)
+    search.style().polish(search)
     search.setFixedHeight(INPUT_HEIGHT)
     search.setMinimumWidth(200)
     return search
@@ -753,9 +883,14 @@ class _IconButton(QPushButton):
 
 
 def IconButton(parent, icon_name="", tooltip="", variant="ghost",
-               size=16, command=None) -> QPushButton:
-    """Icon-only button. Variants: ghost, primary, danger, success, muted.
-    size = button height in px.
+               size=16, command=None, text="", icon_size=None) -> QPushButton:
+    """Icon-only (or glyph-text) button.
+
+    Variants: ghost, primary, danger, success, muted, flat.
+    size = button width/height in px.
+    text = optional glyph text rendered instead of an icon (e.g. the compact
+           18px dispatch action buttons); styled at ``FONT_SIZE_XS``.
+    icon_size = optional explicit icon size in px; defaults to ``size - 8``.
     """
     _BTN_ICON_COLOR = {
         "ghost": COLOR_TEXT_SECONDARY,
@@ -763,6 +898,7 @@ def IconButton(parent, icon_name="", tooltip="", variant="ghost",
         "danger": COLOR_ERROR_TEXT,
         "success": COLOR_SUCCESS_TEXT,
         "muted": COLOR_TEXT_TERTIARY,
+        "flat": COLOR_TEXT_TERTIARY,
     }
     _BTN_HOVER_ICON = {
         "ghost": COLOR_TEXT_PRIMARY,
@@ -770,6 +906,7 @@ def IconButton(parent, icon_name="", tooltip="", variant="ghost",
         "danger": COLOR_ERROR_TEXT,
         "success": COLOR_SUCCESS_TEXT,
         "muted": COLOR_TEXT_SECONDARY,
+        "flat": COLOR_TEXT_PRIMARY,
     }
     _BTN_HOVER_BG = {
         "ghost": COLOR_BG_OVERLAY,
@@ -777,39 +914,114 @@ def IconButton(parent, icon_name="", tooltip="", variant="ghost",
         "danger": COLOR_ERROR_SUBTLE,
         "success": COLOR_SUCCESS_SUBTLE,
         "muted": COLOR_BG_OVERLAY,
+        "flat": COLOR_BG_HOVER,
     }
 
-    icon_size = max(1, size - 8)
+    resolved_icon_size = icon_size if icon_size is not None else max(1, size - 8)
     radius = RADIUS_SM if size <= 28 else RADIUS_MD
     icon_color = _BTN_ICON_COLOR.get(variant, COLOR_TEXT_SECONDARY)
     hover_icon = _BTN_HOVER_ICON.get(variant, icon_color)
     hover_bg = _BTN_HOVER_BG.get(variant, "transparent")
 
-    btn = _IconButton(
-        parent=parent,
-        icon_name=icon_name,
-        icon_color=icon_color,
-        hover_color=hover_icon,
-        icon_size=icon_size,
-    )
-    btn.setAccessibleName(tooltip or icon_name)
-    btn.setToolTip(tooltip)
-    btn.setFixedSize(size, size)
-    btn.setCursor(Qt.PointingHandCursor)
-    btn.setProperty("variant", variant)
-    btn.setStyleSheet(f"""
-        QPushButton {{
-            background: transparent;
-            border: none;
-            border-radius: {radius}px;
-        }}
-        QPushButton:hover {{
-            background: {hover_bg};
-        }}
-    """)
+    if text:
+        # Compact glyph button (unicode symbol instead of an icon).
+        btn = QPushButton(text, parent)
+        btn.setFlat(True)
+        btn.setAccessibleName(tooltip or text)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(size, size)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setProperty("variant", variant)
+        sheet = f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: {radius}px;
+                font-size: {FONT_SIZE_XS}px;
+                color: {icon_color};
+            }}
+            QPushButton:hover {{
+                background: {hover_bg};
+                color: {hover_icon};
+            }}
+        """
+    else:
+        btn = _IconButton(
+            parent=parent,
+            icon_name=icon_name,
+            icon_color=icon_color,
+            hover_color=hover_icon,
+            icon_size=resolved_icon_size,
+        )
+        btn.setAccessibleName(tooltip or icon_name)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(size, size)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setProperty("variant", variant)
+        sheet = f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: {radius}px;
+            }}
+            QPushButton:hover {{
+                background: {hover_bg};
+            }}
+        """
+    btn.setStyleSheet(sheet)
     if command:
         btn.clicked.connect(command)
     return btn
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CompactRow — compact 34px horizontal card row
+# ──────────────────────────────────────────────────────────────────────────────
+
+class CompactRow(QFrame):
+    """Compact horizontal ``card-elevated`` row: title + secondary + right widget.
+
+    Reproduces the overview trip-row idiom: a 34px-high card-elevated surface
+    with a fixed-width primary label, a stretching secondary label (optional
+    tooltip), and an optional right-hand widget (e.g. a ``StatusBadge``).
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        title: str = "",
+        secondary: str = "",
+        right_widget: QWidget | None = None,
+        title_width: int = 72,
+        title_role: str = "body_bold",
+        secondary_role: str = "small",
+        secondary_tooltip: str = "",
+        height: int = 34,
+    ):
+        super().__init__(parent)
+        self.setProperty("role", "card-elevated")
+        self.setFixedHeight(height)
+        self.setAccessibleName("Compact row")
+        self.setAccessibleDescription("Compact row with title and secondary info")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SPACE_3, 0, SPACE_3, 0)
+        layout.setSpacing(SPACE_2)
+
+        self.title_lbl = QLabel(title)
+        self.title_lbl.setProperty("fontRole", title_role)
+        self.title_lbl.setFixedWidth(title_width)
+        layout.addWidget(self.title_lbl)
+
+        self.secondary_lbl = QLabel(secondary)
+        self.secondary_lbl.setProperty("fontRole", secondary_role)
+        if secondary_tooltip:
+            self.secondary_lbl.setToolTip(secondary_tooltip)
+        layout.addWidget(self.secondary_lbl, 1)
+
+        if right_widget is not None:
+            self.right_widget = right_widget
+            layout.addWidget(right_widget)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -923,14 +1135,9 @@ class Badge(QLabel):
         self.setFixedHeight(20)
         self.setMinimumWidth(20)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.setStyleSheet(f"""
-            background: {COLOR_ERROR_DEFAULT};
-            color: {COLOR_TEXT_WHITE};
-            font-size: {FONT_SIZE_XS}px;
-            font-weight: {FONT_WEIGHT_BOLD};
-            border-radius: {RADIUS_PILL}px;
-            padding: 0 {SPACE_1}px;
-        """)
+        self.setProperty("role", "count-badge")
+        self.style().unpolish(self)
+        self.style().polish(self)
         self.set_count(count)
 
     def set_count(self, count: int) -> None:

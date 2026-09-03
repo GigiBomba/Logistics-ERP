@@ -55,19 +55,19 @@ from services.stop_factory import normalize_existing_stop
 from ui.components import (
     Btn,
     Card,
+    Dot,
     EmptyState,
     Label,
     PageTitle,
+    StateLabel,
     get_icon,
 )
 from ui.worker_pool import WorkerPool
 from ui.design_tokens import (
     BTN_HEIGHT_SM,
-    COLOR_ACCENT_HOVER,
     COLOR_ACCENT_PRIMARY,
     COLOR_BG_ELEVATED,
     COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
     COLOR_BORDER_MEDIUM,
     COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
@@ -75,20 +75,15 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
-    COLOR_TEXT_WHITE,
     COLOR_WARNING_DEFAULT,
     FONT_SIZE_BASE,
     FONT_SIZE_LG,
-    FONT_SIZE_MD,
     FONT_SIZE_SM,
     FONT_SIZE_XS,
-    FONT_WEIGHT_MEDIUM,
     FONT_WEIGHT_REGULAR,
-    FONT_WEIGHT_SEMIBOLD,
     HOVER_MS,
     INPUT_HEIGHT,
     RADIUS_MD,
-    RADIUS_PILL,
     RADIUS_SM,
     SP,
     SPACE_1,
@@ -113,13 +108,10 @@ def make_section_header(text: str) -> QWidget:
     layout.setSpacing(8)
 
     label = QLabel(text.upper())
-    label.setStyleSheet(
-        f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; letter-spacing: 0.08em;"
-    )
+    label.setProperty("role", "section-label")
 
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
 
     layout.addWidget(label)
     layout.addWidget(line, 1)
@@ -130,51 +122,24 @@ def make_toggle_row(label_text: str, checked: bool = False) -> QCheckBox:
     cb = QCheckBox(label_text)
     cb.setChecked(checked)
     cb.setFixedHeight(BTN_HEIGHT_SM)
-    cb.setStyleSheet(f"""
-        QCheckBox {{
-            color: {COLOR_TEXT_SECONDARY};
-            font-size: {FONT_SIZE_BASE}px;
-            font-weight: {FONT_WEIGHT_REGULAR};
-            spacing: 8px;
-        }}
-        QCheckBox:hover {{ color: {COLOR_TEXT_PRIMARY}; }}
-        QCheckBox::indicator {{
-            width: 16px; height: 16px;
-            border-radius: {RADIUS_SM}px;
-            border: 1px solid {COLOR_BORDER_MEDIUM};
-            background: {COLOR_BG_OVERLAY};
-        }}
-        QCheckBox::indicator:checked {{
-            background: {COLOR_ACCENT_PRIMARY};
-            border-color: {COLOR_ACCENT_PRIMARY};
-        }}
-        QCheckBox::indicator:hover {{ border-color: {COLOR_ACCENT_PRIMARY}; }}
-    """)
+    # Compact size class via the global theme (16px indicator, secondary text).
+    cb.setProperty("compact", True)
+    cb.style().unpolish(cb)
+    cb.style().polish(cb)
     return cb
 
 
 def make_result_pill(value: str, label: str) -> QFrame:
     pill = QFrame()
     pill.setFixedHeight(SPACE_12)
-    pill.setStyleSheet(f"""
-        QFrame {{
-            background: {COLOR_BG_OVERLAY};
-            border: 1px solid {COLOR_BORDER_SUBTLE};
-            border-radius: {RADIUS_MD}px;
-        }}
-    """)
+    pill.setProperty("role", "option-row")
     pl = QVBoxLayout(pill)
     pl.setContentsMargins(12, 8, 12, 8)
     pl.setSpacing(2)
 
-    val_lbl = QLabel(value)
-    val_lbl.setStyleSheet(
-        f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_MD}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; border: none; background: transparent;"
-    )
+    val_lbl = StateLabel(pill, value, role="pill-value")
     lbl_w = QLabel(label)
-    lbl_w.setStyleSheet(
-        f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px; border: none; background: transparent;"
-    )
+    lbl_w.setProperty("fontRole", "xs-muted")
 
     pl.addWidget(val_lbl)
     pl.addWidget(lbl_w)
@@ -192,33 +157,16 @@ class WaypointRow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        dot = QLabel()
-        dot.setFixedSize(10, 10)
-        dot.setStyleSheet(f"""
-            background-color: {dot_color};
-            border-radius: 5px;
-        """)
+        dot = Dot(self, color=dot_color)
 
         self.field = QLineEdit()
         self.field.setPlaceholderText(placeholder)
+        # Compact size class via the global theme (SUBTLE border, SM radius,
+        # tight padding); :focus and ::placeholder come from the theme too.
         self.field.setFixedHeight(INPUT_HEIGHT)
-        self.field.setStyleSheet(f"""
-            QLineEdit {{
-                background: {COLOR_BG_OVERLAY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_SM}px;
-                color: {COLOR_TEXT_PRIMARY};
-                font-size: {FONT_SIZE_BASE}px;
-                padding: 0 10px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {COLOR_ACCENT_PRIMARY};
-                background: {COLOR_BG_OVERLAY};
-            }}
-            QLineEdit::placeholder {{
-                color: {COLOR_TEXT_TERTIARY};
-            }}
-        """)
+        self.field.setProperty("compact", True)
+        self.field.style().unpolish(self.field)
+        self.field.style().polish(self.field)
 
         layout.addWidget(dot)
         layout.addWidget(self.field, 1)
@@ -226,20 +174,11 @@ class WaypointRow(QWidget):
         if show_remove:
             remove_btn = QPushButton("\u00d7")
             remove_btn.setFixedSize(SPACE_5, SPACE_5)
-            remove_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent;
-                    color: {COLOR_TEXT_TERTIARY};
-                    border: none;
-                    font-size: {FONT_SIZE_MD}px;
-                    font-weight: {FONT_WEIGHT_REGULAR};
-                    border-radius: {RADIUS_SM}px;
-                }}
-                QPushButton:hover {{
-                    color: {COLOR_TEXT_PRIMARY};
-                    background: {COLOR_BG_HOVER};
-                }}
-            """)
+            # Compact icon button via the global theme (regular-weight glyph).
+            remove_btn.setProperty("role", "icon-btn")
+            remove_btn.setProperty("weightRole", "regular")
+            remove_btn.style().unpolish(remove_btn)
+            remove_btn.style().polish(remove_btn)
             layout.addWidget(remove_btn)
             self.remove_btn = remove_btn
 
@@ -261,28 +200,24 @@ from ui.widgets.flow_layout import FlowLayout  # noqa: F401
 def make_country_chip(country_code: str) -> QWidget:
     chip = QWidget()
     chip.setFixedHeight(22)
-    chip.setStyleSheet(f"""
-        background: {COLOR_BG_OVERLAY};
-        border: 1px solid {COLOR_BORDER_MEDIUM};
-        border-radius: {RADIUS_PILL}px;
-    """)
+    # Outline chip via the global theme (overlay surface, medium border, pill).
+    chip.setProperty("role", "outline-chip")
+    chip.style().unpolish(chip)
+    chip.style().polish(chip)
     row = QHBoxLayout(chip)
     row.setContentsMargins(8, 0, 8, 0)
     row.setSpacing(4)
 
     lbl = QLabel(country_code)
-    lbl.setStyleSheet(
-        f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_XS}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; background: transparent; border: none;"
-    )
+    lbl.setProperty("fontRole", "xs-semibold")
+    lbl.style().unpolish(lbl)
+    lbl.style().polish(lbl)
     remove = QPushButton("\u00d7")
     remove.setFixedSize(14, 14)
-    remove.setStyleSheet(f"""
-        QPushButton {{
-            background: transparent; border: none;
-            color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px;
-        }}
-        QPushButton:hover {{ color: {COLOR_ERROR_DEFAULT}; }}
-    """)
+    # Compact chip remove button via the global theme.
+    remove.setProperty("role", "chip-remove")
+    remove.style().unpolish(remove)
+    remove.style().polish(remove)
     row.addWidget(lbl)
     row.addWidget(remove)
     chip.remove_btn = remove
@@ -445,6 +380,11 @@ class QtRoutePlannerView(QWidget):
         # Initialize to None so method guards don't crash before lazy init runs.
         self.map_widget = None
         self._map_renderer = None
+        self._map_error_panel: QFrame | None = None
+        # Fallback timer: if the map HTML never finishes loading (nor fails),
+        # switch to the error+retry panel so the map area is never stuck on an
+        # eternal "Loading map…" state.
+        self._map_timeout_timer: QTimer | None = None
         # Parented single-shot timer (NOT ``QTimer.singleShot``): a static
         # singleShot cannot be cancelled and keeps its bound callback alive,
         # so if this view is destroyed before it fires the deferred
@@ -505,40 +445,45 @@ class QtRoutePlannerView(QWidget):
         panel = QFrame()
         panel.setMinimumWidth(320)
         panel.setObjectName("route_panel")
-        panel.setStyleSheet(f"""
-            QFrame#route_panel {{
-                background-color: {COLOR_BG_ELEVATED};
-                border-right: 1px solid {COLOR_BORDER_SUBTLE};
-            }}
-        """)
+        # Side-panel surface via the global theme (elevated + right divider).
+        panel.setProperty("role", "side-panel")
+        panel.style().unpolish(panel)
+        panel.style().polish(panel)
 
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)
 
-        # Scrollable content
+        # Scrollable content. The QScrollArea/QScrollBar and the scroll sheet
+        # render through the global theme: the bar opts into the compact
+        # scrollbar class and the sheet paints the panel-elevated surface.
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setStyleSheet(f"""
-            QScrollArea {{ background: transparent; border: none; }}
-            QScrollBar:vertical {{ width: {SPACE_1}px; background: transparent; }}
-            QScrollBar::handle:vertical {{ background: {COLOR_BORDER_MEDIUM}; border-radius: 2px; min-height: {SPACE_5}px; }}
-            QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
-        """)
+        _vbar = scroll_area.verticalScrollBar()
+        _vbar.setProperty("compact", True)
+        _vbar.style().unpolish(_vbar)
+        _vbar.style().polish(_vbar)
 
         scroll_content = QWidget()
-        scroll_content.setStyleSheet("background: transparent;")
+        scroll_content.setProperty("surface", "elevated")
+        scroll_content.style().unpolish(scroll_content)
+        scroll_content.style().polish(scroll_content)
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setContentsMargins(16, 16, 16, 12)
         scroll_layout.setSpacing(0)
         scroll_area.setWidget(scroll_content)
 
-        # Pinned button bar (never scrolls)
+        # Pinned button bar (never scrolls); the theme QSS `min-height` inflates these action buttons past their setFixedHeight to ~54-56px each, so the bar pins its minimum height at 224px to keep Calculate/Export/Share fully visible at 1280x720 (the old fixed 88px height clipped them).
         button_bar = QWidget()
-        button_bar.setFixedHeight(88)
-        button_bar.setStyleSheet(f"background: {COLOR_BG_ELEVATED}; border-top: 1px solid {COLOR_BORDER_SUBTLE};")
+        button_bar.setMinimumHeight(224)
+        # Renders through the theme's button-bar rule (elevated sheet + top
+        # divider); a widget-level stylesheet here would cascade its background
+        # over the compact action buttons inside.
+        button_bar.setProperty("role", "button-bar")
+        button_bar.style().unpolish(button_bar)
+        button_bar.style().polish(button_bar)
         button_bar_layout = QVBoxLayout(button_bar)
         button_bar_layout.setContentsMargins(16, 12, 16, 12)
         button_bar_layout.setSpacing(6)
@@ -554,14 +499,7 @@ class QtRoutePlannerView(QWidget):
 
         # Map — placeholder widget replaced lazily to avoid synchronous
         # QWebEngineView startup (~270 ms) in _build_ui().
-        self.map_widget = QWidget()
-        ph_layout = QVBoxLayout(self.map_widget)
-        ph_layout.setAlignment(Qt.AlignCenter)
-        ph_label = QLabel(t("route.loading_map", default="Loading map\u2026"))
-        ph_label.setStyleSheet(
-            f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_LG}px;"
-        )
-        ph_layout.addWidget(ph_label)
+        self.map_widget = self._build_map_loading_panel()
         self.map_widget.setMinimumWidth(1)
         self._click_to_add_enabled = False
         content.addWidget(self.map_widget, 1)
@@ -570,6 +508,36 @@ class QtRoutePlannerView(QWidget):
 
         # Build sidebar content
         self._build_sidebar_content(scroll_layout, button_bar_layout)
+
+    def _build_map_loading_panel(self) -> QFrame:
+        """Skeleton-style loading panel shown while the map initialises.
+
+        Painted on a surface (non-black) background so the map area never
+        reads as a black void during the QWebEngineView + Folium spin-up.
+        """
+        from ui.skeleton_widgets import SkeletonWidget
+
+        panel = QFrame(self)
+        # Overlay surface via the global theme.
+        panel.setProperty("role", "surface-overlay")
+        panel.style().unpolish(panel)
+        panel.style().polish(panel)
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setAlignment(Qt.AlignCenter)
+        panel_layout.setSpacing(SPACE_3)
+
+        ph_label = QLabel(t("route.loading_map", default="Loading map\u2026"))
+        ph_label.setProperty("fontRole", "muted")
+        ph_label.style().unpolish(ph_label)
+        ph_label.style().polish(ph_label)
+        ph_label.setAlignment(Qt.AlignCenter)
+        panel_layout.addWidget(ph_label)
+
+        for _ in range(2):
+            bar = SkeletonWidget(panel, width=220, height=10, rounded=True)
+            panel_layout.addWidget(bar, 0, Qt.AlignCenter)
+
+        return panel
 
     def _lazy_init_map(self) -> None:
         """Create the real MapWidget lazily, replacing the placeholder.
@@ -605,6 +573,87 @@ class QtRoutePlannerView(QWidget):
         if content_layout is not None:
             cast(QBoxLayout, content_layout).addWidget(self.map_widget, 1)
         self.map_widget.loadFinished.connect(self._inject_map_styles)
+        self.map_widget.loadFinished.connect(self._on_map_load_finished)
+        self._start_map_timeout()
+
+    def _start_map_timeout(self) -> None:
+        """Arm the 15 s fallback timer for the map load.
+
+        A stalled map load never fires ``loadFinished``; this timer switches
+        to the error+retry panel so the user is never stuck on "Loading map…".
+        """
+        if self._map_timeout_timer is None:
+            self._map_timeout_timer = QTimer(self)
+            self._map_timeout_timer.setSingleShot(True)
+            self._map_timeout_timer.timeout.connect(self._on_map_timeout)
+        self._map_timeout_timer.start(15_000)
+
+    def _stop_map_timeout(self) -> None:
+        """Stop the fallback timer (map loaded, errored, or view shutting down)."""
+        if self._map_timeout_timer is not None:
+            self._map_timeout_timer.stop()
+
+    def _on_map_timeout(self) -> None:
+        """The map never finished loading — fall back to the error panel."""
+        logger.warning("Route planner map load timed out — showing error state")
+        self._show_map_error_state()
+
+    def _on_map_load_finished(self, ok: bool) -> None:
+        """Show a retryable error panel when the map HTML fails to load."""
+        self._stop_map_timeout()
+        if ok:
+            return
+        logger.warning("Route planner map failed to load")
+        self._show_map_error_state()
+
+    def _show_map_error_state(self) -> None:
+        """Replace the failed map widget with a muted error + retry panel."""
+        if self._map_error_panel is not None:
+            return  # already showing the error state
+        self._stop_map_timeout()
+        content_layout = self._content_widget.layout()
+        if content_layout is not None and self.map_widget is not None:
+            content_layout.removeWidget(self.map_widget)
+        with contextlib.suppress(Exception):
+            if self.map_widget is not None:
+                self.map_widget._destroy()
+        self.map_widget = None
+        self._map_renderer = None
+
+        err = QFrame(self._content_widget)
+        err.setProperty("role", "surface-overlay")
+        err.style().unpolish(err)
+        err.style().polish(err)
+        el = QVBoxLayout(err)
+        el.setAlignment(Qt.AlignCenter)
+        el.setSpacing(SPACE_3)
+
+        lbl = QLabel(t("route.map_error", default="Map failed to load"))
+        lbl.setProperty("fontRole", "muted")
+        lbl.style().unpolish(lbl)
+        lbl.style().polish(lbl)
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setWordWrap(True)
+        el.addWidget(lbl)
+
+        retry_btn = QPushButton(t("route.map_retry", default="Retry"))
+        retry_btn.clicked.connect(self._retry_map)
+        el.addWidget(retry_btn, 0, Qt.AlignCenter)
+
+        if content_layout is not None:
+            content_layout.addWidget(err, 1)
+        self._map_error_panel = err
+
+    def _retry_map(self) -> None:
+        """Remove the error panel and re-create the map widget."""
+        if self._map_error_panel is not None:
+            panel = self._map_error_panel
+            self._map_error_panel = None
+            content_layout = self._content_widget.layout()
+            if content_layout is not None:
+                content_layout.removeWidget(panel)
+            panel.deleteLater()
+        self._lazy_init_map()
 
     def _make_collapsible_card(
         self, title: str, body: QWidget, expanded: bool = True
@@ -621,22 +670,10 @@ class QtRoutePlannerView(QWidget):
         header = QPushButton()
         header.setFixedHeight(36)
         header.setCursor(Qt.PointingHandCursor)
-        header.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {COLOR_TEXT_SECONDARY};
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-                text-align: left;
-                padding: 0 {SPACE_3}px;
-                border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
-            }}
-            QPushButton:hover {{
-                color: {COLOR_TEXT_PRIMARY};
-                background: {COLOR_BG_HOVER};
-            }}
-        """)
+        # Collapsible-card header via the global theme.
+        header.setProperty("role", "collapsible-card-header")
+        header.style().unpolish(header)
+        header.style().polish(header)
         # Arrow + title
         arrow = "\u25BC" if expanded else "\u25B6"
         header.setText(f"{arrow}  {title.upper()}")
@@ -672,20 +709,10 @@ class QtRoutePlannerView(QWidget):
         add_stop_btn = QPushButton(f"+ {t('route.add_stop')}")
         add_stop_btn.setFixedHeight(BTN_HEIGHT_SM)
         add_stop_btn.setCursor(Qt.PointingHandCursor)
-        add_stop_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {COLOR_ACCENT_PRIMARY};
-                border: none;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-                text-align: left;
-                padding-left: 0;
-            }}
-            QPushButton:hover {{
-                color: {COLOR_ACCENT_HOVER};
-            }}
-        """)
+        # Add-link action button via the global theme.
+        add_stop_btn.setProperty("role", "add-link-btn")
+        add_stop_btn.style().unpolish(add_stop_btn)
+        add_stop_btn.style().polish(add_stop_btn)
         add_stop_btn.clicked.connect(self._add_stop_field)
         route_body_layout.addWidget(add_stop_btn)
 
@@ -703,7 +730,9 @@ class QtRoutePlannerView(QWidget):
 
         # Truck selector: label + [combo + refresh button]
         truck_label = QLabel(t("route.select_truck"))
-        truck_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        truck_label.setProperty("fontRole", "sm-medium-secondary")
+        truck_label.style().unpolish(truck_label)
+        truck_label.style().polish(truck_label)
         constraints_layout.addWidget(truck_label)
 
         truck_combo_row = QWidget()
@@ -713,26 +742,10 @@ class QtRoutePlannerView(QWidget):
 
         self.truck_combo = StyledComboBox()
         self.truck_combo.setFixedHeight(INPUT_HEIGHT)
-        self.truck_combo.setStyleSheet(f"""
-            QComboBox {{
-                background: {COLOR_BG_OVERLAY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_SM}px;
-                color: {COLOR_TEXT_PRIMARY};
-                font-size: {FONT_SIZE_BASE}px;
-                padding: 0 10px;
-            }}
-            QComboBox:focus {{ border-color: {COLOR_ACCENT_PRIMARY}; }}
-            QComboBox::drop-down {{ border: none; width: 24px; }}
-            QComboBox::down-arrow {{ width: 12px; height: 12px; }}
-            QComboBox QAbstractItemView {{
-                background: {COLOR_BG_OVERLAY};
-                border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: {RADIUS_MD}px;
-                color: {COLOR_TEXT_PRIMARY};
-                selection-background-color: {COLOR_BG_HOVER};
-            }}
-        """)
+        # Compact size class via the global theme (incl. drop-down + popup view).
+        self.truck_combo.setProperty("compact", True)
+        self.truck_combo.style().unpolish(self.truck_combo)
+        self.truck_combo.style().polish(self.truck_combo)
         self.truck_combo.currentIndexChanged.connect(self._on_truck_selected)
         tcr_layout.addWidget(self.truck_combo, 1)
 
@@ -740,19 +753,10 @@ class QtRoutePlannerView(QWidget):
         self._truck_refresh_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
         self._truck_refresh_btn.setToolTip(t("common.refresh", default="Refresh"))
         self._truck_refresh_btn.setCursor(Qt.PointingHandCursor)
-        self._truck_refresh_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {COLOR_TEXT_TERTIARY};
-                border: none;
-                font-size: {FONT_SIZE_MD}px;
-                border-radius: {RADIUS_SM}px;
-            }}
-            QPushButton:hover {{
-                color: {COLOR_TEXT_PRIMARY};
-                background: {COLOR_BG_HOVER};
-            }}
-        """)
+        # Compact icon button via the global theme.
+        self._truck_refresh_btn.setProperty("role", "icon-btn")
+        self._truck_refresh_btn.style().unpolish(self._truck_refresh_btn)
+        self._truck_refresh_btn.style().polish(self._truck_refresh_btn)
         self._truck_refresh_btn.clicked.connect(self._load_trucks)
         tcr_layout.addWidget(self._truck_refresh_btn)
 
@@ -760,23 +764,28 @@ class QtRoutePlannerView(QWidget):
 
         # Route profile
         profile_label = QLabel(t("route.profile_label"))
-        profile_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        profile_label.setProperty("fontRole", "sm-medium-secondary")
+        profile_label.style().unpolish(profile_label)
+        profile_label.style().polish(profile_label)
         constraints_layout.addWidget(profile_label)
 
         self._rebuild_profile_display_names()
         self.profile_combo = StyledComboBox(values=list(self._profile_key_to_display.values()))
         self.profile_combo.setFixedHeight(INPUT_HEIGHT)
-        self.profile_combo.setStyleSheet(self.truck_combo.styleSheet())
+        self.profile_combo.setProperty("compact", True)
+        self.profile_combo.style().unpolish(self.profile_combo)
+        self.profile_combo.style().polish(self.profile_combo)
         self.profile_combo.setCurrentText(self._profile_key_to_display.get("Recommended", "Recommended"))
         constraints_layout.addWidget(self.profile_combo)
 
         # Excluded Countries
         countries_label = QLabel(t("route.section.excluded_countries"))
-        countries_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        countries_label.setProperty("fontRole", "sm-medium-secondary")
+        countries_label.style().unpolish(countries_label)
+        countries_label.style().polish(countries_label)
         constraints_layout.addWidget(countries_label)
 
         self._chips_container = QWidget()
-        self._chips_container.setStyleSheet("background: transparent;")
         self._chips_container_layout = QVBoxLayout(self._chips_container)
         self._chips_container_layout.setContentsMargins(0, 0, 0, 0)
         self._chips_container_layout.setSpacing(4)
@@ -784,14 +793,11 @@ class QtRoutePlannerView(QWidget):
 
         add_country_btn = QPushButton(f"+ {t('route.add_country')}")
         add_country_btn.setCursor(Qt.PointingHandCursor)
-        add_country_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; border: none;
-                color: {COLOR_ACCENT_PRIMARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};
-                text-align: left; padding: {SPACE_1}px 0;
-            }}
-            QPushButton:hover {{ color: {COLOR_ACCENT_HOVER}; }}
-        """)
+        # Add-link action button (tight padding) via the global theme.
+        add_country_btn.setProperty("role", "add-link-btn")
+        add_country_btn.setProperty("sizeRole", "tight")
+        add_country_btn.style().unpolish(add_country_btn)
+        add_country_btn.style().polish(add_country_btn)
         add_country_btn.clicked.connect(self._open_country_selector)
         constraints_layout.addWidget(add_country_btn)
 
@@ -852,22 +858,14 @@ class QtRoutePlannerView(QWidget):
         self._loading_bar.setRange(0, 0)
         self._loading_bar.setFixedHeight(SPACE_1)
         self._loading_bar.setTextVisible(False)
-        self._loading_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {COLOR_BG_OVERLAY};
-                border: none;
-                border-radius: 2px;
-            }}
-            QProgressBar::chunk {{
-                background: {COLOR_ACCENT_PRIMARY};
-                border-radius: 2px;
-            }}
-        """)
+        # Renders through the global theme's QProgressBar rules in ui/theme_engine.py.
         loading_layout.addWidget(self._loading_bar)
 
         loading_text = QLabel(t("route.calculating"))
         loading_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        loading_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_BASE}px;")
+        loading_text.setProperty("fontRole", "helper")
+        loading_text.style().unpolish(loading_text)
+        loading_text.style().polish(loading_text)
         loading_layout.addWidget(loading_text)
         loading_layout.addStretch()
         self._result_stack.addWidget(loading_page)
@@ -879,7 +877,9 @@ class QtRoutePlannerView(QWidget):
         result_layout.setSpacing(8)
 
         self.route_summary_label = QLabel()
-        self.route_summary_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+        self.route_summary_label.setProperty("fontRole", "sm-secondary")
+        self.route_summary_label.style().unpolish(self.route_summary_label)
+        self.route_summary_label.style().polish(self.route_summary_label)
         result_layout.addWidget(self.route_summary_label)
 
         # Grid of 4 metric pills
@@ -908,23 +908,11 @@ class QtRoutePlannerView(QWidget):
         self._create_trip_btn = QPushButton(t("route.create_trip", default="Create Trip"))
         self._create_trip_btn.setFixedHeight(32)
         self._create_trip_btn.setCursor(Qt.PointingHandCursor)
-        self._create_trip_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_ACCENT_PRIMARY};
-                color: {COLOR_TEXT_WHITE};
-                border: none;
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-                padding: 0 16px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_ACCENT_HOVER};
-            }}
-            QPushButton:pressed {{
-                background: {COLOR_ACCENT_HOVER};
-            }}
-        """)
+        # Compact sm primary action button via the global theme.
+        self._create_trip_btn.setProperty("compact", True)
+        self._create_trip_btn.setProperty("sizeRole", "sm")
+        self._create_trip_btn.style().unpolish(self._create_trip_btn)
+        self._create_trip_btn.style().polish(self._create_trip_btn)
         self._create_trip_btn.clicked.connect(self._on_create_trip)
         create_trip_row_layout.addWidget(self._create_trip_btn)
 
@@ -938,7 +926,9 @@ class QtRoutePlannerView(QWidget):
 
         self._explanation_text = QLabel("")
         self._explanation_text.setWordWrap(True)
-        self._explanation_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px;")
+        self._explanation_text.setProperty("fontRole", "xs-muted")
+        self._explanation_text.style().unpolish(self._explanation_text)
+        self._explanation_text.style().polish(self._explanation_text)
         result_layout.addWidget(self._explanation_text)
 
         self._dispatch_container = QWidget()
@@ -967,68 +957,32 @@ class QtRoutePlannerView(QWidget):
         self.calc_btn.setObjectName("calc_route_btn")
         self.calc_btn.setCursor(Qt.PointingHandCursor)
         self.calc_btn.setEnabled(False)
-        self.calc_btn.setStyleSheet(f"""
-            QPushButton#calc_route_btn {{
-                background: {COLOR_ACCENT_PRIMARY};
-                color: {COLOR_TEXT_WHITE};
-                border: none;
-                border-radius: {RADIUS_MD}px;
-                font-size: {FONT_SIZE_BASE}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-            }}
-            QPushButton#calc_route_btn:hover {{
-                background: {COLOR_ACCENT_HOVER};
-            }}
-            QPushButton#calc_route_btn:pressed {{
-                background: {COLOR_ACCENT_HOVER};
-            }}
-            QPushButton#calc_route_btn:disabled {{
-                background: rgba(99, 102, 241, 0.4);
-                color: rgba(255, 255, 255, 0.4);
-            }}
-        """)
+        # Compact primary action button via the global theme (incl. disabled state).
+        self.calc_btn.setProperty("compact", True)
+        self.calc_btn.style().unpolish(self.calc_btn)
+        self.calc_btn.style().polish(self.calc_btn)
         self.calc_btn.clicked.connect(self._on_calculate_click)
         bl.addWidget(self.calc_btn)
 
         export_btn = QPushButton(t("route.export_metadata"))
         export_btn.setFixedHeight(BTN_HEIGHT_SM)
         export_btn.setCursor(Qt.PointingHandCursor)
-        export_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_REGULAR};
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_HOVER};
-                color: {COLOR_TEXT_PRIMARY};
-                border-color: {COLOR_BORDER_MEDIUM};
-            }}
-        """)
+        # Compact secondary action button via the global theme.
+        export_btn.setProperty("compact", True)
+        export_btn.setProperty("variant", "secondary")
+        export_btn.style().unpolish(export_btn)
+        export_btn.style().polish(export_btn)
         export_btn.clicked.connect(self._export_route_metadata)
         bl.addWidget(export_btn)
 
         share_btn = QPushButton(t("route.share", default="Share"))
         share_btn.setFixedHeight(BTN_HEIGHT_SM)
         share_btn.setCursor(Qt.PointingHandCursor)
-        share_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_REGULAR};
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_HOVER};
-                color: {COLOR_TEXT_PRIMARY};
-                border-color: {COLOR_BORDER_MEDIUM};
-            }}
-        """)
+        # Compact secondary action button via the global theme.
+        share_btn.setProperty("compact", True)
+        share_btn.setProperty("variant", "secondary")
+        share_btn.style().unpolish(share_btn)
+        share_btn.style().polish(share_btn)
         share_btn.clicked.connect(self._on_share_route)
         bl.addWidget(share_btn)
 
@@ -1151,7 +1105,7 @@ class QtRoutePlannerView(QWidget):
                     self.stop_vars[sid] = stop.get("address", "") or ""
 
                 if stop["type"] == "start":
-                    placeholder = t("route.stop_start", default="📍 Start...")
+                    placeholder = t("route.stop_start", default="Start...")
                     dot_color = COLOR_SUCCESS_DEFAULT
                     show_remove = False
                 elif stop["type"] == "destination":
@@ -1159,7 +1113,7 @@ class QtRoutePlannerView(QWidget):
                     dot_color = COLOR_ERROR_DEFAULT
                     show_remove = False
                 else:
-                    placeholder = t("route.stop_n", default=f"Stop {idx}").format(idx)
+                    placeholder = t("route.stop_n", default="Stop {n}").format(n=idx)
                     dot_color = COLOR_ACCENT_PRIMARY
                     show_remove = True
 
@@ -1239,7 +1193,6 @@ class QtRoutePlannerView(QWidget):
         chips_per_row = 5
         for i in range(0, len(codes), chips_per_row):
             row = QWidget()
-            row.setStyleSheet("background: transparent;")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(4)
@@ -1476,22 +1429,12 @@ class QtRoutePlannerView(QWidget):
         )
         gmaps_btn.setFixedHeight(36)
         gmaps_btn.setCursor(Qt.PointingHandCursor)
-        gmaps_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_REGULAR};
-                padding: 0 {SPACE_3}px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_HOVER};
-                color: {COLOR_TEXT_PRIMARY};
-                border-color: {COLOR_BORDER_MEDIUM};
-            }}
-        """)
+        # Compact sm secondary action button via the global theme.
+        gmaps_btn.setProperty("compact", True)
+        gmaps_btn.setProperty("variant", "secondary")
+        gmaps_btn.setProperty("sizeRole", "sm")
+        gmaps_btn.style().unpolish(gmaps_btn)
+        gmaps_btn.style().polish(gmaps_btn)
         gmaps_btn.clicked.connect(self._on_open_in_gmaps)
         btn_layout.addWidget(gmaps_btn)
 
@@ -1942,6 +1885,9 @@ class QtRoutePlannerView(QWidget):
             timer = getattr(self, "_map_init_timer", None)
             if timer is not None:
                 timer.stop()
+        # Stop the map-load fallback timer too.
+        with contextlib.suppress(Exception):
+            self._stop_map_timeout()
         # Cancel any in-flight route calculation and wait for completion
         with contextlib.suppress(Exception):
             if self._core is not None:

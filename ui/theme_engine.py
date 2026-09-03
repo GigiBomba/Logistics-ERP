@@ -1,4 +1,4 @@
-"""PySide6 theme engine for Operion ERP.
+﻿"""PySide6 theme engine for Operion ERP.
 
 This module bridges the existing design tokens in ``ui.theme`` (COLORS, S, radii)
 with Qt Style Sheets (QSS). It intentionally does *not* import ``FONTS`` from
@@ -76,9 +76,9 @@ from ui.design_tokens import (
     SPACE_1,
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # TYPOGRAPHY
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 FONT_FAMILIES = {
     "sans": "'IBM Plex Sans', 'Segoe UI', 'Microsoft YaHei', sans-serif",
@@ -102,9 +102,9 @@ FONT_SIZES = {
     "mono_xl": FONT_SIZE_2XL,  # 32
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # QSS GENERATOR
-# ──────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class QtTheme:
@@ -178,10 +178,12 @@ class QtTheme:
                 cls._cmr_qss(),
                 cls._analytics_qss(),
                 cls._dialogs_qss(),
+                cls._route_planner_qss(),
+                cls._components_qss(),
             ]
         )
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _ff(cls, role: str) -> str:
@@ -196,7 +198,7 @@ class QtTheme:
         sizes = {"2": 8, "4": 16, "5": 20, "6": 24, "8": 32, "10": 40, "12": 48, "16": 64}
         return sizes.get(key, 8)
 
-    # ── QSS ROLE CATALOG ────────────────────────────────────────────────────
+    # â”€â”€ QSS ROLE CATALOG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # The attribute selectors used across the QSS below are the widget-styling
     # vocabulary.  Keep every new selector inside this grammar:
     #
@@ -204,7 +206,7 @@ class QtTheme:
     #   * ``fontRole``            - hyphenated size-weight-color grammar, e.g.
     #                               ``sm-bold-error`` (11px / bold / error
     #                               text).  Values are STRICTLY REUSED from the
-    #                               catalog below — never introduce a synonym
+    #                               catalog below â€” never introduce a synonym
     #                               for an existing value.
     #                               ``fontRole`` is QLabel-PRIMARY: every
     #                               ``[fontRole=...]`` selector is ``QLabel``-
@@ -237,11 +239,11 @@ class QtTheme:
     #   * Qt resolves equal-specificity rules by source order, so ordering can
     #     be load-bearing.  Example: the ``base-surface`` dialog ``role``
     #     override MUST stay AFTER the modal-dialog rule (``QDialog`` + the
-    #     ``modal`` attribute) — both are single-attribute selectors, so the
+    #     ``modal`` attribute) â€” both are single-attribute selectors, so the
     #     base-surface override only wins because it appears later in the
     #     sheet.
     #   * Qt negation selectors: ``:!checked`` is UNRELIABLE in this Qt build
-    #     (matches both states) — never use it; drive check-state styling with
+    #     (matches both states) â€” never use it; drive check-state styling with
     #     an explicit ``state`` property instead.  ``:!hover`` /
     #     ``:focus:!hover`` are VERIFIED WORKING (gate 3) and are acceptable
     #     where hover-priority ordering is needed.
@@ -251,8 +253,20 @@ class QtTheme:
     #     ("nav-*", "alert-*", "tacho-*") is acceptable ONLY when the role
     #     styles hard-coded dialog chrome that will never be reused as a
     #     generic component.
+    #
+    # Known gate false-positives (tools/ui_style_gate.py role_inventory)
+    #   The string-literal scanner cannot see variable/bool/property setters,
+    #   so the following selectors are reported "dead" but are LIVE (each also
+    #   carries an inline comment next to its rule):
+    #     - QPushButton variant="danger"            (variant set via variable in components)
+    #     - QLineEdit validation="success"          (validation set via variable in form_utils)
+    #     - QFrame stat-card hovered="true"         (hovered set via bool in stat_card)
+    #     - QPushButton tabRole="tab-button" with tabActive="true" (bool in dispatch_tabs)
+    #     - QDialog modal="true"                    (real Q_PROPERTY on QDialog)
+    #     - QLabel role="pill-value"                (role set via StateLabel variable)
+    #   Each carries a matching inline comment next to its rule.
 
-    # ── Base / reset ──────────────────────────────────────────────────────────
+    # â”€â”€ Base / reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _base_qss(cls) -> str:
@@ -279,7 +293,7 @@ class QtTheme:
 
         /* Elevated scroll-content sheet: a widget marked surface="elevated"
            paints the elevated panel surface for itself and every plain QWidget
-           descendant. Styled widgets (inputs/buttons/…) keep their own rules
+           descendant. Styled widgets (inputs/buttons/â€¦) keep their own rules
            because those selectors appear later in the stylesheet and tie on
            specificity. */
         QWidget[surface="elevated"] {{
@@ -306,7 +320,7 @@ class QtTheme:
         }}
         """
 
-    # ── Typography ────────────────────────────────────────────────────────────
+    # â”€â”€ Typography â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _typography_qss(cls) -> str:
@@ -343,7 +357,6 @@ class QtTheme:
         QLabel[fontRole="label"] {{
             color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("label")}px;
-            text-transform: uppercase;
         }}
 
         QLabel[fontRole="small"] {{
@@ -473,11 +486,6 @@ class QtTheme:
             padding-top: {SPACE_1}px;
         }}
 
-        QLabel[fontRole="h1"] {{
-            font-size: {cls._fs("h1")}px;
-            font-weight: bold;
-        }}
-
         QLabel[fontRole="h2"] {{
             font-size: {cls._fs("h2")}px;
             font-weight: bold;
@@ -488,27 +496,9 @@ class QtTheme:
             font-weight: bold;
         }}
 
-        QLabel[fontRole="hero"] {{
-            font-family: {cls._ff("hero")};
-            font-size: {cls._fs("mono_xl")}px;
-            color: {COLOR_TEXT_PRIMARY};
-        }}
-
         QLabel[fontRole="mono"] {{
             font-family: {cls._ff("mono")};
             font-size: {cls._fs("mono")}px;
-        }}
-
-        QLabel[fontRole="mono_lg"] {{
-            font-family: {cls._ff("mono")};
-            font-size: {cls._fs("mono_lg")}px;
-            font-weight: bold;
-        }}
-
-        QLabel[fontRole="mono_xl"] {{
-            font-family: {cls._ff("mono")};
-            font-size: {cls._fs("mono_xl")}px;
-            font-weight: bold;
         }}
 
         QLabel[fontRole="section"] {{
@@ -516,57 +506,9 @@ class QtTheme:
             font-size: {cls._fs("body")}px;
             font-weight: bold;
         }}
-
-        QLabel[fontRole="kpi-title"] {{
-            color: {COLOR_TEXT_TERTIARY};
-            font-size: {cls._fs("label")}px;
-            font-weight: bold;
-            text-transform: uppercase;
-        }}
-
-        QLabel[fontRole="kpi-value"] {{
-            color: {COLOR_TEXT_PRIMARY};
-            font-size: {cls._fs("mono_lg")}px;
-            font-family: {cls._ff("mono")};
-            font-weight: bold;
-        }}
-
-        QLabel[class="page-title"] {{
-            font-size: 20px;
-            font-weight: 600;
-            color: {COLOR_TEXT_PRIMARY};
-        }}
-
-        QLabel[class="section-title"] {{
-            font-size: 13px;
-            font-weight: 600;
-            color: {COLOR_TEXT_PRIMARY};
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }}
-
-        QLabel[class="field-label"] {{
-            font-size: 11px;
-            color: {COLOR_TEXT_TERTIARY};
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }}
-
-        QLabel[class="kpi-value"] {{
-            font-size: 22px;
-            font-weight: 700;
-            font-family: {cls._ff("mono")};
-            color: {COLOR_TEXT_PRIMARY};
-        }}
-
-        QLabel[class="kpi-label"] {{
-            font-size: 11px;
-            color: {COLOR_TEXT_TERTIARY};
-            text-transform: uppercase;
-        }}
         """
 
-    # ── Buttons ─────────────────────────────────────────────────────────────────
+    # â”€â”€ Buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _button_qss(cls) -> str:
@@ -616,6 +558,9 @@ class QtTheme:
             background-color: {COLOR_BG_OVERLAY};
         }}
 
+        /* Gate false-positive: ``variant`` is set via variables in
+           components.Btn / ActionButton / IconButton, so the string-literal
+           inventory can never see "danger". LIVE. */
         QPushButton[variant="danger"] {{
             background-color: transparent;
             color: {COLOR_ERROR_TEXT};
@@ -695,7 +640,7 @@ class QtTheme:
 
         /* Tight-padding compact primary (route planner "Create Trip"): SM
            radius/font and zero vertical padding keep it ~40px tall. */
-        QPushButton[compact="true"][size="sm"] {{
+        QPushButton[compact="true"][sizeRole="sm"] {{
             background-color: {COLOR_ACCENT_PRIMARY};
             color: {TEXT_WHITE};
             border: none;
@@ -705,17 +650,17 @@ class QtTheme:
             padding: 0 16px;
         }}
 
-        QPushButton[compact="true"][size="sm"]:hover {{
+        QPushButton[compact="true"][sizeRole="sm"]:hover {{
             background-color: {COLOR_ACCENT_HOVER};
         }}
 
-        QPushButton[compact="true"][size="sm"]:pressed {{
+        QPushButton[compact="true"][sizeRole="sm"]:pressed {{
             background-color: {COLOR_ACCENT_HOVER};
         }}
 
         /* Tight-padding compact secondary (route planner "Google Maps"): SM
            radius/font and zero vertical padding keep it ~40px tall. */
-        QPushButton[compact="true"][variant="secondary"][size="sm"] {{
+        QPushButton[compact="true"][variant="secondary"][sizeRole="sm"] {{
             background-color: {COLOR_BG_OVERLAY};
             color: {COLOR_TEXT_SECONDARY};
             border: 1px solid {COLOR_BORDER_SUBTLE};
@@ -725,7 +670,7 @@ class QtTheme:
             padding: 0 12px;
         }}
 
-        QPushButton[compact="true"][variant="secondary"][size="sm"]:hover {{
+        QPushButton[compact="true"][variant="secondary"][sizeRole="sm"]:hover {{
             background-color: {COLOR_BG_HOVER};
             color: {COLOR_TEXT_PRIMARY};
             border-color: {COLOR_BORDER_MEDIUM};
@@ -795,7 +740,7 @@ class QtTheme:
         }}
 
         /* Compact secondary toggle (CoPilot timeline view-switch button).
-           NB: a plain "size" attribute cannot be used — it collides with
+           NB: a plain "size" attribute cannot be used â€” it collides with
            QWidget's built-in ``size`` property, so the compact variant is
            keyed on ``sizeRole`` instead. */
         QPushButton[variant="secondary"][sizeRole="sm"] {{
@@ -910,7 +855,7 @@ class QtTheme:
         }}
         """
 
-    # ── Inputs ──────────────────────────────────────────────────────────────────
+    # â”€â”€ Inputs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _input_qss(cls) -> str:
@@ -970,6 +915,9 @@ class QtTheme:
             border-color: {COLOR_ERROR_DEFAULT};
         }}
 
+        /* Validation states. ``validation`` is set via a variable in
+           ui/form_utils.py (setProperty("validation", state)), so the
+           inventory's string-literal scan cannot see "success" — LIVE. */
         QLineEdit[validation="success"], QPlainTextEdit[validation="success"] {{
             border-color: {COLOR_SUCCESS_DEFAULT};
         }}
@@ -1018,7 +966,7 @@ class QtTheme:
         }}
         """
 
-    # ── Checkboxes / Radio buttons ──────────────────────────────────────────────
+    # â”€â”€ Checkboxes / Radio buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _checkbox_qss(cls) -> str:
@@ -1123,7 +1071,7 @@ class QtTheme:
         }}
         """
 
-    # ── ComboBox ────────────────────────────────────────────────────────────────
+    # â”€â”€ ComboBox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _combobox_qss(cls) -> str:
@@ -1213,7 +1161,7 @@ class QtTheme:
         }}
         """
 
-    # ── SpinBox ─────────────────────────────────────────────────────────────────
+    # â”€â”€ SpinBox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _spinbox_qss(cls) -> str:
@@ -1231,7 +1179,7 @@ class QtTheme:
         }}
         """
 
-    # ── Tables ──────────────────────────────────────────────────────────────────
+    # â”€â”€ Tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _table_qss(cls) -> str:
@@ -1272,7 +1220,6 @@ class QtTheme:
             border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
             font-weight: 600;
             font-size: {cls._fs("label")}px;
-            text-transform: uppercase;
             letter-spacing: 0.08em;
         }}
 
@@ -1300,7 +1247,7 @@ class QtTheme:
         }}
         """
 
-    # ── Trees ───────────────────────────────────────────────────────────────────
+    # â”€â”€ Trees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _tree_qss(cls) -> str:
@@ -1347,7 +1294,7 @@ class QtTheme:
         }}
         """
 
-    # ── ScrollArea / ScrollBar ──────────────────────────────────────────────────
+    # â”€â”€ ScrollArea / ScrollBar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _scrollarea_qss(cls) -> str:
@@ -1439,7 +1386,7 @@ class QtTheme:
         }}
         """
 
-    # ── TabWidget ───────────────────────────────────────────────────────────────
+    # â”€â”€ TabWidget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _tabwidget_qss(cls) -> str:
@@ -1482,7 +1429,7 @@ class QtTheme:
         }}
         """
 
-    # ── ProgressBar ─────────────────────────────────────────────────────────────
+    # â”€â”€ ProgressBar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _progressbar_qss(cls) -> str:
@@ -1503,7 +1450,7 @@ class QtTheme:
         }}
         """
 
-    # ── GroupBox / Frame ────────────────────────────────────────────────────────
+    # â”€â”€ GroupBox / Frame â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _groupbox_qss(cls) -> str:
@@ -1557,23 +1504,10 @@ class QtTheme:
             border-color: {ELEVATION_RAISED};
         }}
 
-        QFrame[role="input"] {{
-            background-color: {COLOR_BG_OVERLAY};
-            border: 1px solid {COLOR_BORDER_MEDIUM};
-            border-radius: {RADIUS_INPUT}px;
-        }}
-
         QFrame[role="divider"] {{
             background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
             min-height: 1px;
-        }}
-
-        QFrame[role="accent-bar"] {{
-            background-color: {COLOR_ACCENT_PRIMARY};
-            max-width: 3px;
-            min-width: 3px;
-            border-radius: 2px;
         }}
 
         QFrame[role="section-line"] {{
@@ -1593,48 +1527,8 @@ class QtTheme:
             border-color: {ELEVATION_RAISED};
         }}
 
-        QFrame[role="chip-critical"] {{
-            background-color: {COLOR_ERROR_SUBTLE};
-            color: {COLOR_ERROR_TEXT};
-            border: none;
-            border-radius: {RADIUS_CHIP}px;
-            padding: 2px 8px;
-        }}
-
-        QFrame[role="chip-warning"] {{
-            background-color: {COLOR_WARNING_SUBTLE};
-            color: {COLOR_WARNING_TEXT};
-            border: none;
-            border-radius: {RADIUS_CHIP}px;
-            padding: 2px 8px;
-        }}
-
-        QFrame[role="chip-info"] {{
-            background-color: {COLOR_INFO_SUBTLE};
-            color: {COLOR_ACCENT_PRIMARY};
-            border: none;
-            border-radius: {RADIUS_CHIP}px;
-            padding: 2px 8px;
-        }}
-
-        QFrame[role="chip-success"] {{
-            background-color: {COLOR_SUCCESS_SUBTLE};
-            color: {COLOR_SUCCESS_TEXT};
-            border: none;
-            border-radius: {RADIUS_CHIP}px;
-            padding: 2px 8px;
-        }}
-
-        QFrame[role="chip-neutral"] {{
-            background-color: {COLOR_BG_OVERLAY};
-            color: {COLOR_TEXT_SECONDARY};
-            border: none;
-            border-radius: {RADIUS_CHIP}px;
-            padding: 2px 8px;
-        }}
-
         QLabel[role="status-chip"][solid="true"] {{
-            /* Solid (borderless) status chip surface — used by StatusBadge
+            /* Solid (borderless) status chip surface â€” used by StatusBadge
                with ``solid=True``; per-instance colours are applied inline. */
             background-color: {COLOR_BG_OVERLAY};
             color: {COLOR_TEXT_PRIMARY};
@@ -1725,7 +1619,7 @@ class QtTheme:
         }}
         """
 
-    # ── Menu / ToolTip ──────────────────────────────────────────────────────────
+    # â”€â”€ Menu / ToolTip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _menu_qss(cls) -> str:
@@ -1781,7 +1675,7 @@ class QtTheme:
         }}
         """
 
-    # ── Dialogs ─────────────────────────────────────────────────────────────────
+    # â”€â”€ Dialogs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _dialog_qss(cls) -> str:
@@ -1807,6 +1701,8 @@ class QtTheme:
             background-color: {COLOR_BG_ELEVATED};
         }}
 
+        /* Gate false-positive: ``modal`` is a real Q_PROPERTY on QDialog (set via
+           setModal), not a dynamic string-literal property. LIVE. */
         QDialog[modal="true"] {{
             background-color: {COLOR_BG_ELEVATED};
         }}
@@ -1816,7 +1712,7 @@ class QtTheme:
         }}
         """
 
-    # ── Splitter ────────────────────────────────────────────────────────────────
+    # â”€â”€ Splitter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _splitter_qss(cls) -> str:
@@ -1834,22 +1730,11 @@ class QtTheme:
         }}
         """
 
-    # ── Navigation panel ────────────────────────────────────────────────────────
+    # â”€â”€ Navigation panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _nav_qss(cls) -> str:
         return f"""
-        QFrame[role="nav-panel"] {{
-            background-color: {COLOR_BG_ELEVATED};
-            border: none;
-            border-right: 1px solid {COLOR_BORDER_MEDIUM};
-        }}
-
-        QFrame[role="nav-top-section"] {{
-            background-color: transparent;
-            border: none;
-        }}
-
         QFrame[role="nav-divider"] {{
             background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
@@ -1872,28 +1757,6 @@ class QtTheme:
             border-left: 3px solid {COLOR_ACCENT_PRIMARY};
         }}
 
-        QFrame[role="nav-accent"] {{
-            background-color: transparent;
-            max-width: 3px;
-            min-width: 3px;
-            border-radius: 2px;
-        }}
-
-        QFrame[role="nav-item"][state="active"] QFrame[role="nav-accent"] {{
-            background-color: {COLOR_ACCENT_PRIMARY};
-        }}
-
-        QLabel[role="nav-icon"] {{
-            background-color: transparent;
-            color: {COLOR_TEXT_TERTIARY};
-            font-family: "'Segoe UI Emoji', 'Segoe UI Symbol', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
-            font-size: {cls._fs("h2")}px;
-        }}
-
-        QFrame[role="nav-item"][state="active"] QLabel[role="nav-icon"] {{
-            color: {COLOR_ACCENT_PRIMARY};
-        }}
-
         QLabel[role="nav-label"] {{
             background-color: transparent;
             color: {COLOR_TEXT_SECONDARY};
@@ -1910,12 +1773,6 @@ class QtTheme:
             color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("label")}px;
             font-weight: bold;
-            text-transform: uppercase;
-        }}
-
-        QFrame[role="nav-monogram"] {{
-            background-color: {COLOR_ACCENT_PRIMARY};
-            border-radius: 6px;
         }}
 
         QLabel[role="nav-monogram-text"] {{
@@ -1956,7 +1813,7 @@ class QtTheme:
         }}
         """
 
-    # ── Top bar ─────────────────────────────────────────────────────────────────
+    # â”€â”€ Top bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _topbar_qss(cls) -> str:
@@ -1967,34 +1824,11 @@ class QtTheme:
             border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
         }}
 
-        QFrame[role="top-bar-divider"] {{
-            background-color: {COLOR_BORDER_MEDIUM};
-            max-height: 1px;
-            min-height: 1px;
-        }}
-
-        QLabel[role="fuel-status"] {{
-            background-color: transparent;
-            color: {COLOR_TEXT_TERTIARY};
-            font-family: {cls._ff("mono")};
-            font-size: {cls._fs("small")}px;
-        }}
-
         QLabel[role="clock"] {{
             background-color: transparent;
             color: {COLOR_TEXT_TERTIARY};
             font-family: {cls._ff("mono")};
             font-size: {cls._fs("body")}px;
-        }}
-
-        QLabel[role="bell"] {{
-            background-color: transparent;
-            color: {COLOR_TEXT_TERTIARY};
-            font-size: 16px;
-        }}
-
-        QLabel[role="bell"][alert="true"] {{
-            color: {COLOR_ERROR_TEXT};
         }}
 
         QLabel[role="badge"] {{
@@ -2011,7 +1845,7 @@ class QtTheme:
         }}
         """
 
-    # ── Stacked widget (view container) ─────────────────────────────────────────
+    # â”€â”€ Stacked widget (view container) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _stackedwidget_qss(cls) -> str:
@@ -2022,7 +1856,7 @@ class QtTheme:
         }
         """
 
-    # ── Calendar (custom dark popup) ────────────────────────────────────────────
+    # â”€â”€ Calendar (custom dark popup) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _calendar_qss(cls) -> str:
@@ -2118,7 +1952,7 @@ class QtTheme:
         }}
         """
 
-    # ── App-specific fragments (formerly ui/stylesheet.py) ──────────────────
+    # â”€â”€ App-specific fragments (formerly ui/stylesheet.py) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @classmethod
     def _stat_card_qss(cls) -> str:
@@ -2130,6 +1964,9 @@ class QtTheme:
             padding: 16px;
         }}
 
+        /* Gate false-positive: ``hovered`` is set via setProperty("hovered", bool)
+           in ui/widgets/stat_card.py — the string-literal inventory cannot
+           see "true". LIVE. */
         QFrame#stat-card[hovered="true"] {{
             background-color: {COLOR_BG_CARD_HOVER};
             border-color: {COLOR_ACCENT_PRIMARY};
@@ -2182,7 +2019,6 @@ class QtTheme:
             color: {COLOR_TEXT_SECONDARY};
             font-size: {cls._fs("label")}px;
             font-weight: 600;
-            text-transform: uppercase;
             letter-spacing: 0.08em;
             padding: 4px 0;
         }}
@@ -2207,6 +2043,9 @@ class QtTheme:
             color: {COLOR_TEXT_PRIMARY};
         }}
 
+        /* Gate false-positive: ``tabActive`` is a bool set via
+           setProperty("tabActive", True/False) in ui/widgets/dispatch_tabs.py
+           — the string-literal inventory cannot see it. LIVE. */
         QPushButton[tabRole="tab-button"][tabActive="true"] {{
             color: {COLOR_ACCENT_PRIMARY};
             border-bottom: 2px solid {COLOR_ACCENT_PRIMARY};
@@ -2226,25 +2065,9 @@ class QtTheme:
             background-color: transparent;
             padding: 8px 12px 4px;
         }}
-
-        QWidget[role="kanban-column-header"] QLabel[class="kanban-column-title"] {{
-            color: {COLOR_TEXT_PRIMARY};
-            font-weight: 600;
-            font-size: {cls._fs("body")}px;
-        }}
-
-        QWidget[role="kanban-column-header"] QLabel[class="kanban-column-count"] {{
-            color: {COLOR_TEXT_TERTIARY};
-            font-size: {cls._fs("label")}px;
-        }}
-
-        QScrollArea[class="kanban-columns-container"] {{
-            border: none;
-            background-color: transparent;
-        }}
         """
 
-    # ── Freight Exchange cluster (Phase 3) ─────────────────────────────────
+    # â”€â”€ Freight Exchange cluster (Phase 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Connection view (connect_view), search view (search_view) and load
     # detail view (load_detail_view).  Domain-prefixed roles only where the
     # styled widget is hard-coded cluster chrome (score bars, match rows);
@@ -2252,7 +2075,7 @@ class QtTheme:
     # ``QLabel`` typography roles (match-rank / score-value / match-profit)
     # are used because the closest ``fontRole`` values differ by exactly one
     # property (e.g. ``h2`` for match-rank), so minting a fontRole is barred
-    # by the "≥2 properties" reuse rule; the family stays whatever QFont the
+    # by the "â‰¥2 properties" reuse rule; the family stays whatever QFont the
     # widget carries (QLabel roles do not set font-family).
 
     @classmethod
@@ -2433,7 +2256,7 @@ class QtTheme:
         }}
         """
 
-    # ── CMR form cluster (Phase 3) ─────────────────────────────────────────
+    # â”€â”€ CMR form cluster (Phase 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Box-number badges (QLabel[role="box-badge"]), compact date edits, the
     # ADR toggle, inset input rows and the collapsible-section header button
     # from cmr_form.py / cmr_fields.py.
@@ -2503,7 +2326,7 @@ class QtTheme:
         }}
         """
 
-    # ── Analytics cluster (Phase 4) ─────────────────────────────────────────
+    # â”€â”€ Analytics cluster (Phase 4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Base tab chrome (titles, KPI cards, section headers, scroll), the
     # period strip (pill group + refresh), and the per-tab widgets
     # (client/route/driver/financial/document).  Statful severity/KPI
@@ -2801,7 +2624,7 @@ class QtTheme:
         }}
         """
 
-    # ── Dialog cluster (Phase 4) ───────────────────────────────────────────
+    # â”€â”€ Dialog cluster (Phase 4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Paired-assignment dialog, dispatch detail drawer, share-route dialog,
     # automail dialogs (variable picker / template / schedule editor) and
     # the country-exclusions dialog.  Buttons keep explicit ``:focus`` /
@@ -3035,5 +2858,200 @@ class QtTheme:
         QPushButton[role="dialog-outline"]:focus,
         QPushButton[role="dialog-outline"]:focus:!hover {{
             border: 1px solid {COLOR_BORDER_MEDIUM};
+        }}
+        """
+
+    # ── Route planner cluster (Phase 5) ──────────────────────────────────────
+    # Sidebar chrome, waypoint rows, result pills, country chips, compact
+    # icon buttons and the collapsible card headers.  Runtime status/summary
+    # colors stay inline (DYNAMIC); everything constant is a role here.
+
+    @classmethod
+    def _route_planner_qss(cls) -> str:
+        return f"""
+        QLabel[role="section-label"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_XS}px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+        }}
+        /* Gate false-positive: ``role`` is set via StateLabel's variable setter
+           (components.StateLabel(role=...)) — the string-literal inventory
+           cannot see "pill-value". LIVE. */
+        QLabel[role="pill-value"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: 600;
+        }}
+        QWidget[role="outline-chip"] {{
+            background: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_PILL}px;
+        }}
+        QPushButton[role="icon-btn"] {{
+            background: transparent;
+            color: {COLOR_TEXT_TERTIARY};
+            border: none;
+            font-size: {FONT_SIZE_MD}px;
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QPushButton[role="icon-btn"]:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+            background: {COLOR_BG_HOVER};
+        }}
+        QPushButton[role="icon-btn"]:focus,
+        QPushButton[role="icon-btn"]:focus:!hover {{
+            border: none;
+        }}
+        /* Icon-button opt-in weight override: the waypoint-row remove "×"
+           keeps its 400 weight while the base icon-btn inherits the global
+           bold button weight (both match their replaced inline sheets). */
+        QPushButton[role="icon-btn"][weightRole="regular"] {{
+            font-weight: 400;
+        }}
+        QPushButton[role="chip-remove"] {{
+            background: transparent;
+            border: none;
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QPushButton[role="chip-remove"]:hover {{
+            color: {COLOR_ERROR_DEFAULT};
+        }}
+        QPushButton[role="chip-remove"]:focus,
+        QPushButton[role="chip-remove"]:focus:!hover {{
+            border: none;
+        }}
+        QFrame[role="side-panel"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border-right: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QFrame[role="surface-overlay"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: none;
+        }}
+        QPushButton[role="collapsible-card-header"] {{
+            background: transparent;
+            border: none;
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            text-align: left;
+            padding: 0 12px;
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QPushButton[role="collapsible-card-header"]:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+            background: {COLOR_BG_HOVER};
+        }}
+        QPushButton[role="collapsible-card-header"]:focus,
+        QPushButton[role="collapsible-card-header"]:focus:!hover {{
+            border: none;
+            background: transparent;
+        }}
+        QPushButton[role="add-link-btn"] {{
+            background: transparent;
+            color: {COLOR_ACCENT_PRIMARY};
+            border: none;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
+            text-align: left;
+            padding: 8px 16px 8px 0;
+        }}
+        QPushButton[role="add-link-btn"]:hover {{
+            color: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[role="add-link-btn"]:focus,
+        QPushButton[role="add-link-btn"]:focus:!hover {{
+            border: none;
+        }}
+        QPushButton[role="add-link-btn"][sizeRole="tight"] {{
+            padding: 4px 0;
+        }}
+        QLabel[role="dot"] {{
+            border-radius: 5px;
+        }}
+        """
+
+    # ── Component primitives (Phase 5) ──────────────────────────────────────
+    # ui/components.py static geometry (UniversalCard, icon containers, labels,
+    # badges, search input) plus the Gate-3 tail sites (connect error label,
+    # CMR thin progress bar and section subtitle).
+
+    @classmethod
+    def _components_qss(cls) -> str:
+        return f"""
+        QFrame[role="icon-container"] {{
+            background: {COLOR_BG_OVERLAY};
+            border-radius: {RADIUS_CHIP}px;
+            border: none;
+        }}
+        QLabel[role="card-primary"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: 500;
+        }}
+        QFrame[role="universal-card"] {{
+            background: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+        }}
+        QFrame[role="universal-card"]:hover {{
+            border-color: {COLOR_BORDER_STRONG};
+        }}
+        QLabel[role="section-divider-label"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+        }}
+        QLabel[role="compact-kpi-label"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+        }}
+        QLabel[role="empty-title"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: 15px;
+            font-weight: 500;
+        }}
+        QLineEdit[role="search-input"]:hover {{
+            border-color: {COLOR_BORDER_STRONG};
+        }}
+        /* Focus re-declared AFTER the hover rule so focus wins over hover
+           exactly like the replaced inline sheet (hover then focus ordering). */
+        QLineEdit[role="search-input"]:focus {{
+            border-color: {COLOR_ACCENT_PRIMARY};
+        }}
+        QLabel[role="count-badge"] {{
+            background: {COLOR_ERROR_DEFAULT};
+            color: {TEXT_WHITE};
+            font-size: {FONT_SIZE_XS}px;
+            font-weight: bold;
+            border-radius: {RADIUS_PILL}px;
+            padding: 0 {SPACE_1}px;
+        }}
+        QLabel[role="error-text"] {{
+            color: {COLOR_ERROR_TEXT};
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        QProgressBar[role="thin-bar"] {{
+            background: {COLOR_BORDER_SUBTLE};
+            border: none;
+            border-radius: 2px;
+        }}
+        QProgressBar[role="thin-bar"]::chunk {{
+            background: {COLOR_ACCENT_PRIMARY};
+            border-radius: 2px;
+        }}
+        QLabel[role="section-subtitle"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: 10px;
+        }}
+        QFrame[role="faint-line"] {{
+            background-color: {COLOR_BORDER_SUBTLE};
+            max-height: 1px;
+            min-height: 1px;
         }}
         """

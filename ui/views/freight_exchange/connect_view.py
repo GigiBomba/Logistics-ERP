@@ -85,7 +85,9 @@ class ConnectView(QWidget):
 
         # Error label
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet(f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px;")
+        self._error_label.setProperty("role", "error-text")
+        self._error_label.style().unpolish(self._error_label)
+        self._error_label.style().polish(self._error_label)
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         layout.addWidget(self._error_label)

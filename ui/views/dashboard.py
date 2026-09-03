@@ -1187,16 +1187,24 @@ class QtFleetDashboard(QWidget):
             )
 
     def _clear_content_area(self) -> None:
-        """Remove all widgets from the content layout."""
+        """Remove all widgets from the content layout.
+
+        ``hide()`` + ``setParent(None)`` detach each widget immediately before
+        ``deleteLater()`` so deferred deletes cannot linger under
+        processEvents-only pumping (Oracle gate-4 M1 idiom).
+        """
         while self._content_layout_inner.count():
             item = self._content_layout_inner.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
 
         # Clear chart references
         for widget in self._chart_refs:
             try:
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
             except Exception:
@@ -1212,6 +1220,8 @@ class QtFleetDashboard(QWidget):
             item = layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
 
     def _auto_refresh(self) -> None:

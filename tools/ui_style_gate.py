@@ -6,6 +6,9 @@ Read-only linter over the ``ui/`` tree. Enforces five checks:
   1. inline_qss      - ``setStyleSheet(`` calls anywhere in ui/
   2. raw_hex_colors  - ``#[0-9a-fA-F]{3,8}`` literals in ui/
   3. sub_10px_fonts  - ``font-size: <10px`` in QSS/HTML strings in ui/
+                       (the receipt editor's thermal-print HTML templates in
+                       ``ui/views/receipt_editor/editor_form.py`` are hard
+                       allowlisted: they are output documents, not UI chrome)
   4. fixed_geometry  - ``setFixedSize(`` in ui/dialogs/ and ui/widgets/
                        (WARNING only -- never fails the gate; Phase 2
                        will address these)
@@ -125,8 +128,14 @@ CHECK2_ALLOW_REL = {
     "ui/plotly_theme.py",
 }
 CHECK2_ALLOW_DIRS = ("ui/map",)
-# Check 3 (sub-10px fonts): print/oauth-named files only.
-CHECK3_ALLOW_REL: set[str] = set()
+# Check 3 (sub-10px fonts): print/oauth-named files + the receipt editor's
+# thermal-print HTML templates.  The 6 frozen sub-10px entries in
+# ``ui/views/receipt_editor/editor_form.py`` are output-document HTML (receipt
+# print preview), not UI chrome, so they are hard-allowlisted as legitimate
+# exemptions and leave the baseline as stale entries.
+CHECK3_ALLOW_REL: set[str] = {
+    "ui/views/receipt_editor/editor_form.py",
+}
 
 
 def _filename_exempt(name: str) -> bool:
