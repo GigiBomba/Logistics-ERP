@@ -97,11 +97,14 @@ class TestStressTempfileExhaustion:
             new_files = after - before
             temp_leaks = [f for f in new_files if f.startswith("tmp") or f.endswith(".tmp")]
 
-            # Retry up to 3 times to allow pending framework cleanup to finish
+            # Retry up to 3 times to allow pending framework cleanup to finish.
+            # Bounded backoff: 0.1s per attempt (was 1s) — the framework
+            # spool cleanup completes in tens of ms; 1s per retry only added
+            # wall-clock time without exercising anything extra.
             for attempt in range(3):
                 if not temp_leaks:
                     break
-                time.sleep(1)
+                time.sleep(0.1)
                 after = set(os.listdir(temp_dir))
                 new_files = after - before
                 temp_leaks = [f for f in new_files if f.startswith("tmp") or f.endswith(".tmp")]

@@ -47,14 +47,18 @@ FORBIDDEN_UTTERANCES = [
 ]
 
 
-@pytest.fixture
-def driver_db(tmp_path):
+@pytest.fixture(scope="module")
+def driver_db(tmp_path_factory):
     """A real (file-backed) SQLite DB with a DRIVER user + company.
 
     File-backed (NOT ``:memory:``) so the TestClient's worker thread sees the
-    same committed rows as the seeding thread.
+    same committed rows as the seeding thread.  Module-scoped: every test in
+    this module only ever READS this DB (the /chat endpoint persists its
+    conversation memory to Redis / in-process state, never to this SQLite
+    file) and the seed is idempotent (INSERT OR IGNORE, fixed ids), so one
+    DB per module is safe.
     """
-    db = DatabaseManager(str(tmp_path / "copilot_driver.db"))
+    db = DatabaseManager(str(tmp_path_factory.mktemp("copilot_driver") / "copilot_driver.db"))
     now = datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
     db.conn.execute(
         "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier, "

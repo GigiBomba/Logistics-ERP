@@ -86,7 +86,7 @@ class TestConcurrencyTripConflicts:
     # ── test 2: Concurrent conflict check write race ───────────────────
 
     def test_concurrent_conflict_check_write_race(self, db):
-        """Thread A checks conflicts (500ms delay), Thread B creates trip during delay.
+        """Thread A checks conflicts (100ms delay), Thread B creates trip during delay.
 
         Verify the conflict check runs atomically and no inconsistent state results.
         """
@@ -111,14 +111,14 @@ class TestConcurrencyTripConflicts:
                 for _ in [1]
             ):
                 check_started.set()
-                time.sleep(0.5)  # simulate slow DB
+                time.sleep(0.1)  # simulate slow DB
             return original_execute(sql, params or ())
 
         with patch.object(db, "execute", wraps=db.execute) as mock_exec:
             def side_effect(sql, params=()):
                 if "FROM trips" in sql:
                     check_started.set()
-                    time.sleep(0.5)
+                    time.sleep(0.1)
                 return original_execute(sql, params)
             mock_exec.side_effect = side_effect
 

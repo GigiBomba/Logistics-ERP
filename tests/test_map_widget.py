@@ -9,6 +9,48 @@ from PySide6.QtWidgets import QWidget
 from ui.map.map_widget import MapBridge
 
 
+# ── WebEngine teardown ────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _webengine_teardown(qapp):
+    """Drain QWebEngineView teardown after every test.
+
+    QWebEngineView spawns QtWebEngineProcess child processes; if they
+    outlive the QApplication destructor the process can die with a native
+    access violation (0xC0000005) or hang.  Explicitly deleting every web
+    view and pumping the event loop (each step guarded) lets the engine
+    release its profile before the application tears down.
+    """
+    yield
+    try:
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            for w in app.allWidgets():
+                if isinstance(w, QWebEngineView):
+                    try:
+                        w.deleteLater()
+                    except Exception:
+                        pass
+            for _ in range(6):
+                try:
+                    app.processEvents()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    try:
+        from PySide6.QtWebEngineCore import QWebEngineProfile
+
+        profile = QWebEngineProfile.defaultProfile()
+        if profile is not None:
+            profile.clearHttpCache()
+    except Exception:
+        pass
+
+
 class FakeMapWidget(QWidget):
     """Stub QWidget that mirrors MapWidget's public API."""
     loadFinished = Signal(bool)

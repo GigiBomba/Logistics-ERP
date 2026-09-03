@@ -178,7 +178,10 @@ class TestConcurrencyEventBusSubscribeUnsubscribe:
             t.daemon = True
             t.start()
 
-        time.sleep(0.5)
+        # Race-window duration. Bounded to 0.1s (was 0.5s): the publisher
+        # loops as fast as the GIL allows and the subscriber re-subscribes
+        # every 1ms, so 0.1s still interleaves hundreds of operations.
+        time.sleep(0.1)
         stop_event.set()
 
         for t in threads:
@@ -237,7 +240,10 @@ class TestConcurrencyEventBusSubscribeUnsubscribe:
             t.daemon = True
             t.start()
 
-        time.sleep(0.5)
+        # Race-window duration. Bounded to 0.1s (was 0.5s): the publisher
+        # loops as fast as the GIL allows and the unsubscriber yields every
+        # 2ms, so 0.1s still exercises the subscribe/unsubscribe race.
+        time.sleep(0.1)
         stop_event.set()
 
         for t in threads:

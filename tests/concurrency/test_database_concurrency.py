@@ -504,8 +504,9 @@ class TestLockContention:
                 a_repo = TripRepository(file_db)
                 a_repo.begin_transaction()
                 a_repo.update(trip_id, {"status": "Delivered"})
-                # Hold the transaction open for a while
-                time.sleep(0.3)
+                # Hold the transaction open long enough for B to contend
+                # (0.1s still forces B to block on the SQLite write lock).
+                time.sleep(0.1)
                 a_repo.commit_transaction()
             except Exception as e:
                 with lock:
@@ -514,7 +515,7 @@ class TestLockContention:
         def thread_b() -> None:
             """Try to write while A holds the transaction."""
             try:
-                time.sleep(0.05)  # Let A start first
+                time.sleep(0.01)  # Let A start first (0.01s is plenty)
                 b_repo = TripRepository(file_db)
                 b_repo.update(trip_id, {"driver_name": "Driver-B"})
                 b_succeeded.set()
@@ -564,7 +565,8 @@ class TestLockContention:
                 # Signal B that A has inserted but not committed
                 barrier.wait(timeout=10)
                 # Hold the transaction a bit to let B try to read
-                time.sleep(0.2)
+                # (0.05s is enough for B to run its read query).
+                time.sleep(0.05)
                 a_repo.db.conn.commit()
             except Exception as e:
                 with lock:
@@ -616,7 +618,7 @@ class TestLockContention:
             try:
                 w_repo = TripRepository(file_db)
                 w_repo.begin_transaction()
-                time.sleep(0.1)  # Ensure overlap
+                time.sleep(0.05)  # Ensure overlap (0.05s is enough to interleave)
                 w_repo.update(trip_id, {target_field: value})
                 w_repo.commit_transaction()
                 with lock:

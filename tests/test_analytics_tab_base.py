@@ -617,8 +617,11 @@ class TestSparklineLabel:
     def test_show_event_defers_when_no_fig(self, qt_widget, qtbot):
         label = _SparklineLabel()
         qtbot.addWidget(label)
-        # Should not crash
+        # No figure was set: showEvent must short-circuit without
+        # queuing a render.
         label.showEvent(None)
+        assert label._last_fig is None
+        assert label._pending_tag is None
 
     def test_show_event_skips_when_pixmap_exists(self, qt_widget, qtbot):
         from ui.plotly_charts import make_sparkline_chart
@@ -633,7 +636,8 @@ class TestSparklineLabel:
         label.setPixmap(QPixmap(w, h))
         # Should not re-render since pixmap already set
         label.showEvent(None)
-        # No crash = pass
+        # The existing pixmap is preserved (no re-render clobbered it).
+        assert label.pixmap() is not None and not label.pixmap().isNull()
 
     def test_show_event_skips_when_in_flight(self, qt_widget, qtbot):
         from ui.plotly_charts import make_sparkline_chart
@@ -647,7 +651,8 @@ class TestSparklineLabel:
         label._pending_tag = object()
         # Should not re-render since a render is in flight
         label.showEvent(None)
-        # No crash = pass
+        # The in-flight render tag is preserved (no duplicate render queued).
+        assert label._pending_tag is not None
 
 
 # ── _render_sparkline shim ──────────────────────────────────────────────
@@ -746,7 +751,8 @@ class TestBaseTabChartOrKpi:
             kpi_value_fn=lambda d: ("42", "", ""),
             chart_fn=lambda d: None,
         )
-        # No content added for empty data
+        # Empty data short-circuits: no KPI card, no chart.
+        assert tab._content_layout.count() == 0
 
     def test_chart_or_kpi_with_sparse_data_renders_kpi(self, qt_widget, qtbot):
         class Stub(BaseTab):

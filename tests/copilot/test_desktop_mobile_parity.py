@@ -89,15 +89,19 @@ MOBILE_CONFIRMATION_LEVEL_DEFAULT = 0  # ConfirmationLevel.SAFE
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@pytest.fixture
-def seeded_db(tmp_path):
+@pytest.fixture(scope="module")
+def seeded_db(tmp_path_factory):
     """A real (file-backed) SQLite DB with a dispatcher user + company.
 
     File-backed (NOT ``:memory:``) so the TestClient's worker thread sees the
     same committed rows as the seeding thread — mirroring the security
-    conftest's real-DB approach without module-scoped global state.
+    conftest's real-DB approach.  Module-scoped: every test in this module
+    only ever READS this DB (the /chat endpoint persists its conversation
+    memory to Redis / in-process state, never to this SQLite file), and the
+    seed is idempotent (INSERT OR IGNORE, fixed ids), so one DB per module
+    is safe and avoids the per-test DatabaseManager build cost.
     """
-    db = DatabaseManager(str(tmp_path / "copilot_parity.db"))
+    db = DatabaseManager(str(tmp_path_factory.mktemp("copilot_parity") / "copilot_parity.db"))
     now = datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
     db.conn.execute(
         "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier, "

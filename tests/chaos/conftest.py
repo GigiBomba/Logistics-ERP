@@ -35,5 +35,5 @@ os.environ.pop("OPERION_API_KEY", None)  # Ensure API key middleware stays disab
 
 # Point to the security test suite's conftest for the app/client fixtures
 from tests.security.conftest import (  # noqa: F401, E402
-    app, client, tokens, admin_token, auth_admin, auth_a, auth_b,
+    app, client, tokens, admin_token, auth_admin, auth_a, auth_b, test_db_path,
 )

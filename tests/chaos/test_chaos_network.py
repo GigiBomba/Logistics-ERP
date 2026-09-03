@@ -100,14 +100,16 @@ class TestNetworkChaos:
         """Slow database queries should result in slow response, not crash.
 
         We simulate a slow query by patching ``execute`` on the real DB
-        connection to sleep 0.5 s before delegating to the real method.
+        connection to sleep a short time before delegating to the real method.
+        (0.05s still exercises the slow-path branch while keeping the
+        chaos suite fast; 0.5s was pure wall-clock padding.)
         """
         from database.db_manager import DatabaseManager
 
         original_execute = None
 
         def _slow_execute(self, sql, *args, **kwargs):
-            time.sleep(0.5)
+            time.sleep(0.05)
             return original_execute(sql, *args, **kwargs)
 
         with patch.object(DatabaseManager, "_init_db", return_value=None):
@@ -119,7 +121,7 @@ class TestNetworkChaos:
                 real_conn = MagicMock()
 
                 def slow_side_effect(sql, *args, **kwargs):
-                    time.sleep(0.5)
+                    time.sleep(0.05)
                     return MagicMock()
 
                 real_conn.execute.side_effect = slow_side_effect

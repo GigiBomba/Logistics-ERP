@@ -270,7 +270,10 @@ class TestConcurrencyI18nSetLanguage:
             t.daemon = True
             t.start()
 
-        time.sleep(1.0)
+        # Race-window duration. Bounded to 0.2s (was 1.0s): translators loop
+        # continuously and the changer switches language every 5ms, so 0.2s
+        # still interleaves thousands of t() calls with ~40 language switches.
+        time.sleep(0.2)
         stop_event.set()
 
         for t in translator_threads + changer_threads:
@@ -427,7 +430,10 @@ class TestConcurrencyI18nLoadTranslations:
             t.start()
         reload_thread.start()
 
-        time.sleep(1.0)
+        # Race-window duration. Bounded to 0.2s (was 1.0s): the reload loop
+        # re-loads translations every 10ms, so 0.2s still produces ~20
+        # reloads racing against continuous t() calls.
+        time.sleep(0.2)
         stop_event.set()
         reload_thread.join(timeout=5)
         for t in translator_threads:

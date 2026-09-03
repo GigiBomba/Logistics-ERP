@@ -200,96 +200,130 @@ class TestChartFactoriesDataIntegrity:
         return factory(**kwargs)
 
     def test_bar_chart_empty_data(self):
-        self._render(make_bar_chart, labels=[], values=[], title="t")
+        # Empty data must still produce a valid figure (empty-state branch).
+        fig = self._render(make_bar_chart, labels=[], values=[], title="t")
+        assert fig is not None
 
     def test_bar_chart_single_value(self):
         fig = self._render(make_bar_chart, labels=["A"], values=[100], title="t")
         assert len(fig.data) >= 1
 
     def test_bar_chart_all_zeros(self):
-        self._render(make_bar_chart, labels=["A", "B", "C"], values=[0, 0, 0], title="t")
+        fig = self._render(make_bar_chart, labels=["A", "B", "C"], values=[0, 0, 0], title="t")
+        assert fig is not None
 
     def test_bar_chart_all_same(self):
-        self._render(make_bar_chart, labels=["A", "B", "C"], values=[50, 50, 50], title="t")
+        fig = self._render(make_bar_chart, labels=["A", "B", "C"], values=[50, 50, 50], title="t")
+        assert fig is not None
 
     def test_bar_chart_negative_only(self):
-        self._render(make_bar_chart, labels=["A", "B"], values=[-10, -5], title="t")
+        fig = self._render(make_bar_chart, labels=["A", "B"], values=[-10, -5], title="t")
+        assert fig is not None
 
     def test_bar_chart_none_values(self):
-        self._render(make_bar_chart, labels=["A", "B", "C"], values=[None, 10, None], title="t")
+        fig = self._render(make_bar_chart, labels=["A", "B", "C"], values=[None, 10, None], title="t")
+        assert fig is not None
 
     def test_pie_chart_empty(self):
-        self._render(make_pie_chart, sizes=[], labels=[], title="t")
+        fig = self._render(make_pie_chart, sizes=[], labels=[], title="t")
+        assert fig is not None
 
     def test_pie_chart_all_zeros(self):
-        self._render(make_pie_chart, sizes=[0, 0], labels=["A", "B"], title="t")
+        fig = self._render(make_pie_chart, sizes=[0, 0], labels=["A", "B"], title="t")
+        assert fig is not None
 
     def test_pie_chart_single_slice(self):
-        self._render(make_pie_chart, sizes=[100], labels=["A"], title="t")
+        fig = self._render(make_pie_chart, sizes=[100], labels=["A"], title="t")
+        assert fig is not None
 
     def test_trend_chart_empty(self):
-        self._render(make_trend_chart, x_labels=[], values=[], title="t")
+        fig = self._render(make_trend_chart, x_labels=[], values=[], title="t")
+        assert fig is not None
 
     def test_trend_chart_single_point(self):
-        self._render(make_trend_chart, x_labels=["Jan"], values=[100], title="t")
+        fig = self._render(make_trend_chart, x_labels=["Jan"], values=[100], title="t")
+        assert fig is not None
 
     def test_trend_chart_two_points(self):
-        self._render(make_trend_chart, x_labels=["Jan", "Feb"], values=[0, 100], title="t")
+        fig = self._render(make_trend_chart, x_labels=["Jan", "Feb"], values=[0, 100], title="t")
+        assert fig is not None
 
     def test_trend_chart_all_same(self):
-        self._render(make_trend_chart, x_labels=["Jan", "Feb", "Mar"], values=[50, 50, 50], title="t")
+        fig = self._render(make_trend_chart, x_labels=["Jan", "Feb", "Mar"], values=[50, 50, 50], title="t")
+        assert fig is not None
 
     def test_trend_chart_mixed_signs(self):
-        self._render(make_trend_chart, x_labels=["Jan", "Feb", "Mar"], values=[10, -5, 0], title="t")
+        fig = self._render(make_trend_chart, x_labels=["Jan", "Feb", "Mar"], values=[10, -5, 0], title="t")
+        assert fig is not None
 
     def test_area_chart_single_point(self):
-        self._render(make_area_chart, x_labels=["Jan"], values=[100], title="t")
+        fig = self._render(make_area_chart, x_labels=["Jan"], values=[100], title="t")
+        assert fig is not None
 
     def test_area_chart_empty(self):
-        self._render(make_area_chart, x_labels=[], values=[], title="t")
+        fig = self._render(make_area_chart, x_labels=[], values=[], title="t")
+        assert fig is not None
 
     def test_line_chart_empty(self):
-        self._render(make_line_chart, x_labels=[], y_series=[([1, 2], "S", "#aaa")], title="t")
+        fig = self._render(make_line_chart, x_labels=[], y_series=[([1, 2], "S", "#aaa")], title="t")
+        assert fig is not None
 
     def test_line_chart_single_point(self):
-        self._render(make_line_chart, x_labels=["Jan"], y_series=[([100], "S", "#aaa")], title="t")
+        fig = self._render(make_line_chart, x_labels=["Jan"], y_series=[([100], "S", "#aaa")], title="t")
+        assert fig is not None
 
     def test_grouped_bar_empty(self):
-        self._render(make_grouped_bar_chart, labels=[], groups=[], title="t")
+        fig = self._render(make_grouped_bar_chart, labels=[], groups=[], title="t")
+        assert fig is not None
 
     def test_stacked_bar_empty(self):
-        self._render(make_stacked_bar_chart, labels=[], groups=[], title="t")
+        fig = self._render(make_stacked_bar_chart, labels=[], groups=[], title="t")
+        assert fig is not None
 
     def test_scatter_empty(self):
-        self._render(make_scatter_chart, x_values=[], y_values=[], labels=[], title="t")
+        fig = self._render(make_scatter_chart, x_values=[], y_values=[], labels=[], title="t")
+        assert fig is not None
 
     def test_heatmap_empty(self):
-        self._render(make_heatmap_chart, x_labels=[], y_labels=[], data=[], title="t")
+        fig = self._render(make_heatmap_chart, x_labels=[], y_labels=[], data=[], title="t")
+        assert fig is not None
+
     def test_waterfall_empty(self):
-        self._render(make_waterfall_chart, labels=[], values=[], title="t")
+        fig = self._render(make_waterfall_chart, labels=[], values=[], title="t")
+        assert fig is not None
+
     def test_box_plot_empty(self):
-        self._render(make_box_plot, labels=[], data=[], title="t")
+        fig = self._render(make_box_plot, labels=[], data=[], title="t")
+        assert fig is not None
+
     def test_cost_per_truck_empty(self):
-        self._render(make_cost_per_truck_chart, labels=[], costs=[], title="t")
+        fig = self._render(make_cost_per_truck_chart, labels=[], costs=[], title="t")
+        assert fig is not None
+
     def test_fleet_status_empty(self):
-        self._render(make_fleet_status_chart, labels=[], counts=[], title="t")
+        fig = self._render(make_fleet_status_chart, labels=[], counts=[], title="t")
+        assert fig is not None
+
     def test_trend_chart_very_large_values(self):
         # Million-scale values: ensure no scientific notation in labels
-        self._render(
+        fig = self._render(
             make_trend_chart,
             x_labels=["Jan", "Feb", "Mar"],
             values=[1_000_000, 5_000_000, 2_000_000],
             title="t",
             is_currency=True,
         )
+        assert fig is not None
+
     def test_trend_chart_very_small_values(self):
         # Sub-1 values: ensure decimal labels render correctly
-        self._render(
+        fig = self._render(
             make_trend_chart,
             x_labels=["Jan", "Feb", "Mar"],
             values=[0.001, 0.5, 0.999],
             title="t",
         )
+        assert fig is not None
 # ── Trend chart: vertical line / sideways bug regression ────────────
 
 class TestTrendChartEdgeCases:
@@ -734,7 +768,8 @@ class TestNewChartFactories:
         assert len(fig.data) >= 1
 
     def test_lollipop_empty(self):
-        make_lollipop_chart(labels=[], values=[], title="t")
+        fig = make_lollipop_chart(labels=[], values=[], title="t")
+        assert fig is not None
 
     def test_lollipop_caps_at_max_items(self):
         labels = [f"X{i}" for i in range(20)]
@@ -751,7 +786,8 @@ class TestNewChartFactories:
         assert len(fig.data) > 0
 
     def test_histogram_empty(self):
-        make_histogram_chart(values=[], title="t")
+        fig = make_histogram_chart(values=[], title="t")
+        assert fig is not None
 
     def test_histogram_log_spaced_bins(self):
         fig = make_histogram_chart(
@@ -771,14 +807,16 @@ class TestNewChartFactories:
         assert len(fig.data) >= 1
 
     def test_stacked_area_empty(self):
-        make_stacked_area_chart(x_labels=[], groups=[], title="t")
+        fig = make_stacked_area_chart(x_labels=[], groups=[], title="t")
+        assert fig is not None
 
     def test_bullet_basic(self):
         fig = make_bullet_chart(value=75, target=100, title="t", show_title=False)
         assert len(fig.data) >= 1
 
     def test_bullet_zero_target(self):
-        make_bullet_chart(value=50, target=0, title="t")
+        fig = make_bullet_chart(value=50, target=0, title="t")
+        assert fig is not None
 
     def test_calendar_heatmap_basic(self):
         fig = make_calendar_heatmap(
@@ -792,7 +830,8 @@ class TestNewChartFactories:
         assert len(fig.data) >= 1
 
     def test_calendar_heatmap_empty(self):
-        make_calendar_heatmap(daily_values=[], title="t")
+        fig = make_calendar_heatmap(daily_values=[], title="t")
+        assert fig is not None
 
 
 # ── Optimal chart type per data shape ──────────────────────────────

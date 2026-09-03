@@ -292,10 +292,33 @@ class TestStressConcurrentReadWrite:
 class TestStressConcurrentLanguageSwitches:
     """Concurrent language switches while t() is called — no crashes."""
 
+    @pytest.fixture(autouse=True)
+    def reset_i18n(self):
+        """Snapshot and restore the i18n module globals around each test.
+
+        The revived tests overwrite the real ``services.i18n`` module state
+        (``_translations`` / ``_current_lang``) and register a listener
+        (``_listeners``).  Without a restore they would pollute every later
+        i18n-using test in the same xdist worker.  Same pattern as
+        ``tests/concurrency/test_concurrency_i18n.py::reset_i18n``.
+        """
+        import services.i18n as i18n
+
+        old_translations = i18n._translations
+        old_lang = i18n._current_lang
+        old_listeners = list(i18n._listeners)
+        i18n._translations = {}
+        i18n._current_lang = "en"
+        i18n._listeners = []
+        yield
+        i18n._translations = old_translations
+        i18n._current_lang = old_lang
+        i18n._listeners = old_listeners
+
     def test_concurrent_language_switches_while_translating(self):
         """Language changes occurring while t() is called do not cause crashes."""
         try:
-            import backend.services.i18n as i18n
+            import services.i18n as i18n
         except ImportError:
             pytest.skip("i18n module not available")
 
@@ -353,7 +376,10 @@ class TestStressConcurrentLanguageSwitches:
         for t in threads:
             t.start()
 
-        time.sleep(1.0)
+        # Load-generating duration. Bounded to 0.2s (was 1.0s): the translator
+        # threads loop continuously and the switcher yields every 1ms, so 0.2s
+        # still interleaves thousands of t() calls with ~200 language switches.
+        time.sleep(0.2)
         stop_event.set()
 
         for t in threads:
@@ -364,7 +390,7 @@ class TestStressConcurrentLanguageSwitches:
     def test_concurrent_i18n_listener_notification(self):
         """Concurrent set_language calls correctly notify all listeners."""
         try:
-            import backend.services.i18n as i18n
+            import services.i18n as i18n
         except ImportError:
             pytest.skip("i18n module not available")
 
@@ -418,15 +444,17 @@ class TestStressConcurrentEventBus:
     @pytest.fixture(autouse=True)
     def reset_bus(self):
         try:
-            from backend.services.operations.event_bus import EventBus
-            EventBus._instance = None
+            from services.operations.event_bus import EventBus
         except ImportError:
-            pass
+            pytest.skip("EventBus module not available")
+        EventBus._instance = None
+        yield
+        EventBus._instance = None
 
     def test_multiple_subscribers_and_publishers_no_lost_events(self):
         """Multiple concurrent publishers and subscribers — all events are received."""
         try:
-            from backend.services.operations.event_bus import EventBus, TRIP_CREATED, TRIP_UPDATED
+            from services.operations.event_bus import EventBus, TRIP_CREATED, TRIP_UPDATED
         except ImportError:
             pytest.skip("EventBus module not available")
 
@@ -439,13 +467,24 @@ class TestStressConcurrentEventBus:
         events_per_publisher = 20
         n_subscribers = 3
 
-        def handler(ev):
-            with lock:
-                received.append(ev["type"])
+        def make_handler():
+            """A distinct subscriber callback.
+
+            The real ``EventBus.subscribe`` de-duplicates identical callbacks
+            (``if callback not in self._subscribers[...]``), so "three
+            subscribers" must be three *distinct* callables — exactly like the
+            live sibling ``tests/concurrency/test_concurrency_event_bus.py``.
+            """
+
+            def handler(ev):
+                with lock:
+                    received.append(ev["type"])
+
+            return handler
 
         for _ in range(n_subscribers):
-            bus.subscribe(TRIP_CREATED, handler)
-            bus.subscribe(TRIP_UPDATED, handler)
+            bus.subscribe(TRIP_CREATED, make_handler())
+            bus.subscribe(TRIP_UPDATED, make_handler())
 
         barrier = threading.Barrier(n_publishers, timeout=15)
 

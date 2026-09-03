@@ -140,7 +140,12 @@ def dropdown(qtbot, qt_widget, anchor_widget):
 
 
 class TestItemRow:
-    """Individual _ItemRow widget behaviour."""
+    """Individual _ItemRow widget behaviour.
+
+    Every test here MUST request a Qt fixture (``qtbot``) — ``_ItemRow`` is
+    a QWidget, and constructing it without a QApplication natively crashes
+    (0xC0000409 fail-fast) whenever the test lands first on an xdist worker.
+    """
 
     # NOTE: _walk_set_click has a PySide6 compatibility issue with __func__
     # on builtin methods. We work around it by patching the method before
@@ -164,14 +169,14 @@ class TestItemRow:
             _ItemRow._walk_set_click = original
         return row
 
-    def test_available_row_has_pointer_cursor(self):
+    def test_available_row_has_pointer_cursor(self, qtbot):
         """Available row -> pointing hand cursor."""
         from PySide6.QtCore import Qt
 
         row = self._make_available_row({"id": 1, "label": "Test"})
         assert row.cursor().shape() == Qt.PointingHandCursor
 
-    def test_unavailable_row_has_arrow_cursor(self):
+    def test_unavailable_row_has_arrow_cursor(self, qtbot):
         """Not available -> arrow cursor."""
         from ui.widgets.assignment_dropdown import _ItemRow
         from PySide6.QtCore import Qt
@@ -221,7 +226,7 @@ class TestItemRow:
         qtbot.mouseClick(row, Qt.LeftButton)
         on_select.assert_not_called()
 
-    def test_hover_changes_background(self):
+    def test_hover_changes_background(self, qtbot):
         """enterEvent applies the hover overlay to the role-styled row."""
         from ui.design_tokens import COLOR_BG_OVERLAY
 
@@ -231,7 +236,7 @@ class TestItemRow:
         assert row.property("role") == "assignment-row"
         assert COLOR_BG_OVERLAY in row.styleSheet()
 
-    def test_leave_clears_stylesheet(self):
+    def test_leave_clears_stylesheet(self, qtbot):
         """leaveEvent removes the hover overlay."""
         from ui.design_tokens import COLOR_BG_OVERLAY
 

@@ -11,11 +11,36 @@ Tests cover:
 
 from __future__ import annotations
 
-import time
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+
+class _FakeClock:
+    """Stand-in for the middleware module's ``time`` binding.
+
+    ``RateLimitMiddleware`` reads the current wall-clock via ``time.time()``
+    on its module-level ``time`` import.  Patching that module binding lets
+    tests advance the rate-limit window instantly instead of sleeping real
+    seconds (the real sleeps made this file slow and flaky under load).
+    """
+
+    def __init__(self, start: float = 1_000_000.0) -> None:
+        self._now = start
+
+    def time(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        self._now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> _FakeClock:
+    """Replace the middleware's time source with an advanceable fake clock."""
+    fake = _FakeClock()
+    monkeypatch.setattr("backend.middleware.rate_limit_middleware.time", fake)
+    return fake
 
 
 @pytest.fixture
@@ -113,7 +138,7 @@ class TestBasicRateLimit:
 
 
 class TestWindowExpiry:
-    def test_window_expiry_resets_counter(self):
+    def test_window_expiry_resets_counter(self, clock):
         """After the window expires, requests should be allowed again."""
         app = _build_app(max_requests=2, window_seconds=1)
         client = TestClient(app)
@@ -121,30 +146,26 @@ class TestWindowExpiry:
         assert client.get("/").status_code == 200
         assert client.get("/").status_code == 429
 
-        # Wait for window to expire. KEEP: the middleware's in-memory window
-        # is wall-clock based (time.time()), so real elapsed time is required;
-        # an event wait would not advance the window.
-        time.sleep(1.1)
+        # Advance the middleware's clock past the 1s window (no real sleep).
+        clock.advance(1.1)
 
         # Should be allowed again
         resp = client.get("/")
         assert resp.status_code == 200
 
-    def test_partial_window_sliding(self):
+    def test_partial_window_sliding(self, clock):
         """Older entries slide out of the window as time passes."""
         app = _build_app(max_requests=2, window_seconds=2)
         client = TestClient(app)
         assert client.get("/").status_code == 200
-        # KEEP: wall-clock wait required so the 1st request ages inside the
-        # 2s window (middleware uses time.time()).
-        time.sleep(1)
+        # Age the 1st request inside the 2s window via the fake clock.
+        clock.advance(1)
         assert client.get("/").status_code == 200
         # Both requests are within the 2s window -> 3rd should be blocked
         assert client.get("/").status_code == 429
 
         # After 1 more second, the first request (at t=0) falls out of the 2s window
-        # KEEP: wall-clock wait required for the window to actually slide.
-        time.sleep(1.1)
+        clock.advance(1.1)
         assert client.get("/").status_code == 200
 
 
@@ -160,7 +181,7 @@ class TestCustomParameters:
             assert client.get("/").status_code == 200
         assert client.get("/").status_code == 429
 
-    def test_custom_window_seconds(self):
+    def test_custom_window_seconds(self, clock):
         """window_seconds parameter adjusts the window correctly."""
         app = _build_app(max_requests=3, window_seconds=3)
         client = TestClient(app)
@@ -168,9 +189,8 @@ class TestCustomParameters:
             assert client.get("/").status_code == 200
         assert client.get("/").status_code == 429
 
-        # Wait 3 seconds for window to fully clear.
-        # KEEP: wall-clock wait required — the 3s window is time.time()-based.
-        time.sleep(3.1)
+        # Advance the middleware's clock past the 3s window (no real sleep).
+        clock.advance(3.1)
         assert client.get("/").status_code == 200
 
     def test_max_requests_one_blocks_after_first(self):
@@ -255,7 +275,7 @@ class TestXForwardedFor:
 
 
 class TestPurgeInterval:
-    def test_purge_interval_cleans_old_entries(self):
+    def test_purge_interval_cleans_old_entries(self, clock):
         """After PURGE_INTERVAL requests, stale IP entries should be removed.
 
         We use a short window and check that in-memory dict is cleaned up.
@@ -272,12 +292,12 @@ class TestPurgeInterval:
             # Make some requests with unique X-Forwarded-For IPs
             for i in range(4):
                 client.get("/", headers={"X-Forwarded-For": f"10.0.0.{i}"})
-                time.sleep(0.05)
+                clock.advance(0.05)
 
             # Each request used a different IP, all are within the window
             # After 4 requests (beyond purge interval of 3), purge ran at req 3.
             # Let the window expire then verify new requests from old IPs work.
-            time.sleep(1.1)
+            clock.advance(1.1)
 
             # IPs that had entries should be cleaned up and allowed again
             resp = client.get("/", headers={"X-Forwarded-For": "10.0.0.1"})
