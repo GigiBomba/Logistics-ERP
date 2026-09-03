@@ -176,7 +176,7 @@ class TestQtAutomationViewUI:
         assert 1 <= automation_view.MAX_CONCURRENT_WORKERS <= 8
         assert automation_view.MAX_CONCURRENT_WORKERS == QtAutomationView.DEFAULT_MAX_CONCURRENT_WORKERS
 
-    def test_max_concurrent_workers_from_prefs(self, mock_prefs):
+    def test_max_concurrent_workers_from_prefs(self, mock_prefs, qtbot):
         """Setting a value in prefs is reflected in MAX_CONCURRENT_WORKERS."""
         mock_prefs.get_setting.return_value = "5"
         # Recreate with the custom prefs
@@ -190,7 +190,7 @@ class TestQtAutomationViewUI:
             )
             assert view.MAX_CONCURRENT_WORKERS == 5
 
-    def test_max_concurrent_workers_clamped(self, mock_prefs):
+    def test_max_concurrent_workers_clamped(self, mock_prefs, qtbot):
         """Values outside [1, HARD_MAX] are clamped."""
         mock_prefs.get_setting.return_value = "999"
         with (
@@ -203,7 +203,7 @@ class TestQtAutomationViewUI:
             )
             assert view.MAX_CONCURRENT_WORKERS == QtAutomationView.HARD_MAX_CONCURRENT_WORKERS
 
-    def test_max_concurrent_workers_minimum(self, mock_prefs):
+    def test_max_concurrent_workers_minimum(self, mock_prefs, qtbot):
         """Minimum value is 1."""
         mock_prefs.get_setting.return_value = "0"
         with (

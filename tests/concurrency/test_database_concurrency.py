@@ -214,10 +214,11 @@ class TestConcurrentWrites:
 
     # ── test_concurrent_invoice_number_generation ──────────────────────────
 
-    @pytest.mark.xfail(
-        condition=sys.platform == "win32",
-        strict=False,
-        reason="SQLite concurrent writes deadlock on Windows",
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="SQLite concurrent writes deadlock on Windows and natively "
+               "crash xdist workers — cannot xfail a native crash; "
+               "do not restore xfail without a worker-safe fix",
     )
     def test_concurrent_invoice_number_generation(self, file_db: DatabaseManager):
         """5 threads each calling get_next_number() — no duplicate numbers.

@@ -184,7 +184,7 @@ class TestDispatchBoardInit:
         assert view._conflict_service is not None
         assert view._dispatch_service is not None
 
-    def test_mode_guard_called(self, mock_db, mock_ops):
+    def test_mode_guard_called(self, mock_db, mock_ops, qtbot):
         """detect_mode and guard_local_access should be called during init."""
         with patch("ui.views.dispatch_board.dispatch_board.detect_mode") as mock_detect:
             with patch("ui.views.dispatch_board.dispatch_board.guard_local_access") as mock_guard:

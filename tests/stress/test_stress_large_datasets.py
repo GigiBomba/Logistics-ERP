@@ -276,43 +276,48 @@ class TestStressLargeDatasets:
     # ── 200-line invoice calculation ─────────────────────────────────
 
     def test_invoice_with_200_line_items_accuracy(self):
-        """Invoice calculation with 200 line items preserves accuracy."""
-        db = make_db()
-        try:
-            from backend.services.invoice_service import InvoiceService
-        except ImportError:
-            pytest.skip("InvoiceService not available")
+        """Invoice calculation with 200 line items preserves accuracy.
 
-        svc = InvoiceService(db)
+        Adapted to the real API: ``InvoiceService`` lives in
+        ``services.invoicing.service`` and its typed ``create(InvoiceCreate)``
+        path requires permissions + a seeded client.  The accuracy intent is
+        exercised directly against the real calculator
+        ``_calculate_line_items`` — the same pattern as
+        ``tests/mobile/test_invoice_calculations.py`` — which needs no DB or
+        auth for a pure 200-line aggregation.
+        """
+        from models.invoice_models import InvoiceLineItem
+        from services.invoicing.service import InvoiceService
 
-        line_items = []
-        for i in range(200):
-            line_items.append({
-                "description": f"Item {i}",
-                "quantity": random.randint(1, 10),
-                "unit_price": round(random.uniform(10.0, 500.0), 2),
-                "vat_rate": random.choice([19.0, 7.0, 0.0]),
-            })
+        svc = InvoiceService(None)
 
-        invoice_data = {
-            "client_name": "Large Invoice Client",
-            "line_items": line_items,
-            "currency": "EUR",
-        }
-
-        try:
-            result = svc.create_invoice(invoice_data)
-            # Verify calculation accuracy
-            expected_total = sum(
-                item["quantity"] * item["unit_price"] * (1 + item["vat_rate"] / 100)
-                for item in line_items
+        line_items = [
+            InvoiceLineItem(
+                description=f"Item {i}",
+                quantity=random.randint(1, 10),
+                unit_price=round(random.uniform(10.0, 500.0), 2),
+                vat_rate=random.choice([19.0, 7.0, 0.0]),
             )
-            actual_total = result.get("total", 0)
-            assert abs(actual_total - expected_total) < 0.01, (
-                f"Invoice total mismatch: expected {expected_total:.2f}, got {actual_total:.2f}"
-            )
-        except Exception as e:
-            pytest.skip(f"Invoice creation unavailable: {e}")
+            for i in range(200)
+        ]
+
+        calculated, subtotal_net, total_vat, total_gross = svc._calculate_line_items(line_items)
+
+        assert len(calculated) == 200
+
+        # Independent expected total using the SAME per-line rounding the
+        # service applies (gross → vat → line_total), then aggregate rounding:
+        #   taxable = round(qty * price, 2); vat = round(taxable * rate/100, 2)
+        #   line_total = round(taxable + vat, 2); total = round(sum(lines), 2)
+        def _expected_line_total(li: InvoiceLineItem) -> float:
+            gross = round(li.quantity * li.unit_price, 2)  # no discount here
+            vat = round(gross * li.vat_rate / 100, 2)
+            return round(gross + vat, 2)
+
+        expected_total = round(sum(_expected_line_total(li) for li in line_items), 2)
+        assert abs(total_gross - expected_total) < 0.01, (
+            f"Invoice total mismatch: expected {expected_total:.2f}, got {total_gross:.2f}"
+        )
 
     # ── 5-year analytics aggregation ─────────────────────────────────
 

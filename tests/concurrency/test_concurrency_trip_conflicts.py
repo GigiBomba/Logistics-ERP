@@ -111,14 +111,14 @@ class TestConcurrencyTripConflicts:
                 for _ in [1]
             ):
                 check_started.set()
-                time.sleep(0.1)  # simulate slow DB
+                time.sleep(0.3)  # simulate slow DB — CI-stable race window
             return original_execute(sql, params or ())
 
         with patch.object(db, "execute", wraps=db.execute) as mock_exec:
             def side_effect(sql, params=()):
                 if "FROM trips" in sql:
                     check_started.set()
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                 return original_execute(sql, params)
             mock_exec.side_effect = side_effect
 

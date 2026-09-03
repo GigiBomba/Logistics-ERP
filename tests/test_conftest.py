@@ -66,8 +66,13 @@ def qt_widget(qapp, qtbot):
 
 
 @pytest.fixture
-def webengine_available() -> bool:
-    """Check whether QWebEngineView can be instantiated in this environment."""
+def webengine_available(qtbot) -> bool:
+    """Check whether QWebEngineView can be instantiated in this environment.
+
+    ``qtbot`` is requested so a QApplication exists before widget
+    construction: a bare QWebEngineView with no app triggers a NATIVE
+    fail-fast (not a Python exception), which try/except cannot catch.
+    """
     try:
         from PySide6.QtWebEngineWidgets import QWebEngineView
         v = QWebEngineView()

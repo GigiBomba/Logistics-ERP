@@ -98,7 +98,7 @@ class TestConstruction:
         inner = bubble.findChildren(QFrame)[0]
         assert COLOR_BG_ELEVATED in inner.styleSheet()
 
-    def test_construction_no_parent(self):
+    def test_construction_no_parent(self, qtbot):
         """Can construct with no parent."""
         from ui.copilot.widgets.chat_bubble import ChatBubbleWidget
         bubble = ChatBubbleWidget("No parent", parent=None)

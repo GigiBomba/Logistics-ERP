@@ -609,10 +609,10 @@ class TestQtDriverManagerEvents:
 class TestQtDriverFormDialog:
     """Driver form dialog widget construction."""
 
-    def test_dialog_creates_form_fields(self, driver_form):
+    def test_dialog_creates_form_fields(self, driver_form, qtbot):
         assert len(driver_form._entries) == len(driver_form.FIELDS)
 
-    def test_dialog_populates_editing(self):
+    def test_dialog_populates_editing(self, qtbot):
         dlg = QtDriverFormDialog(
             parent=None,
             driver_repo=MagicMock(),
@@ -623,7 +623,7 @@ class TestQtDriverFormDialog:
         assert dlg._entries["phone"].text() == "+40 723 000 001"
         dlg.close()
 
-    def test_dialog_title_add_mode(self):
+    def test_dialog_title_add_mode(self, qtbot):
         dlg = QtDriverFormDialog(
             parent=None,
             driver_repo=MagicMock(),
@@ -634,7 +634,7 @@ class TestQtDriverFormDialog:
         assert "Add" in title or "add" in title or "driver_manager" in title
         dlg.close()
 
-    def test_dialog_title_edit_mode(self):
+    def test_dialog_title_edit_mode(self, qtbot):
         dlg = QtDriverFormDialog(
             parent=None,
             driver_repo=MagicMock(),
@@ -645,7 +645,7 @@ class TestQtDriverFormDialog:
         assert "Edit" in title or "edit" in title or "driver_manager" in title
         dlg.close()
 
-    def test_dialog_truck_combo_populated(self, monkeypatch):
+    def test_dialog_truck_combo_populated(self, monkeypatch, qtbot):
         with patch(
             "repositories.fleet_repository.FleetRepository"
         ) as mock_fleet_cls:
@@ -674,7 +674,7 @@ class TestQtDriverFormDialog:
 class TestQtDriverFormDialogSave:
     """Driver form dialog save logic."""
 
-    def test_save_empty_name_shows_warning(self, monkeypatch):
+    def test_save_empty_name_shows_warning(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         dlg = QtDriverFormDialog(
             parent=None,
@@ -687,7 +687,7 @@ class TestQtDriverFormDialogSave:
         QMessageBox.warning.assert_called()
         dlg.close()
 
-    def test_save_invalid_salary_shows_warning(self, monkeypatch):
+    def test_save_invalid_salary_shows_warning(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         dlg = QtDriverFormDialog(
             parent=None,
@@ -701,7 +701,7 @@ class TestQtDriverFormDialogSave:
         QMessageBox.warning.assert_called()
         dlg.close()
 
-    def test_save_creates_new_driver(self, monkeypatch):
+    def test_save_creates_new_driver(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         repo = MagicMock()
         repo.create.return_value = 99
@@ -717,7 +717,7 @@ class TestQtDriverFormDialogSave:
         repo.create.assert_called_once()
         dlg.close()
 
-    def test_save_updates_existing_driver(self, monkeypatch):
+    def test_save_updates_existing_driver(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         repo = MagicMock()
         dlg = QtDriverFormDialog(
@@ -733,7 +733,7 @@ class TestQtDriverFormDialogSave:
         assert args[0] == SAMPLE_DRIVER["id"]
         dlg.close()
 
-    def test_save_assigns_truck(self, monkeypatch):
+    def test_save_assigns_truck(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         dta = MagicMock()
         repo = MagicMock()
@@ -761,7 +761,7 @@ class TestQtDriverFormDialogSave:
             dta.assign_driver_to_truck.assert_called_once_with(42, 5)
             dlg.close()
 
-    def test_save_unassigns_truck(self, monkeypatch):
+    def test_save_unassigns_truck(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         dta = MagicMock()
         repo = MagicMock()
@@ -789,7 +789,7 @@ class TestQtDriverFormDialogSave:
             dta.unassign_driver.assert_called_once_with(42)
             dlg.close()
 
-    def test_save_exception_shows_critical(self, monkeypatch):
+    def test_save_exception_shows_critical(self, monkeypatch, qtbot):
         monkeypatch.setattr(QMessageBox, "warning", MagicMock())
         monkeypatch.setattr(QMessageBox, "critical", MagicMock())
         repo = MagicMock()
