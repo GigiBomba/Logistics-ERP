@@ -77,10 +77,6 @@ class _FakeSyncEndpoints implements SyncEndpoints {
           requestOptions: RequestOptions(path: ''),
         );
   }
-
-  @override
-  Future<Response> getDelta(String cursor) =>
-      throw UnimplementedError('getDelta not expected in these tests');
 }
 
 class _FakeLocalDatabase implements LocalDatabase {
@@ -140,6 +136,16 @@ class _FakeLocalDatabase implements LocalDatabase {
     cacheDataCalls.add({'collection': collection, 'key': key, 'data': data});
     _data.putIfAbsent(collection, () => <String, dynamic>{});
     _data[collection]![key] = Map<String, dynamic>.from(data);
+  }
+
+  @override
+  Future<void> cacheMany(
+    String collection,
+    Map<String, Map<String, dynamic>> records,
+  ) async {
+    for (final entry in records.entries) {
+      await cacheData(collection, entry.key, entry.value);
+    }
   }
 
   @override
@@ -874,6 +880,12 @@ class _ThrowingLocalDatabase implements LocalDatabase {
 
   @override
   Future<void> cacheData(String collection, String key, Map<String, dynamic> data) async {}
+
+  @override
+  Future<void> cacheMany(
+    String collection,
+    Map<String, Map<String, dynamic>> records,
+  ) async {}
 
   @override
   Future<Map<String, dynamic>?> getCachedData(String collection, String key) async => null;

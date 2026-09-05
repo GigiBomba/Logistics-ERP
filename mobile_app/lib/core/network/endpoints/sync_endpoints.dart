@@ -8,11 +8,6 @@ class SyncEndpoints {
 
   SyncEndpoints(this.client);
 
-  /// Fetch changes that occurred after the given [cursor] (cursor value returned
-  /// by a previous sync response).
-  Future<Response> getDelta(String cursor) =>
-      client.get('/api/v1/mobile/sync', queryParameters: {'since': cursor});
-
   /// Fetch delta changes for a specific [entityType] since [cursor].
   Future<Response> syncEntity(String entityType, {String? cursor}) {
     final params = <String, dynamic>{'entity': entityType};

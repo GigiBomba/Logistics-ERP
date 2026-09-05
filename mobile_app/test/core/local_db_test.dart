@@ -1,5 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+// Transitive dependency of path_provider; used only to point the platform's
+// documents directory at a temp folder for file-backed cold-start tests.
+// ignore: depend_on_referenced_packages
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+
+import 'package:operion_mobile/core/storage/local_db.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A standalone in-memory fake of LocalDatabase that does not touch the
@@ -14,6 +22,11 @@ class _FakeLocalDatabase {
   final _cache = <String, Map<String, String>>{};
   bool _initialized = false;
 
+  /// Number of persist (disk-write) operations performed. Mirrors the
+  /// `_persistCollection` calls in the real [LocalDatabase] so tests can
+  /// assert how many disk writes an operation triggers.
+  int persistCount = 0;
+
   // ── Initialisation ────────────────────────────
 
   Future<void> initialize() async {
@@ -27,10 +40,12 @@ class _FakeLocalDatabase {
 
   Future<void> cacheTransports(List<Map<String, dynamic>> transports) async {
     await clearCollection('transports');
+    final records = <String, Map<String, dynamic>>{};
     for (final t in transports) {
       final id = t['id']?.toString() ?? t.hashCode.toString();
-      await cacheData('transports', id, t);
+      records[id] = t;
     }
+    await cacheMany('transports', records);
   }
 
   Future<List<Map<String, dynamic>>> getCachedTransports() async {
@@ -47,6 +62,18 @@ class _FakeLocalDatabase {
   ) async {
     _ensureCollection(collection);
     _cache[collection]![key] = jsonEncode(data);
+    persistCount++;
+  }
+
+  Future<void> cacheMany(
+    String collection,
+    Map<String, Map<String, dynamic>> records,
+  ) async {
+    _ensureCollection(collection);
+    for (final entry in records.entries) {
+      _cache[collection]![entry.key] = jsonEncode(entry.value);
+    }
+    persistCount++;
   }
 
   Future<Map<String, dynamic>?> getCachedData(
@@ -129,6 +156,21 @@ class _FakeLocalDatabase {
         .map((raw) => jsonDecode(raw) as Map<String, dynamic>)
         .toList();
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A fake PathProviderPlatform that points the documents directory at a real
+// temp folder, so the file-backed [LocalDatabase] can be exercised on disk
+// (needed for cold-start / fresh-process simulations).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  final String documentsPath;
+
+  _FakePathProviderPlatform(this.documentsPath);
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => documentsPath;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,6 +309,66 @@ void main() {
       final cached = await db.getCachedTransports();
       expect(cached, hasLength(1));
       expect(cached.first['id'], 'new');
+    });
+
+    // ── cacheMany() ─────────────────────────────────────────────────────
+
+    test('cacheMany upsert-merges: new keys added, existing keys overwritten',
+        () async {
+      await db.cacheData('transports', 't1', {'id': 't1', 'status': 'pending'});
+      await db.cacheData('transports', 't2', {'id': 't2', 'status': 'active'});
+
+      await db.cacheMany('transports', {
+        't2': {'id': 't2', 'status': 'delivered'},
+        't3': {'id': 't3', 'status': 'new'},
+      });
+
+      final t1 = await db.getCachedData('transports', 't1');
+      final t2 = await db.getCachedData('transports', 't2');
+      final t3 = await db.getCachedData('transports', 't3');
+      expect(t1!['status'], 'pending'); // untouched key still present
+      expect(t2!['status'], 'delivered'); // existing key overwritten
+      expect(t3!['status'], 'new'); // new key added
+    });
+
+    test('cacheMany persists the collection exactly once', () async {
+      final before = db.persistCount;
+
+      await db.cacheMany('transports', {
+        'a': {'id': 'a'},
+        'b': {'id': 'b'},
+        'c': {'id': 'c'},
+      });
+
+      expect(db.persistCount, before + 1);
+    });
+
+    test('cacheMany with empty records still performs a single persist',
+        () async {
+      final before = db.persistCount;
+
+      await db.cacheMany('transports', {});
+
+      expect(db.persistCount, before + 1);
+    });
+
+    test('cacheTransports clears then replaces with a single persist',
+        () async {
+      await db.cacheData('transports', 't1', {'id': 't1', 'status': 'old'});
+      final before = db.persistCount;
+
+      await db.cacheTransports([
+        {'id': 't1', 'status': 'new'},
+        {'id': 't2', 'status': 'active'},
+      ]);
+
+      // Old entry replaced, new entry added — collection is cleared first.
+      final cached = await db.getCachedTransports();
+      expect(cached, hasLength(2));
+      expect(cached.any((t) => t['id'] == 't1' && t['status'] == 'new'), isTrue);
+      expect(cached.any((t) => t['id'] == 't2'), isTrue);
+      // One write for the whole batch.
+      expect(db.persistCount, before + 1);
     });
 
     // ── read() / write() ────────────────────────────────────────────────
@@ -751,6 +853,84 @@ void main() {
         final allKeys = await db.keysWithPrefix('');
         expect(allKeys, hasLength(4));
       });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Real file-backed LocalDatabase: cold-start / fresh-process regression
+  // (M4: the first cacheMany/cacheData on a fresh instance must MERGE with
+  // the on-disk collection, not replace it).
+  // ─────────────────────────────────────────────────────────────────────
+
+  group('LocalDatabase (file-backed cold start)', () {
+    late Directory tempDir;
+
+    setUpAll(() {
+      tempDir = Directory.systemTemp.createTempSync('local_db_cold_start_');
+      PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+    });
+
+    tearDownAll(() {
+      tempDir.deleteSync(recursive: true);
+    });
+
+    test('cacheMany on a fresh instance merges with existing on-disk data',
+        () async {
+      // Instance #1 persists {a, b} for 'coll_many'.
+      final db1 = LocalDatabase();
+      await db1.initialize();
+      await db1.cacheMany('coll_many', {
+        'a': {'id': 'a', 'v': 1},
+        'b': {'id': 'b', 'v': 2},
+      });
+
+      // Fresh instance #2 — empty in-memory cache, simulates a new process.
+      final db2 = LocalDatabase();
+      await db2.initialize();
+      await db2.cacheMany('coll_many', {
+        'c': {'id': 'c', 'v': 3},
+      });
+
+      // Old keys a, b must survive alongside the new key c (merged, not
+      // replaced) — verified both in memory and on disk.
+      final a = await db2.getCachedData('coll_many', 'a');
+      final b = await db2.getCachedData('coll_many', 'b');
+      final c = await db2.getCachedData('coll_many', 'c');
+      expect(a, isNotNull);
+      expect(a!['id'], 'a');
+      expect(b, isNotNull);
+      expect(b!['id'], 'b');
+      expect(c, isNotNull);
+      expect(c!['id'], 'c');
+
+      final file = File('${tempDir.path}/operion_cache/coll_many.json');
+      final onDisk = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect(onDisk.keys, containsAll(['a', 'b', 'c']));
+    });
+
+    test('cacheData on a fresh instance merges with existing on-disk data',
+        () async {
+      // Instance #1 persists key 'a' for 'coll_data'.
+      final db1 = LocalDatabase();
+      await db1.initialize();
+      await db1.cacheData('coll_data', 'a', {'id': 'a', 'v': 1});
+
+      // Fresh instance #2 — empty in-memory cache, simulates a new process.
+      final db2 = LocalDatabase();
+      await db2.initialize();
+      await db2.cacheData('coll_data', 'b', {'id': 'b', 'v': 2});
+
+      // Old key 'a' must survive alongside the new key 'b'.
+      final a = await db2.getCachedData('coll_data', 'a');
+      final b = await db2.getCachedData('coll_data', 'b');
+      expect(a, isNotNull);
+      expect(a!['id'], 'a');
+      expect(b, isNotNull);
+      expect(b!['id'], 'b');
+
+      final file = File('${tempDir.path}/operion_cache/coll_data.json');
+      final onDisk = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect(onDisk.keys, containsAll(['a', 'b']));
     });
   });
 }

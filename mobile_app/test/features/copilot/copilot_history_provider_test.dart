@@ -203,16 +203,16 @@ void main() {
   });
 
   group('copilotHistoryProvider', () {
-    test('resolves with overridden endpoints and local database', () {
+    test('resolves with overridden endpoints and local database', () async {
       final container = ProviderContainer(overrides: <Override>[
         copilotEndpointsProvider.overrideWithValue(_FakeEndpoints()),
-        localDatabaseProvider.overrideWithValue(_InMemoryLocalDatabase()),
+        localDatabaseProvider.overrideWith((ref) => _InMemoryLocalDatabase()),
       ]);
       addTearDown(container.dispose);
 
-      final controller = container.read(copilotHistoryProvider.notifier);
+      final controller = await container.read(copilotHistoryProvider.future);
       expect(controller, isA<CopilotHistoryController>());
-      expect(container.read(copilotHistoryProvider), isA<CopilotHistoryLoading>());
+      expect(controller.state, isA<CopilotHistoryLoading>());
     });
   });
 }

@@ -632,20 +632,6 @@ void main() {
       captured = RequestOptions(path: '');
     });
 
-    test('getDelta sends GET to /mobile/sync with since query parameter', () async {
-      endpoints = SyncEndpoints(_createMockClient(
-        onRequest: (opts) {
-          captured = opts;
-        },
-      ));
-
-      await endpoints.getDelta('cursor123');
-
-      expect(captured.method, equals('GET'));
-      expect(captured.path, equals('/api/v1/mobile/sync'));
-      expect(captured.queryParameters, containsPair('since', 'cursor123'));
-    });
-
     test('synEntity sends GET with entity query parameter', () async {
       endpoints = SyncEndpoints(_createMockClient(
         onRequest: (opts) {
@@ -687,20 +673,6 @@ void main() {
       expect(captured.path, equals('/api/v1/mobile/sync'));
       expect(captured.queryParameters, containsPair('entity', 'transport'));
       expect(captured.queryParameters, containsPair('full', 'true'));
-    });
-
-    test('getDelta response is returned correctly', () async {
-      endpoints = SyncEndpoints(_createMockClient(
-        onRequest: (opts) {
-          captured = opts;
-        },
-        responseData: <String, dynamic>{'entities': <dynamic>[<String, dynamic>{'id': 1}], 'cursor': 'next_cursor'},
-      ));
-
-      final response = await endpoints.getDelta('cursor123');
-
-      expect(response.data['cursor'], equals('next_cursor'));
-      expect(response.data['entities'], hasLength(1));
     });
   });
 

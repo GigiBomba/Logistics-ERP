@@ -71,6 +71,17 @@ class _FakeLocalDatabase implements LocalDatabase {
   }
 
   @override
+  Future<void> cacheMany(
+    String collection,
+    Map<String, Map<String, dynamic>> records,
+  ) async {
+    _data.putIfAbsent(collection, () => <String, dynamic>{});
+    for (final entry in records.entries) {
+      _data[collection]![entry.key] = Map<String, dynamic>.from(entry.value);
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>?> getCachedData(
     String collection,
     String key,

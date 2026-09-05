@@ -91,7 +91,7 @@ List<Override> _testOverrides() => [
   secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
   biometricServiceProvider.overrideWithValue(_MockBiometricService()),
   apiClientProvider.overrideWithValue(_stubApiClient()),
-  actionQueueProvider.overrideWithValue(_MockActionQueue()),
+  actionQueueProvider.overrideWith((ref) => _MockActionQueue()),
   isOfflineProvider.overrideWith((ref) => false),
   currentUserProvider.overrideWith((ref) => User(
     id: '1', email: 'test@test.com', fullName: 'Test Driver',

@@ -58,10 +58,12 @@ class LocalDatabase {
   /// Replace the entire transports cache with the provided list.
   Future<void> cacheTransports(List<Map<String, dynamic>> transports) async {
     await clearCollection('transports');
+    final records = <String, Map<String, dynamic>>{};
     for (final t in transports) {
       final id = t['id']?.toString() ?? _fallbackId(t);
-      await cacheData('transports', id, t);
+      records[id] = t;
     }
+    await cacheMany('transports', records);
   }
 
   /// Retrieve all cached transports as a list of maps.
@@ -78,8 +80,29 @@ class LocalDatabase {
     String key,
     Map<String, dynamic> data,
   ) async {
+    await _loadCollection(collection);
     _ensureCollection(collection);
     _cache[collection]![key] = jsonEncode(data);
+    await _persistCollection(collection);
+  }
+
+  /// Store multiple [records] within [collection] using a single disk write.
+  ///
+  /// Each key in [records] is upsert-merged into the collection: new keys are
+  /// added and existing keys are overwritten. All records are merged into the
+  /// in-memory map before one [`_persistCollection`] call, so the disk is
+  /// written exactly once per call regardless of how many records are passed.
+  /// The on-disk format is identical to [`cacheData`] (a JSON object mapping
+  /// keys to JSON-encoded records).
+  Future<void> cacheMany(
+    String collection,
+    Map<String, Map<String, dynamic>> records,
+  ) async {
+    await _loadCollection(collection);
+    _ensureCollection(collection);
+    for (final entry in records.entries) {
+      _cache[collection]![entry.key] = jsonEncode(entry.value);
+    }
     await _persistCollection(collection);
   }
 

@@ -188,9 +188,11 @@ final copilotStateProvider =
 // ── Offline conversation cache (§32.3) ────────────────────────────────────
 
 /// Provides the read-only conversation-history cache backed by the shared
-/// [LocalDatabase] JSON store.
-final copilotCacheProvider = Provider<CopilotConversationCache>((ref) {
-  final db = ref.watch(localDatabaseProvider);
+/// [LocalDatabase] JSON store. Waits for [LocalDatabase.initialize] so the
+/// cache never touches an uninitialised store.
+final copilotCacheProvider =
+    FutureProvider<CopilotConversationCache>((ref) async {
+  final db = await ref.watch(localDatabaseProvider.future);
   return CopilotConversationCache(db);
 });
 
@@ -295,8 +297,8 @@ class CopilotHistoryController extends StateNotifier<CopilotHistoryState> {
 }
 
 final copilotHistoryProvider =
-    StateNotifierProvider<CopilotHistoryController, CopilotHistoryState>((ref) {
+    FutureProvider<CopilotHistoryController>((ref) async {
   final endpoints = ref.watch(copilotEndpointsProvider);
-  final cache = ref.watch(copilotCacheProvider);
+  final cache = await ref.watch(copilotCacheProvider.future);
   return CopilotHistoryController(endpoints, cache);
 });

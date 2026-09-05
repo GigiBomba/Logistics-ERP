@@ -336,14 +336,18 @@ class ReplayPermanentFailure implements Exception {
 // ── Riverpod provider ─────────────────────────────────────────────────
 
 /// Provides the singleton [ActionQueue] wired to the default [LocalDatabase].
-final actionQueueProvider = Provider<ActionQueue>((ref) {
-  final db = ref.watch(localDatabaseProvider);
+final actionQueueProvider = FutureProvider<ActionQueue>((ref) async {
+  final db = await ref.watch(localDatabaseProvider.future);
   final queue = ActionQueue(db);
   ref.onDispose(() => queue.dispose());
   return queue;
 });
 
-/// Placeholder provider – override in your app with the real [LocalDatabase].
-final localDatabaseProvider = Provider<LocalDatabase>((ref) {
-  return LocalDatabase();
+/// Provides the shared [LocalDatabase], guaranteed to be initialised before
+/// the instance is returned. `initialize()` is idempotent, so repeated calls
+/// are safe. Override in tests with an in-memory fake.
+final localDatabaseProvider = FutureProvider<LocalDatabase>((ref) async {
+  final db = LocalDatabase();
+  await db.initialize();
+  return db;
 });

@@ -318,7 +318,7 @@ class _DocumentUploadScreenState
         await _imageFile!.copy(persistentPath);
       }
 
-      final queue = ref.read(actionQueueProvider);
+      final queue = await ref.read(actionQueueProvider.future);
       await queue.enqueue(
         '/mobile/documents/upload',
         'POST',
