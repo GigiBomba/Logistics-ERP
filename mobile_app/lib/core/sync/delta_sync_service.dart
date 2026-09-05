@@ -37,10 +37,20 @@ class SyncResult {
 ///
 /// For a given [entityType] (e.g. `transport`, `message`) the service:
 /// 1. Reads the last-known sync cursor from [LocalDatabase].
-/// 2. Fetches only records that changed **after** that cursor.
+/// 2. Fetches changed records page by page, echoing the server cursor.
 /// 3. Persists the new cursor returned by the server.
 ///
-/// This minimises bandwidth and speeds up subsequent syncs.
+/// ## Cursor contract
+///
+/// The backend cursor is OPAQUE — a compound `"<ts>|<id>"` string for
+/// timestamp entities, a numeric string for fleet. The client stores and
+/// echoes it verbatim; it is never split, parsed, or reformatted. A `null`
+/// cursor means "no cursor": the next sync starts from the first page and no
+/// `since` parameter is sent.
+///
+/// Pages are fetched until the backend reports `has_more == false`, bounded
+/// by [maxPagesPerRun] so a misbehaving backend can never cause an infinite
+/// loop.
 class DeltaSyncService {
   final SyncEndpoints _endpoints;
   final LocalDatabase _db;
@@ -48,125 +58,151 @@ class DeltaSyncService {
   /// Namespace used inside [LocalDatabase] for sync cursors.
   static const String _cursorNamespace = 'sync_cursors';
 
+  /// Hard cap on the number of pages fetched per sync run. Guards against a
+  /// backend that keeps returning `has_more: true` forever.
+  static const int maxPagesPerRun = 50;
+
   DeltaSyncService(this._endpoints, this._db);
 
   // ── Public API ─────────────────────────────────────────────────────
 
   /// Performs a delta sync for [entityType].
   ///
-  /// Sends a GET request with the last-known cursor and processes the
-  /// returned records. Returns a [SyncResult] describing the outcome.
+  /// Starts from the stored cursor (if any) and paginates until the backend
+  /// reports `has_more == false`. Returns a [SyncResult] describing the
+  /// outcome.
   Future<SyncResult> sync({required String entityType}) async {
-    try {
-      final cursor = await getLastCursor(entityType);
-
-      final response = await _endpoints.syncEntity(
-        entityType,
-        cursor: cursor,
-      );
-
-      final body = response.data;
-      if (body is! Map<String, dynamic>) {
-        return SyncResult(
-          success: false,
-          recordsSynced: 0,
-          error: 'Unexpected response format for $entityType sync',
-        );
-      }
-
-      final records = body['records'];
-      final newCursor = body['cursor'] as String?;
-      final recordCount = records is List ? records.length : 0;
-
-      // Cache the fetched records locally
-      if (records is List) {
-        for (final record in records) {
-          if (record is Map<String, dynamic>) {
-            final recordId = (record['id'] ?? record['_id']).toString();
-            await _db.cacheData(entityType, recordId, record);
-          }
-        }
-      }
-
-      developer.log(
-        'DeltaSync: $entityType synced $recordCount record(s) '
-        '${cursor != null ? "(cursor: ${cursor.length > 8 ? cursor.substring(0, 8) : cursor}…)" : "(initial)"} '
-        '→ new cursor: ${newCursor != null ? "${newCursor.length > 8 ? newCursor.substring(0, 8) : newCursor}…" : "none"}',
-        name: 'DeltaSync',
-      );
-
-      if (newCursor != null) {
-        await updateCursor(entityType, newCursor);
-      }
-
-      return SyncResult(success: true, recordsSynced: recordCount);
-    } catch (e) {
-      developer.log(
-        'DeltaSync.sync($entityType): $e',
-        name: 'DeltaSync',
-      );
-      return SyncResult(
-        success: false,
-        recordsSynced: 0,
-        error: e.toString(),
-      );
-    }
+    final cursor = await getLastCursor(entityType);
+    return _runSyncLoop(
+      entityType: entityType,
+      startCursor: cursor,
+      persistCursor: true,
+    );
   }
 
   /// Performs a full (bulk) sync for [entityType], ignoring any existing
   /// cursor.
   ///
-  /// After a successful full sync the cursor is reset so subsequent delta
-  /// syncs only fetch newer changes.
+  /// Starts from the first page (no `since`) and paginates until done. The
+  /// stored cursor is only overwritten if the whole loop completes.
   Future<SyncResult> fullSync({required String entityType}) async {
+    return _runSyncLoop(
+      entityType: entityType,
+      startCursor: null,
+      persistCursor: true,
+    );
+  }
+
+  // ── Shared paginated loop ───────────────────────────────────────────
+
+  /// Fetches all pages for [entityType] and merges them into the local store.
+  ///
+  /// - Page 1 never sends `since` unless [startCursor] is non-null; every
+  ///   subsequent page sends the cursor from the previous response verbatim.
+  /// - Each page is written with a single [LocalDatabase.cacheMany] call.
+  /// - The loop stops when `has_more == false` or when [maxPagesPerRun]
+  ///   pages have been fetched (in which case it fails instead of spinning).
+  /// - The final non-null cursor is persisted only when [persistCursor] is
+  ///   set and the loop completed without error.
+  Future<SyncResult> _runSyncLoop({
+    required String entityType,
+    required String? startCursor,
+    required bool persistCursor,
+  }) async {
+    var cursor = startCursor;
+    var totalRecords = 0;
+    var pages = 0;
+    var hasMore = true;
+    String? lastCursor;
+
     try {
-      final response = await _endpoints.syncEntityFull(entityType);
+      while (hasMore) {
+        if (pages >= maxPagesPerRun) {
+          final error = 'Sync for $entityType exceeded the maximum of '
+              '$maxPagesPerRun pages; giving up';
+          developer.log('DeltaSync: $error', name: 'DeltaSync');
+          return SyncResult(
+            success: false,
+            recordsSynced: totalRecords,
+            error: error,
+          );
+        }
 
-      final body = response.data;
-      if (body is! Map<String, dynamic>) {
-        return SyncResult(
-          success: false,
-          recordsSynced: 0,
-          error: 'Unexpected response format for $entityType full sync',
+        final response = await _endpoints.syncEntity(
+          entityType,
+          cursor: cursor,
         );
-      }
 
-      final records = body['records'];
-      final cursor = body['cursor'] as String?;
-      final recordCount = records is List ? records.length : 0;
+        final body = response.data;
+        if (body is! Map<String, dynamic>) {
+          return SyncResult(
+            success: false,
+            recordsSynced: totalRecords,
+            error: 'Unexpected response format for $entityType sync',
+          );
+        }
 
-      // Cache the fetched records locally
-      if (records is List) {
+        final records = body['records'];
+        if (records is! List) {
+          return SyncResult(
+            success: false,
+            recordsSynced: totalRecords,
+            error:
+                'Malformed sync response for $entityType: missing "records" list',
+          );
+        }
+
+        // Merge this page's records into a single batch write.
+        final pageMap = <String, Map<String, dynamic>>{};
         for (final record in records) {
           if (record is Map<String, dynamic>) {
             final recordId = (record['id'] ?? record['_id']).toString();
-            await _db.cacheData(entityType, recordId, record);
+            pageMap[recordId] = record;
           }
         }
+        if (pageMap.isNotEmpty) {
+          await _db.cacheMany(entityType, pageMap);
+          totalRecords += pageMap.length;
+        }
+
+        final rawCursor = body['cursor'];
+        lastCursor = rawCursor is String ? rawCursor : null;
+        hasMore = body['has_more'] == true;
+        pages++;
+
+        developer.log(
+          'DeltaSync: $entityType page $pages fetched ${pageMap.length} '
+          'record(s) (total $totalRecords, has_more: $hasMore, '
+          'cursor: ${lastCursor != null ? _shortCursor(lastCursor) : 'none'})',
+          name: 'DeltaSync',
+        );
+
+        // The next page continues from the cursor this response returned.
+        cursor = lastCursor;
       }
 
-      developer.log(
-        'DeltaSync: full sync of $entityType returned $recordCount record(s)',
-        name: 'DeltaSync',
-      );
-
-      if (cursor != null) {
-        await updateCursor(entityType, cursor);
+      // Persist the final cursor only when the run completed cleanly, and
+      // never persist a null cursor.
+      if (persistCursor && lastCursor != null) {
+        await updateCursor(entityType, lastCursor);
       }
 
-      return SyncResult(success: true, recordsSynced: recordCount);
+      return SyncResult(success: true, recordsSynced: totalRecords);
     } catch (e) {
       developer.log(
-        'DeltaSync.fullSync($entityType): $e',
+        'DeltaSync loop($entityType): $e',
         name: 'DeltaSync',
       );
       return SyncResult(
         success: false,
-        recordsSynced: 0,
+        recordsSynced: totalRecords,
         error: e.toString(),
       );
     }
   }
+
+  static String _shortCursor(String cursor) =>
+      cursor.length > 8 ? '${cursor.substring(0, 8)}…' : cursor;
 
   // ── Cursor persistence ────────────────────────────────────────────────
 
@@ -187,6 +223,9 @@ class DeltaSyncService {
   }
 
   /// Persists the [cursor] returned by the server for [entityType].
+  ///
+  /// The cursor is stored verbatim. Callers must only pass a non-null value —
+  /// a null cursor is never persisted.
   Future<void> updateCursor(String entityType, String cursor) async {
     try {
       await _db.write(entityType, cursor, namespace: _cursorNamespace);

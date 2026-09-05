@@ -1,6 +1,56 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operion_mobile/core/sync/delta_sync_service.dart';
 import 'package:operion_mobile/core/sync/sync_providers.dart';
+
+// =============================================================================
+// Fake DeltaSyncService used to exercise the SyncCoordinator in isolation.
+// =============================================================================
+
+class _FakeDeltaSyncService implements DeltaSyncService {
+  /// Entities that `sync` was called for, in order.
+  final List<String> syncedEntities = [];
+
+  /// Per-entity record counts returned by successful syncs.
+  Map<String, int> recordsByEntity = {};
+
+  /// Per-entity cursors returned by [getLastCursor].
+  Map<String, String> cursorsByEntity = {};
+
+  /// If set, `sync` for this entity returns a failure (and the coordinator
+  /// stops there).
+  String? failEntity;
+
+  @override
+  Future<SyncResult> sync({required String entityType}) async {
+    syncedEntities.add(entityType);
+    if (failEntity == entityType) {
+      return SyncResult(
+        success: false,
+        recordsSynced: 0,
+        error: 'boom $entityType',
+      );
+    }
+    return SyncResult(
+      success: true,
+      recordsSynced: recordsByEntity[entityType] ?? 0,
+    );
+  }
+
+  @override
+  Future<SyncResult> fullSync({required String entityType}) async {
+    return SyncResult(success: true, recordsSynced: 0);
+  }
+
+  @override
+  Future<String?> getLastCursor(String entityType) async =>
+      cursorsByEntity[entityType];
+
+  @override
+  Future<void> updateCursor(String entityType, String cursor) async {
+    cursorsByEntity[entityType] = cursor;
+  }
+}
 
 void main() {
   // ==========================================================================
@@ -342,6 +392,101 @@ void main() {
       expect(container.read(syncStatusProvider), SyncStatus.idle);
       expect(container.read(syncErrorMessageProvider), isNull);
       expect(container.read(syncRecordsCountProvider), 0);
+    });
+  });
+
+  // ==========================================================================
+  // SyncCoordinator
+  // ==========================================================================
+
+  group('SyncCoordinator', () {
+    ProviderContainer buildContainer(_FakeDeltaSyncService fake) {
+      final container = ProviderContainer(overrides: [
+        deltaSyncServiceProvider.overrideWith((ref) => fake),
+      ]);
+      addTearDown(() => container.dispose());
+      return container;
+    }
+
+    test('writing trigger runs coordinator through all 4 entities', () async {
+      final fake = _FakeDeltaSyncService()
+        ..recordsByEntity = {
+          'transport': 2,
+          'message': 3,
+          'drivers': 1,
+          'fleet': 4,
+        }
+        ..cursorsByEntity = {
+          'transport': 't-cur',
+          'message': 'm-cur',
+          'drivers': 'd-cur',
+          'fleet': 'f-cur',
+        };
+      final container = buildContainer(fake);
+
+      // Reading the provider activates the trigger listener.
+      final coordinator = container.read(syncCoordinatorProvider);
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(fake.syncedEntities, ['transport', 'message', 'drivers', 'fleet']);
+      expect(container.read(syncStatusProvider), SyncStatus.success);
+      expect(container.read(syncRecordsCountProvider), 10);
+      expect(container.read(syncCursorsProvider), {
+        'transport': 't-cur',
+        'message': 'm-cur',
+        'drivers': 'd-cur',
+        'fleet': 'f-cur',
+      });
+    });
+
+    test('status transitions idle -> syncing -> success', () async {
+      final fake = _FakeDeltaSyncService();
+      final container = buildContainer(fake);
+
+      final transitions = <SyncStatus>[];
+      container.listen<SyncStatus>(
+        syncStatusProvider,
+        (previous, next) => transitions.add(next),
+      );
+
+      final coordinator = container.read(syncCoordinatorProvider);
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      // idle is the default; the listener observes syncing then success.
+      expect(transitions, [SyncStatus.syncing, SyncStatus.success]);
+    });
+
+    test('error path sets error message and error status', () async {
+      final fake = _FakeDeltaSyncService()..failEntity = 'message';
+      final container = buildContainer(fake);
+
+      final coordinator = container.read(syncCoordinatorProvider);
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(container.read(syncStatusProvider), SyncStatus.error);
+      expect(container.read(syncErrorMessageProvider), 'boom message');
+      // Sync stopped at the failing entity.
+      expect(fake.syncedEntities, ['transport', 'message']);
+    });
+
+    test('records count accumulates across entities', () async {
+      final fake = _FakeDeltaSyncService()
+        ..recordsByEntity = {
+          'transport': 5,
+          'message': 7,
+          'drivers': 0,
+          'fleet': 3,
+        };
+      final container = buildContainer(fake);
+
+      final coordinator = container.read(syncCoordinatorProvider);
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(container.read(syncRecordsCountProvider), 15);
     });
   });
 }

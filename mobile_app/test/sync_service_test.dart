@@ -9,79 +9,100 @@ import 'package:operion_mobile/core/sync/delta_sync_service.dart';
 // Fakes
 // =============================================================================
 
+/// Fake endpoint layer matching the real mobile sync contract:
+/// `{"records": [...], "cursor": <opaque string|null>, "has_more": bool}`.
+///
+/// Supports returning a sequence of pages and recording every `since` cursor
+/// that was sent (opaque, verbatim — including null).
 class _FakeSyncEndpoints implements SyncEndpoints {
   @override
   ApiClient get client => throw UnimplementedError('client not used in tests');
 
-  Response? _syncEntityResponse;
-  Exception? _syncEntityError;
-  Response? _syncEntityFullResponse;
-  Exception? _syncEntityFullError;
+  final List<Response> _queue = [];
+  Exception? _error;
+  bool _infiniteHasMore = false;
 
-  String? lastSyncEntityType;
-  String? lastSyncCursor;
-  bool syncEntityCalled = false;
-  bool syncEntityFullCalled = false;
+  /// Every `since` cursor sent, in order. `null` means "no cursor".
+  final List<String?> cursorCalls = [];
 
-  void returnsSyncEntity(Response response) {
-    _syncEntityResponse = response;
-    _syncEntityError = null;
+  /// Every entity type requested, in order.
+  final List<String> entityCalls = [];
+
+  int syncEntityCallCount = 0;
+
+  void returnsSyncEntityPages(List<Response> pages) {
+    _queue
+      ..clear()
+      ..addAll(pages);
+    _error = null;
+    _infiniteHasMore = false;
   }
+
+  void returnsSyncEntity(Response response) => returnsSyncEntityPages([response]);
 
   void throwsOnSyncEntity(Exception e) {
-    _syncEntityError = e;
-    _syncEntityResponse = null;
+    _error = e;
+    _queue.clear();
+    _infiniteHasMore = false;
   }
 
-  void returnsSyncEntityFull(Response response) {
-    _syncEntityFullResponse = response;
-    _syncEntityFullError = null;
-  }
-
-  void throwsOnSyncEntityFull(Exception e) {
-    _syncEntityFullError = e;
-    _syncEntityFullResponse = null;
-  }
-
-  void reset() {
-    _syncEntityResponse = null;
-    _syncEntityError = null;
-    _syncEntityFullResponse = null;
-    _syncEntityFullError = null;
-    lastSyncEntityType = null;
-    lastSyncCursor = null;
-    syncEntityCalled = false;
-    syncEntityFullCalled = false;
+  /// Makes every syncEntity call return a `has_more: true` page, so a sync run
+  /// can only terminate via the page cap.
+  void returnsInfiniteHasMore() {
+    _queue.clear();
+    _error = null;
+    _infiniteHasMore = true;
   }
 
   @override
   Future<Response> syncEntity(String entityType, {String? cursor}) async {
-    syncEntityCalled = true;
-    lastSyncEntityType = entityType;
-    lastSyncCursor = cursor;
-    if (_syncEntityError != null) throw _syncEntityError!;
-    return _syncEntityResponse ??
-        Response(
-          data: {'records': <Map<String, dynamic>>[], 'cursor': null},
-          requestOptions: RequestOptions(path: ''),
-        );
+    syncEntityCallCount++;
+    entityCalls.add(entityType);
+    cursorCalls.add(cursor);
+    if (_error != null) throw _error!;
+    if (_queue.isNotEmpty) return _queue.removeAt(0);
+    if (_infiniteHasMore) {
+      return Response(
+        data: {
+          'records': <Map<String, dynamic>>[{'id': 'x'}],
+          'cursor': 'cursor-x',
+          'has_more': true,
+        },
+        requestOptions: RequestOptions(path: ''),
+      );
+    }
+    return Response(
+      data: {
+        'records': <Map<String, dynamic>>[],
+        'cursor': null,
+        'has_more': false,
+      },
+      requestOptions: RequestOptions(path: ''),
+    );
   }
 
   @override
   Future<Response> syncEntityFull(String entityType) async {
-    syncEntityFullCalled = true;
-    if (_syncEntityFullError != null) throw _syncEntityFullError!;
-    return _syncEntityFullResponse ??
-        Response(
-          data: {'records': <Map<String, dynamic>>[], 'cursor': null},
-          requestOptions: RequestOptions(path: ''),
-        );
+    // Full sync now runs through the shared paginated loop (syncEntity).
+    return syncEntity(entityType);
+  }
+
+  void reset() {
+    _queue.clear();
+    _error = null;
+    _infiniteHasMore = false;
+    cursorCalls.clear();
+    entityCalls.clear();
+    syncEntityCallCount = 0;
   }
 }
 
 class _FakeLocalDatabase implements LocalDatabase {
   final _data = <String, Map<String, dynamic>>{};
   final List<Map<String, dynamic>> cacheDataCalls = [];
+
+  /// One entry per [cacheMany] call, recording the batch map passed in.
+  final List<Map<String, Map<String, dynamic>>> cacheManyCalls = [];
 
   @override
   Future<void> initialize() async {}
@@ -143,6 +164,7 @@ class _FakeLocalDatabase implements LocalDatabase {
     String collection,
     Map<String, Map<String, dynamic>> records,
   ) async {
+    cacheManyCalls.add(records);
     for (final entry in records.entries) {
       await cacheData(collection, entry.key, entry.value);
     }
@@ -328,6 +350,7 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[{'id': '1', 'name': 'Alpha'}],
             'cursor': 'cursor-001',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -335,9 +358,9 @@ void main() {
 
       final result = await service.sync(entityType: 'transport');
 
-      expect(fakeEndpoints.syncEntityCalled, isTrue);
-      expect(fakeEndpoints.lastSyncEntityType, 'transport');
-      expect(fakeEndpoints.lastSyncCursor, isNull);
+      expect(fakeEndpoints.syncEntityCallCount, 1);
+      expect(fakeEndpoints.entityCalls, ['transport']);
+      expect(fakeEndpoints.cursorCalls, [null]);
       expect(result.success, isTrue);
       expect(result.recordsSynced, 1);
     });
@@ -348,6 +371,7 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[{'id': '1'}],
             'cursor': 'cursor-abc-123',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -358,7 +382,7 @@ void main() {
       expect(fakeDb.getStoredCursor('transport'), 'cursor-abc-123');
     });
 
-    test('initial sync caches records locally', () async {
+    test('initial sync caches records via a single cacheMany call', () async {
       fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
@@ -367,6 +391,7 @@ void main() {
               {'id': 't2', 'status': 'planned'},
             ],
             'cursor': 'c1',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -374,10 +399,8 @@ void main() {
 
       await service.sync(entityType: 'transport');
 
-      expect(fakeDb.cacheDataCalls, hasLength(2));
-      expect(fakeDb.cacheDataCalls[0]['collection'], 'transport');
-      expect(fakeDb.cacheDataCalls[0]['key'], 't1');
-      expect(fakeDb.cacheDataCalls[1]['key'], 't2');
+      expect(fakeDb.cacheManyCalls, hasLength(1));
+      expect(fakeDb.cacheManyCalls.single.keys, containsAll(['t1', 't2']));
     });
 
     // ── Delta sync (with existing cursor) ───────────────────────────────
@@ -394,6 +417,7 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[{'id': '3'}],
             'cursor': 'cursor-delta-100',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -401,7 +425,7 @@ void main() {
 
       final result = await service.sync(entityType: 'transport');
 
-      expect(fakeEndpoints.lastSyncCursor, 'cursor-delta-99');
+      expect(fakeEndpoints.cursorCalls, ['cursor-delta-99']);
       expect(result.success, isTrue);
       expect(result.recordsSynced, 1);
     });
@@ -418,6 +442,7 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[{'id': '42'}],
             'cursor': 'new-cursor',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -428,15 +453,122 @@ void main() {
       expect(fakeDb.getStoredCursor('transport'), 'new-cursor');
     });
 
+    // ── Multi-page / pagination ─────────────────────────────────────────
+
+    test('multi-page sync accumulates all records with one cacheMany per page',
+        () async {
+      fakeEndpoints.returnsSyncEntityPages([
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': 'a'}, {'id': 'b'}],
+            'cursor': 'p1',
+            'has_more': true,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': 'c'}, {'id': 'd'}],
+            'cursor': 'p2',
+            'has_more': false,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+      ]);
+
+      final result = await service.sync(entityType: 'transport');
+
+      expect(result.success, isTrue);
+      expect(result.recordsSynced, 4);
+      // One batch write per page, never per record.
+      expect(fakeDb.cacheManyCalls, hasLength(2));
+      expect(fakeDb.cacheManyCalls[0].keys, containsAll(['a', 'b']));
+      expect(fakeDb.cacheManyCalls[1].keys, containsAll(['c', 'd']));
+      // Page 2's request echoes page 1's cursor verbatim.
+      expect(fakeEndpoints.cursorCalls, [null, 'p1']);
+    });
+
+    test('opaque compound cursor round-trips verbatim into next since',
+        () async {
+      fakeEndpoints.returnsSyncEntityPages([
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': '1'}],
+            'cursor': '2026-06-01T10:00:00Z|42',
+            'has_more': true,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': '2'}],
+            'cursor': '2026-06-01T10:00:01Z|9',
+            'has_more': false,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+      ]);
+
+      await service.sync(entityType: 'transport');
+
+      expect(fakeEndpoints.cursorCalls, [null, '2026-06-01T10:00:00Z|42']);
+      expect(fakeDb.getStoredCursor('transport'), '2026-06-01T10:00:01Z|9');
+    });
+
+    test('sync terminates when backend returns has_more forever (page cap)',
+        () async {
+      fakeEndpoints.returnsInfiniteHasMore();
+
+      final result = await service.sync(entityType: 'transport');
+
+      expect(result.success, isFalse);
+      expect(result.error, contains('exceeded the maximum'));
+      expect(
+        fakeEndpoints.syncEntityCallCount,
+        DeltaSyncService.maxPagesPerRun,
+      );
+    });
+
+    test('null cursor response is not persisted and next sync sends no since',
+        () async {
+      fakeEndpoints.returnsSyncEntity(
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': '1'}],
+            'cursor': null,
+            'has_more': false,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+      await service.sync(entityType: 'transport');
+      expect(fakeDb.getStoredCursor('transport'), isNull);
+
+      fakeEndpoints.returnsSyncEntity(
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[],
+            'cursor': null,
+            'has_more': false,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+      await service.sync(entityType: 'transport');
+
+      // Neither sync sent a `since` cursor.
+      expect(fakeEndpoints.cursorCalls, [null, null]);
+    });
+
     // ── Multiple entity types ───────────────────────────────────────────
 
     test('syncs multiple entity types independently', () async {
-      // First entity
       fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
             'records': <Map<String, dynamic>>[{'id': 't1'}],
             'cursor': 'cursor-transport',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -444,12 +576,12 @@ void main() {
       await service.sync(entityType: 'transport');
       expect(fakeDb.getStoredCursor('transport'), 'cursor-transport');
 
-      // Second entity
       fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
             'records': <Map<String, dynamic>>[{'id': 'm1'}],
             'cursor': 'cursor-message',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -468,6 +600,7 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[],
             'cursor': 't-cursor-2',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -518,8 +651,6 @@ void main() {
     });
 
     test('updateCursor rethrows on failure', () async {
-      // Inject a value that will make the fake write fail for this test
-      // by causing a runtime error on write
       final throwingDb = _ThrowingLocalDatabase();
       final throwingService = DeltaSyncService(fakeEndpoints, throwingDb);
 
@@ -602,7 +733,38 @@ void main() {
 
       await service.sync(entityType: 'transport');
 
-      expect(fakeDb.cacheDataCalls, isEmpty);
+      expect(fakeDb.cacheManyCalls, isEmpty);
+    });
+
+    test('malformed response (missing records list) is a failure', () async {
+      fakeEndpoints.returnsSyncEntity(
+        Response(
+          data: {'cursor': 'c3'},
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+
+      final result = await service.sync(entityType: 'transport');
+
+      expect(result.success, isFalse);
+      expect(result.error, contains('records'));
+    });
+
+    test('malformed response (records not a list) is a failure', () async {
+      fakeEndpoints.returnsSyncEntity(
+        Response(
+          data: {
+            'records': 'not a list',
+            'cursor': 'c4',
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+
+      final result = await service.sync(entityType: 'transport');
+
+      expect(result.success, isFalse);
+      expect(result.error, contains('records'));
     });
 
     // ── Edge cases ──────────────────────────────────────────────────────
@@ -614,6 +776,7 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[],
             'cursor': 'cursor-empty',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -630,8 +793,11 @@ void main() {
       fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
-            'records': <Map<String, dynamic>>[{'_id': 'doc-99', 'title': 'Doc'}],
+            'records': <Map<String, dynamic>>[
+              {'_id': 'doc-99', 'title': 'Doc'},
+            ],
             'cursor': 'c2',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -640,58 +806,8 @@ void main() {
       final result = await service.sync(entityType: 'document');
 
       expect(result.success, isTrue);
-      expect(fakeDb.cacheDataCalls.length, 1);
-      expect(fakeDb.cacheDataCalls[0]['key'], 'doc-99');
-    });
-
-    test('sync handles response with null cursor', () async {
-      fakeEndpoints.returnsSyncEntity(
-        Response(
-          data: {
-            'records': <Map<String, dynamic>>[{'id': 'r1'}],
-            'cursor': null,
-          },
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
-
-      final result = await service.sync(entityType: 'transport');
-
-      expect(result.success, isTrue);
-      expect(result.recordsSynced, 1);
-      // Cursor should not be updated since null
-      expect(fakeDb.getStoredCursor('transport'), isNull);
-    });
-
-    test('sync handles response with missing records key', () async {
-      fakeEndpoints.returnsSyncEntity(
-        Response(
-          data: {'cursor': 'c3'},
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
-
-      final result = await service.sync(entityType: 'transport');
-
-      expect(result.success, isTrue);
-      expect(result.recordsSynced, 0);
-    });
-
-    test('sync handles records that are not a list', () async {
-      fakeEndpoints.returnsSyncEntity(
-        Response(
-          data: {
-            'records': 'not a list',
-            'cursor': 'c4',
-          },
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
-
-      final result = await service.sync(entityType: 'transport');
-
-      expect(result.success, isTrue);
-      expect(result.recordsSynced, 0);
+      expect(fakeDb.cacheManyCalls, hasLength(1));
+      expect(fakeDb.cacheManyCalls.single.keys, contains('doc-99'));
     });
 
     test('sync skips non-map entries in records list', () async {
@@ -705,6 +821,7 @@ void main() {
               42,
             ],
             'cursor': 'c5',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -713,15 +830,19 @@ void main() {
       final result = await service.sync(entityType: 'transport');
 
       expect(result.success, isTrue);
-      expect(result.recordsSynced, 4); // 4 items in list
-      // Only map entries are cached — 2 valid entries
-      expect(fakeDb.cacheDataCalls, hasLength(2));
+      // Only map entries count as synced records.
+      expect(result.recordsSynced, 2);
+      expect(fakeDb.cacheManyCalls, hasLength(1));
+      expect(
+        fakeDb.cacheManyCalls.single.keys,
+        containsAll(['valid1', 'valid2']),
+      );
     });
 
     // ── Full sync ───────────────────────────────────────────────────────
 
     test('fullSync returns all records', () async {
-      fakeEndpoints.returnsSyncEntityFull(
+      fakeEndpoints.returnsSyncEntityPages([
         Response(
           data: {
             'records': <Map<String, dynamic>>[
@@ -730,24 +851,25 @@ void main() {
               {'id': 'a3'},
             ],
             'cursor': 'full-cursor',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
-      );
+      ]);
 
       final result = await service.fullSync(entityType: 'transport');
 
-      expect(fakeEndpoints.syncEntityFullCalled, isTrue);
       expect(result.success, isTrue);
       expect(result.recordsSynced, 3);
     });
 
     test('fullSync updates cursor', () async {
-      fakeEndpoints.returnsSyncEntityFull(
+      fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
             'records': <Map<String, dynamic>>[{'id': 'x'}],
             'cursor': 'full-cursor-xyz',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -758,8 +880,39 @@ void main() {
       expect(fakeDb.getStoredCursor('transport'), 'full-cursor-xyz');
     });
 
+    test('fullSync ignores stored cursor and starts from page 1', () async {
+      await fakeDb.write('transport', 'stored-cursor', namespace: 'sync_cursors');
+
+      fakeEndpoints.returnsSyncEntityPages([
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': 'a'}],
+            'cursor': 'full1',
+            'has_more': true,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+        Response(
+          data: {
+            'records': <Map<String, dynamic>>[{'id': 'b'}],
+            'cursor': 'full2',
+            'has_more': false,
+          },
+          requestOptions: RequestOptions(path: ''),
+        ),
+      ]);
+
+      final result = await service.fullSync(entityType: 'transport');
+
+      // No `since` on the first page despite the stored cursor.
+      expect(fakeEndpoints.cursorCalls, [null, 'full1']);
+      expect(result.success, isTrue);
+      expect(result.recordsSynced, 2);
+      expect(fakeDb.getStoredCursor('transport'), 'full2');
+    });
+
     test('fullSync returns error on network failure', () async {
-      fakeEndpoints.throwsOnSyncEntityFull(Exception('Server 500'));
+      fakeEndpoints.throwsOnSyncEntity(Exception('Server 500'));
 
       final result = await service.fullSync(entityType: 'transport');
 
@@ -768,28 +921,14 @@ void main() {
       expect(result.error, contains('Server 500'));
     });
 
-    test('fullSync returns error on unexpected response', () async {
-      fakeEndpoints.returnsSyncEntityFull(
-        Response(
-          data: 'unexpected',
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
-
-      final result = await service.fullSync(entityType: 'transport');
-
-      expect(result.success, isFalse);
-      expect(result.recordsSynced, 0);
-      expect(result.error, contains('Unexpected response format'));
-    });
-
     test('fullSync with null cursor in response still returns success',
         () async {
-      fakeEndpoints.returnsSyncEntityFull(
+      fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
             'records': <Map<String, dynamic>>[{'id': 'r1'}],
             'cursor': null,
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -801,16 +940,15 @@ void main() {
       expect(result.recordsSynced, 1);
     });
 
-    // ── Full sync after delta sync ──────────────────────────────────────
-
     test('fullSync overwrites existing delta cursor', () async {
       await fakeDb.write('transport', 'delta-cursor', namespace: 'sync_cursors');
 
-      fakeEndpoints.returnsSyncEntityFull(
+      fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
             'records': <Map<String, dynamic>>[{'id': 'r1'}],
             'cursor': 'full-cursor',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
@@ -829,26 +967,28 @@ void main() {
           data: {
             'records': <Map<String, dynamic>>[{'id': '1'}],
             'cursor': 'cursor-1',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
       );
 
       await service.sync(entityType: 'transport');
-      expect(fakeEndpoints.lastSyncCursor, isNull); // first sync: no cursor
+      expect(fakeEndpoints.cursorCalls, [null]); // first sync: no cursor
 
       fakeEndpoints.returnsSyncEntity(
         Response(
           data: {
             'records': <Map<String, dynamic>>[{'id': '2'}],
             'cursor': 'cursor-2',
+            'has_more': false,
           },
           requestOptions: RequestOptions(path: ''),
         ),
       );
 
       await service.sync(entityType: 'transport');
-      expect(fakeEndpoints.lastSyncCursor, 'cursor-1'); // second sync uses first cursor
+      expect(fakeEndpoints.cursorCalls, [null, 'cursor-1']);
     });
   });
 }
