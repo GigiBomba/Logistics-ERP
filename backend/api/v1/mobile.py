@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 
 from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user, require_dispatcher
+from database.time_utils import utc_now_iso
 from backend.schemas.mobile import (
     ActivityItem,
     ApprovalActionRequest,
@@ -124,6 +125,7 @@ def ensure_mobile_tables(db: DatabaseManager) -> None:
         try:
             db.execute(alter_sql)
         except Exception:
+            logger.debug("Mobile table migration skipped (column may already exist): %s", alter_sql, exc_info=True)
             pass  # column already exists
 
     # ── Migration: drop old UNIQUE if it exists (SQLite only) ──────────
@@ -355,6 +357,7 @@ def driver_trip_overview(
         ).fetchone()
         status_changed_at = hist["changed_at"] if hist else None
     except Exception:
+        logger.debug("trip_status_history lookup failed (table may not exist in every deployment)", exc_info=True)
         pass  # trip_status_history may not exist in every deployment
 
     return DriverTripOverviewResponse(
@@ -659,6 +662,7 @@ def driver_vehicle(
                 is_expiring_soon=is_expiring,
             ))
     except Exception:
+        logger.debug("vehicle_documents lookup failed (table may not exist yet)", exc_info=True)
         pass  # vehicle_documents table may not exist yet
 
     return DriverVehicleResponse(
@@ -808,9 +812,10 @@ def send_message(
 
     cursor = db.execute(
         """INSERT INTO mobile_messages
-           (company_id, sender_id, receiver_id, text, transport_id)
-           VALUES (?, ?, ?, ?, ?)""",
-        (company_id, user_id, body.receiver_id, body.text, body.transport_id),
+           (company_id, sender_id, receiver_id, text, transport_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (company_id, user_id, body.receiver_id, body.text, body.transport_id,
+         utc_now_iso()),
     )
     msg_id = cursor.lastrowid
     db.commit()
@@ -924,6 +929,42 @@ def deactivate_device(
 #  SYNC ENDPOINT
 # ══════════════════════════════════════════════════════════════════════
 
+# Per-entity page limit used by the sync queries below.  ``has_more`` must
+# reflect the ACTUAL limit of the entity being synced (message pages are 100,
+# the rest 200), not a hard-coded constant.
+_SYNC_LIMITS = {
+    "transport": 200,
+    "trips": 200,
+    "message": 100,
+    "fleet": 200,
+    "drivers": 200,
+    "clients": 200,
+}
+
+# Timestamp column used for the data cursor per entity.  ``fleet`` (trucks)
+# has no timestamps and keeps its monotonic id cursor (column = "").
+_SYNC_TS_COL = {
+    "transport": "updated_at",
+    "trips": "updated_at",
+    "message": "created_at",
+    "fleet": "",
+    "drivers": "updated_at",
+    "clients": "updated_at",
+}
+
+
+def _split_ts_cursor(since: str) -> tuple[str, int]:
+    """Split a compound ``"<ts>|<id>"`` cursor into its parts.
+
+    Legacy plain-timestamp cursors (no ``|``) are treated as ``(ts, 0)`` so
+    the row-value comparison ``(ts_col, id) > (?, ?)`` accepts them.
+    """
+    parts = since.split("|")
+    ts = parts[0]
+    row_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return ts, row_id
+
+
 @router.get("/sync", response_model=SyncResponse)
 def delta_sync(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -944,58 +985,71 @@ def delta_sync(
     if not entity:
         return SyncResponse(records=[], cursor=new_cursor)
 
-    # Build a query for the given entity type if the table exists
+    limit = _SYNC_LIMITS.get(entity, 0)
+    ts_col = _SYNC_TS_COL.get(entity, "")
+    # Compound (ts, id) cursor: legacy plain-timestamp ``since`` values have no
+    # id part and are treated as ``(ts, 0)``.
+    since_ts, since_id = _split_ts_cursor(since)
+
+    # Build a query for the given entity type if the table exists.  The first
+    # page (no ``since``) reads oldest-first so the returned compound data
+    # cursor can walk forward through the result set; every subsequent page
+    # (``since`` set, with or without ``full``) advances with a strict
+    # row-value comparison ``(ts, id) > (since_ts, since_id)`` so bursts of
+    # rows sharing one timestamp still paginate deterministically by id.
     query = ""
     params: tuple = ()
-    is_full = full.lower() == "true"
 
     if entity == "transport" or entity == "trips":
-        if is_full or not since:
-            query = "SELECT * FROM trips WHERE company_id = ? ORDER BY updated_at DESC LIMIT 200"
+        if not since:
+            query = f"SELECT * FROM trips WHERE company_id = ? ORDER BY updated_at ASC, id ASC LIMIT {limit}"
             params = (company_id,)
         else:
-            query = "SELECT * FROM trips WHERE company_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 200"
-            params = (company_id, since)
+            query = f"SELECT * FROM trips WHERE company_id = ? AND (updated_at, id) > (?, ?) ORDER BY updated_at ASC, id ASC LIMIT {limit}"
+            params = (company_id, since_ts, since_id)
 
     elif entity == "message":
         user_id = current_user["id"]
-        if is_full or not since:
-            query = """SELECT * FROM mobile_messages
+        if not since:
+            query = f"""SELECT * FROM mobile_messages
                        WHERE company_id = ? AND (sender_id = ? OR receiver_id = ?)
-                       ORDER BY created_at DESC LIMIT 100"""
+                       ORDER BY created_at ASC, id ASC LIMIT {limit}"""
             params = (company_id, user_id, user_id)
         else:
-            query = """SELECT * FROM mobile_messages
+            query = f"""SELECT * FROM mobile_messages
                        WHERE company_id = ? AND (sender_id = ? OR receiver_id = ?)
-                         AND created_at > ?
-                       ORDER BY created_at LIMIT 100"""
-            params = (company_id, user_id, user_id, since)
+                         AND (created_at, id) > (?, ?)
+                       ORDER BY created_at ASC, id ASC LIMIT {limit}"""
+            params = (company_id, user_id, user_id, since_ts, since_id)
 
     elif entity == "fleet":
         # Trucks have no created_at/updated_at columns, so ``since`` is a
         # monotonic id cursor (the endpoint returns ``cursor=str(max_id)``).
-        if is_full or not since or not since.isdigit():
-            query = "SELECT * FROM trucks WHERE company_id = ? ORDER BY id ASC LIMIT 200"
+        # Note: ``is_full`` must NOT force the first page here — a
+        # ``full=true&since=<id>`` continuation has to advance the id cursor,
+        # otherwise fleet pagination re-serves page 1 forever.
+        if not since or not since.isdigit():
+            query = f"SELECT * FROM trucks WHERE company_id = ? ORDER BY id ASC LIMIT {limit}"
             params = (company_id,)
         else:
-            query = "SELECT * FROM trucks WHERE company_id = ? AND id > ? ORDER BY id ASC LIMIT 200"
+            query = f"SELECT * FROM trucks WHERE company_id = ? AND id > ? ORDER BY id ASC LIMIT {limit}"
             params = (company_id, int(since))
 
     elif entity == "drivers":
-        if is_full or not since:
-            query = "SELECT * FROM drivers WHERE company_id = ? ORDER BY updated_at DESC LIMIT 200"
+        if not since:
+            query = f"SELECT * FROM drivers WHERE company_id = ? ORDER BY updated_at ASC, id ASC LIMIT {limit}"
             params = (company_id,)
         else:
-            query = "SELECT * FROM drivers WHERE company_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 200"
-            params = (company_id, since)
+            query = f"SELECT * FROM drivers WHERE company_id = ? AND (updated_at, id) > (?, ?) ORDER BY updated_at ASC, id ASC LIMIT {limit}"
+            params = (company_id, since_ts, since_id)
 
     elif entity == "clients":
-        if is_full or not since:
-            query = "SELECT * FROM clients WHERE company_id = ? ORDER BY updated_at DESC LIMIT 200"
+        if not since:
+            query = f"SELECT * FROM clients WHERE company_id = ? ORDER BY updated_at ASC, id ASC LIMIT {limit}"
             params = (company_id,)
         else:
-            query = "SELECT * FROM clients WHERE company_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 200"
-            params = (company_id, since)
+            query = f"SELECT * FROM clients WHERE company_id = ? AND (updated_at, id) > (?, ?) ORDER BY updated_at ASC, id ASC LIMIT {limit}"
+            params = (company_id, since_ts, since_id)
 
     if query:
         try:
@@ -1005,28 +1059,52 @@ def delta_sync(
             logger.warning("Sync query failed for %s: %s", entity, exc)
             records = []
 
-        # Fleet uses an id cursor (no timestamps); everything else uses the
-        # request timestamp cursor.  Keep the fleet cursor monotonic even on
-        # empty results so the client never re-syncs the whole fleet.
+        # Cursor: fleet keeps its monotonic id cursor (never regressing on
+        # empty pages).  Every timestamp entity returns a COMPOUND data cursor
+        # ``"<max_ts>|<boundary_id>"`` — the max timestamp over the RETURNED
+        # rows (never the request wall-clock) plus the id of the boundary row,
+        # so equal-timestamp bursts paginate by id and rows stamped at exactly
+        # the cursor second are never skipped.  An empty page echoes the
+        # incoming ``since`` unchanged; a first-ever empty page returns
+        # ``None`` so a stale wall-clock cursor can never poison later deltas
+        # (space-format ``created_at`` rows sort below a T-format cursor).
         if entity == "fleet":
             prev_id = int(since) if since.isdigit() else 0
             cursor = str(max((r["id"] for r in records), default=prev_id))
         else:
-            cursor = new_cursor
+            timed = [r for r in records if r.get(ts_col)]
+            if timed:
+                max_ts = max(str(r[ts_col]) for r in timed)
+                boundary_id = max(
+                    (r["id"] for r in timed if str(r[ts_col]) == max_ts),
+                    default=records[-1]["id"],
+                )
+                cursor = f"{max_ts}|{boundary_id}"
+            elif since:
+                cursor = since
+            else:
+                cursor = None
 
-        # Persist the cursor
-        try:
-            db.execute(
-                """INSERT OR REPLACE INTO sync_cursors
-                   (user_id, company_id, entity_type, cursor, updated_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (current_user["id"], company_id, entity, cursor, cursor),
-            )
-            db.commit()
-        except Exception:
-            pass
+        # Persist the cursor (skipped when None — a first-ever empty page has
+        # no meaningful cursor to store).
+        if cursor is not None:
+            try:
+                db.execute(
+                    """INSERT OR REPLACE INTO sync_cursors
+                       (user_id, company_id, entity_type, cursor, updated_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (current_user["id"], company_id, entity, cursor, cursor),
+                )
+                db.commit()
+            except Exception:
+                logger.warning("Failed to persist sync cursor for %s", entity, exc_info=True)
+                pass
 
-        return SyncResponse(records=records, cursor=cursor, has_more=len(records) >= 100)
+        return SyncResponse(
+            records=records,
+            cursor=cursor,
+            has_more=len(records) >= limit,
+        )
 
     return SyncResponse(records=[], cursor=new_cursor)
 
@@ -1182,6 +1260,7 @@ def dispatcher_overview(
         ).fetchone()
         alerts = a["cnt"] if a else 0
     except Exception:
+        logger.warning("Failed to load open alerts count for dispatcher overview", exc_info=True)
         pass
 
     # Vehicles on road
