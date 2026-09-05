@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/auth/auth_providers.dart';
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/sync/sync_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/models/fleet_position.dart';
@@ -27,6 +28,11 @@ class FleetMapScreen extends ConsumerWidget {
 
     return RefreshIndicator(
       onRefresh: () async {
+        try {
+          final _ = ref.read(syncCoordinatorProvider).syncEntity('fleet');
+        } catch (_) {
+          // Best-effort warming — live fetch is the correctness path.
+        }
         ref.invalidate(fleetPositionsProvider);
         return ref.read(fleetPositionsProvider.future);
       },

@@ -52,6 +52,14 @@ final syncRecordsCountProvider = StateProvider<int>((ref) => 0);
 final syncCursorsProvider =
     StateProvider<Map<String, String>>((ref) => const {});
 
+/// When the last sync run completed successfully, or `null` if no sync has
+/// ever succeeded.
+///
+/// Written by the [SyncCoordinator] (both full runs and per-entity runs) with
+/// `DateTime.now()` on successful completion only — a later failure keeps the
+/// last successful time. P3b uses this for the resume-staleness check.
+final lastSyncAtProvider = StateProvider<DateTime?>((ref) => null);
+
 // ── Sync engine wiring ────────────────────────────────────────────────
 
 /// Provides the [DeltaSyncService] backing the [SyncCoordinator].
@@ -81,14 +89,14 @@ class SyncCoordinator {
 
   final Ref _ref;
 
-  /// The run currently in flight, if any. Coalesces concurrent triggers so
-  /// only one run executes at a time.
-  Future<void>? _activeRun;
+  /// The run currently in flight, if any. Coalesces concurrent triggers and
+  /// per-entity runs so only one run executes at a time.
+  Future<SyncResult>? _activeRun;
 
   SyncCoordinator(this._ref) {
     _ref.listen<DateTime?>(syncTriggerProvider, (previous, next) {
       if (next != null) {
-        _activeRun = runNow();
+        runNow();
       }
     });
   }
@@ -105,7 +113,7 @@ class SyncCoordinator {
     final existing = _activeRun;
     if (existing != null) return existing;
 
-    final run = _doRun();
+    final run = _runSyncEntities(syncedEntities);
     _activeRun = run;
     run.whenComplete(() {
       if (identical(_activeRun, run)) _activeRun = null;
@@ -113,7 +121,27 @@ class SyncCoordinator {
     return run;
   }
 
-  Future<void> _doRun() async {
+  /// Runs a sync for a single [entityType] through the engine.
+  ///
+  /// A per-entity run is a run like any other: it respects the [runNow]
+  /// coalescing and publishes the same providers (status, error message,
+  /// records count, cursors, [lastSyncAtProvider]). Returns the engine's
+  /// [SyncResult] for the entity.
+  Future<SyncResult> syncEntity(String entityType) {
+    final existing = _activeRun;
+    if (existing != null) return existing;
+
+    final run = _runSyncEntities([entityType]);
+    _activeRun = run;
+    run.whenComplete(() {
+      if (identical(_activeRun, run)) _activeRun = null;
+    });
+    return run;
+  }
+
+  /// Runs the engine sequentially over [entities] and publishes the outcome
+  /// through the shared sync providers. Stops at the first failing entity.
+  Future<SyncResult> _runSyncEntities(List<String> entities) async {
     try {
       final service = await _ref.read(deltaSyncServiceProvider.future);
 
@@ -122,30 +150,46 @@ class SyncCoordinator {
 
       var totalRecords = 0;
       final cursors = <String, String>{};
-      var failed = false;
+      SyncResult? lastResult;
 
-      for (final entity in syncedEntities) {
+      for (final entity in entities) {
         final result = await service.sync(entityType: entity);
+        lastResult = result;
         totalRecords += result.recordsSynced;
 
         final cursor = await service.getLastCursor(entity);
         if (cursor != null) cursors[entity] = cursor;
 
         if (!result.success) {
-          failed = true;
           _ref.read(syncErrorMessageProvider.notifier).state =
               result.error ?? 'Sync failed for $entity';
           break;
         }
       }
 
+      final failed = lastResult != null && !lastResult.success;
+
       _ref.read(syncRecordsCountProvider.notifier).state = totalRecords;
       _ref.read(syncCursorsProvider.notifier).state = cursors;
       _ref.read(syncStatusProvider.notifier).state =
           failed ? SyncStatus.error : SyncStatus.success;
+
+      // Only a successful run records its completion time; a later failure
+      // leaves the last successful timestamp untouched.
+      if (!failed) {
+        _ref.read(lastSyncAtProvider.notifier).state = DateTime.now();
+      }
+
+      return lastResult ??
+          SyncResult(success: true, recordsSynced: totalRecords);
     } catch (e) {
       _ref.read(syncErrorMessageProvider.notifier).state = e.toString();
       _ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
+      return SyncResult(
+        success: false,
+        recordsSynced: 0,
+        error: e.toString(),
+      );
     }
   }
 }

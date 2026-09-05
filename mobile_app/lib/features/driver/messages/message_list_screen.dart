@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/sync/sync_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/models/message.dart';
@@ -99,23 +100,44 @@ class MessageListScreen extends ConsumerWidget {
     List<Message> messages,
     AppLocalizations loc,
   ) {
-    if (messages.isEmpty) {
-      return EmptyState(
-        icon: const Icon(Icons.message_outlined),
-        title: loc.message_noMessages,
-      );
-    }
-
     // Group messages by sender to form threads.
     final threads = _groupBySender(messages);
     // Sort threads by the most recent message timestamp (newest first).
     final sortedThreads = _sortThreads(threads);
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      itemCount: sortedThreads.length,
-      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
-      itemBuilder: (context, index) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        try {
+          final _ = ref.read(syncCoordinatorProvider).syncEntity('message');
+        } catch (_) {
+          // Best-effort warming — live fetch is the correctness path.
+        }
+        ref.invalidate(messagesProvider);
+        await ref.read(messagesProvider.future);
+      },
+      child: messages.isEmpty
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: EmptyState(
+                      icon: const Icon(Icons.message_outlined),
+                      title: loc.message_noMessages,
+                    ),
+                  ),
+                );
+              },
+            )
+          : ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              itemCount: sortedThreads.length,
+              separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+              itemBuilder: (context, index) {
         final entry = sortedThreads[index];
         final threadMessages = entry.value;
 
@@ -144,6 +166,7 @@ class MessageListScreen extends ConsumerWidget {
           },
         );
       },
+      ),
     );
   }
 

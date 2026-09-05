@@ -14,8 +14,4 @@ class SyncEndpoints {
     if (cursor != null) params['since'] = cursor;
     return client.get('/api/v1/mobile/sync', queryParameters: params);
   }
-
-  /// Full (non-delta) sync for a specific [entityType].
-  Future<Response> syncEntityFull(String entityType) =>
-      client.get('/api/v1/mobile/sync', queryParameters: {'entity': entityType, 'full': 'true'});
 }

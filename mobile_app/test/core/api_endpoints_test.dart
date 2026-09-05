@@ -659,21 +659,6 @@ void main() {
       expect(captured.queryParameters, containsPair('entity', 'driver'));
       expect(captured.queryParameters, containsPair('since', 'abc'));
     });
-
-    test('syncEntityFull sends GET with entity and full=true', () async {
-      endpoints = SyncEndpoints(_createMockClient(
-        onRequest: (opts) {
-          captured = opts;
-        },
-      ));
-
-      await endpoints.syncEntityFull('transport');
-
-      expect(captured.method, equals('GET'));
-      expect(captured.path, equals('/api/v1/mobile/sync'));
-      expect(captured.queryParameters, containsPair('entity', 'transport'));
-      expect(captured.queryParameters, containsPair('full', 'true'));
-    });
   });
 
   // ===========================================================================

@@ -488,5 +488,120 @@ void main() {
 
       expect(container.read(syncRecordsCountProvider), 15);
     });
+
+    test('runNow coalesces concurrent runs (same future)', () async {
+      final fake = _FakeDeltaSyncService();
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      final first = coordinator.runNow();
+      final second = coordinator.runNow();
+
+      expect(identical(first, second), isTrue);
+      await first;
+    });
+
+    test('writing null to syncTriggerProvider does not start a run', () async {
+      final fake = _FakeDeltaSyncService();
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      container.read(syncTriggerProvider.notifier).state = null;
+
+      expect(coordinator.activeRun, isNull);
+      expect(fake.syncedEntities, isEmpty);
+      expect(container.read(syncStatusProvider), SyncStatus.idle);
+    });
+
+    test('successful run clears a previous error message', () async {
+      final fake = _FakeDeltaSyncService()..failEntity = 'message';
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+      expect(container.read(syncErrorMessageProvider), 'boom message');
+      expect(container.read(syncStatusProvider), SyncStatus.error);
+
+      fake.failEntity = null;
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(container.read(syncErrorMessageProvider), isNull);
+      expect(container.read(syncStatusProvider), SyncStatus.success);
+    });
+
+    test('syncEntity runs one entity and publishes its status and count',
+        () async {
+      final fake = _FakeDeltaSyncService()
+        ..recordsByEntity = {'transport': 4, 'message': 9}
+        ..cursorsByEntity = {'transport': 't-1'};
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      final result = await coordinator.syncEntity('transport');
+
+      expect(fake.syncedEntities, ['transport']);
+      expect(result.success, isTrue);
+      expect(result.recordsSynced, 4);
+      expect(container.read(syncStatusProvider), SyncStatus.success);
+      expect(container.read(syncRecordsCountProvider), 4);
+      expect(container.read(syncCursorsProvider), {'transport': 't-1'});
+    });
+
+    test('syncEntity failure sets error status and stops', () async {
+      final fake = _FakeDeltaSyncService()..failEntity = 'message';
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      final result = await coordinator.syncEntity('message');
+
+      expect(fake.syncedEntities, ['message']);
+      expect(result.success, isFalse);
+      expect(container.read(syncStatusProvider), SyncStatus.error);
+      expect(container.read(syncErrorMessageProvider), 'boom message');
+    });
+
+    test('lastSyncAtProvider is set on successful run', () async {
+      final fake = _FakeDeltaSyncService();
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+      expect(container.read(lastSyncAtProvider), isNull);
+
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(container.read(lastSyncAtProvider), isNotNull);
+    });
+
+    test('lastSyncAtProvider is not set after a failed run', () async {
+      final fake = _FakeDeltaSyncService()..failEntity = 'message';
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(container.read(syncStatusProvider), SyncStatus.error);
+      expect(container.read(lastSyncAtProvider), isNull);
+    });
+
+    test('lastSyncAtProvider keeps the last success after a later failure',
+        () async {
+      final fake = _FakeDeltaSyncService();
+      final container = buildContainer(fake);
+      final coordinator = container.read(syncCoordinatorProvider);
+
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+      final lastSuccess = container.read(lastSyncAtProvider);
+      expect(lastSuccess, isNotNull);
+
+      fake.failEntity = 'message';
+      container.read(syncTriggerProvider.notifier).state = DateTime.now();
+      await coordinator.activeRun;
+
+      expect(container.read(lastSyncAtProvider), lastSuccess);
+    });
   });
 }

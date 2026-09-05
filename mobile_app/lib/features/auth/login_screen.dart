@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/auth/auth_providers.dart';
 import '../../core/i18n/app_localizations.dart';
+import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../shared/widgets/app_button.dart';
@@ -114,6 +115,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (result.success) {
       ref.read(currentUserProvider.notifier).state = result.user;
       ref.read(authStateProvider.notifier).setAuthenticated();
+      try {
+        ref.read(syncTriggerProvider.notifier).state = DateTime.now();
+      } catch (_) {
+        // Best-effort warming — must not block login UX
+      }
     } else {
       ref.read(authStateProvider.notifier).setUnauthenticated();
       _showError(result.errorMessage ?? context.loc.auth_loginError);
@@ -138,6 +144,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (mounted) {
         ref.read(currentUserProvider.notifier).state = user;
         ref.read(authStateProvider.notifier).setAuthenticated();
+        try {
+          ref.read(syncTriggerProvider.notifier).state = DateTime.now();
+        } catch (_) {
+          // Best-effort warming — must not block login UX
+        }
       }
     } else {
       ref.read(authStateProvider.notifier).setUnauthenticated();

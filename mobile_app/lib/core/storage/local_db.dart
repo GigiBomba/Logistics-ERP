@@ -72,6 +72,11 @@ class LocalDatabase {
     return items;
   }
 
+  /// Retrieve every decoded record in [collection].
+  Future<List<Map<String, dynamic>>> getAllCachedData(String collection) async {
+    return _getAllFromCollection(collection);
+  }
+
   // ── Generic key-value cache ───────────────────
 
   /// Store a single [data] map under [key] within [collection].

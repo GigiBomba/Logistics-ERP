@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/i18n/app_localizations.dart';
+import '../../../core/sync/sync_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/widgets/app_card.dart';
@@ -238,6 +239,11 @@ class _JobListScreenState extends ConsumerState<JobListScreen> {
   ) {
     return RefreshIndicator(
       onRefresh: () async {
+        try {
+          final _ = ref.read(syncCoordinatorProvider).syncEntity('transport');
+        } catch (_) {
+          // Best-effort warming — live fetch is the correctness path.
+        }
         ref.invalidate(dispatcherJobsProvider);
         await ref.read(dispatcherJobsProvider.future);
       },

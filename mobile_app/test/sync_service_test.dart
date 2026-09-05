@@ -81,12 +81,6 @@ class _FakeSyncEndpoints implements SyncEndpoints {
     );
   }
 
-  @override
-  Future<Response> syncEntityFull(String entityType) async {
-    // Full sync now runs through the shared paginated loop (syncEntity).
-    return syncEntity(entityType);
-  }
-
   void reset() {
     _queue.clear();
     _error = null;
@@ -178,6 +172,16 @@ class _FakeLocalDatabase implements LocalDatabase {
     final raw = _data[collection]?[key];
     if (raw is Map<String, dynamic>) return Map<String, dynamic>.from(raw);
     return null;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getAllCachedData(String collection) async {
+    final col = _data[collection];
+    if (col == null) return [];
+    return col.values
+        .whereType<Map<String, dynamic>>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
   }
 
   @override
@@ -527,6 +531,9 @@ void main() {
         fakeEndpoints.syncEntityCallCount,
         DeltaSyncService.maxPagesPerRun,
       );
+      // Cap-hit persists the cursor from the last fetched page (page 50) so
+      // the next run resumes instead of refetching the same pages.
+      expect(await service.getLastCursor('transport'), 'cursor-x');
     });
 
     test('null cursor response is not persisted and next sync sends no since',
@@ -1038,6 +1045,9 @@ class _ThrowingLocalDatabase implements LocalDatabase {
 
   @override
   Future<void> clearCollection(String collection) async {}
+
+  @override
+  Future<List<Map<String, dynamic>>> getAllCachedData(String collection) async => [];
 
   @override
   Future<void> close() async {}

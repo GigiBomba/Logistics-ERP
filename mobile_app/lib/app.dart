@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/auth/auth_providers.dart';
 import 'core/auth/mode_router.dart';
+import 'core/sync/sync_lifecycle_observer.dart';
 import 'core/theme/app_theme.dart';
 import 'l10n/app_localizations.dart';
 
@@ -42,7 +43,7 @@ class _OperionMobileApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const ModeRouter(),
+      home: const SyncLifecycleObserver(child: ModeRouter()),
     );
   }
 }

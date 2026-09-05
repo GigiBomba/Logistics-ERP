@@ -92,6 +92,16 @@ class _FakeLocalDatabase implements LocalDatabase {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getAllCachedData(String collection) async {
+    final col = _data[collection];
+    if (col == null) return [];
+    return col.values
+        .whereType<Map<String, dynamic>>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
+  @override
   Future<void> cacheTransports(List<Map<String, dynamic>> transports) async {
     await clearCollection('transports');
     for (final t in transports) {

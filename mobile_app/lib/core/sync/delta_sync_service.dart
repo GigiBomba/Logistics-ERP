@@ -118,6 +118,13 @@ class DeltaSyncService {
     try {
       while (hasMore) {
         if (pages >= maxPagesPerRun) {
+          // Cap-hit: cached data is always at-or-before the cursor returned by
+          // the last fetched page, so advancing the stored cursor here is safe
+          // and lets the next run resume from where this one stopped instead of
+          // refetching the same pages forever.
+          if (lastCursor != null) {
+            await updateCursor(entityType, lastCursor);
+          }
           final error = 'Sync for $entityType exceeded the maximum of '
               '$maxPagesPerRun pages; giving up';
           developer.log('DeltaSync: $error', name: 'DeltaSync');
