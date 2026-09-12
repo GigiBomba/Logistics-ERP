@@ -47,27 +47,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 
-# ── Canonical status → column mapping (mirrors dispatch_service.py) ──────
-STATUS_TO_COLUMN: dict[str, str] = {
-    "Planned": "Planned",
-    "Scheduled": "Planned",
-    "Pending": "Planned",
-    "Loading": "Loading",
-    "Preparing": "Loading",
-    "Pickup": "Loading",
-    "In Transit": "In Transit",
-    "InTransit": "In Transit",
-    "Active": "In Transit",
-    "InProgress": "In Transit",
-    "Delivered": "Delivered",
-    "Completed": "Delivered",
-    "Done": "Delivered",
-    "Invoiced": "Delivered",
-    "Paid": "Delivered",
-    "Cancelled": "Cancelled",
-}
-
-COLUMN_KEYS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
+# ── Canonical status → column mapping (single source of truth:
+# services/dispatch_service/constants.py) ─────────────────────────────────
+from services.dispatch_service.constants import COLUMN_KEYS, STATUS_TO_COLUMN
 
 # EU weekly driving cap (Regulation (EC) 561/2006) — 56h/week, in hours.
 WEEKLY_LIMIT_HOURS: float = EU_MAX_WEEKLY_DRIVING_MINUTES / 60.0
@@ -91,17 +73,28 @@ class TripStatusUpdateRequest(BaseModel):
     status: str
 
 
-def _resolve_route(trip: dict[str, Any], route_repo: Any) -> tuple[str, str]:
+def _resolve_route(
+    trip: dict[str, Any],
+    route_repo: Any,
+    routes_by_id: Optional[dict[int, dict[str, Any]]] = None,
+) -> tuple[str, str]:
     """Resolve origin/destination from ``route_history_v2`` summary (best-effort).
 
     Mirrors ``DispatchService._resolve_route`` — no-op when route data is
-    unavailable or unparseable.
+    unavailable or unparseable.  Resolves from the batched ``routes_by_id``
+    map when provided, falling back to a per-trip ``get_by_id`` only for
+    routes the batch lookup missed (keeps the old behaviour when the batch
+    path is unavailable).
     """
     route_id = trip.get("route_history_v2_id")
     if not route_id or route_repo is None:
         return "", ""
     try:
-        route = route_repo.get_by_id(int(route_id))
+        route = None
+        if routes_by_id is not None:
+            route = routes_by_id.get(int(route_id))
+        if route is None:
+            route = route_repo.get_by_id(int(route_id))
         if not route:
             return "", ""
         summary = route.get("route_summary_json")
@@ -124,10 +117,11 @@ def _build_card_data(
     trip: dict[str, Any],
     route_repo: Any,
     column: str,
+    routes_by_id: Optional[dict[int, dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Build a single board-card dict from a trip row (mirrors ``_build_card_data``)."""
     trip_id = trip.get("id", 0)
-    origin, destination = _resolve_route(trip, route_repo)
+    origin, destination = _resolve_route(trip, route_repo, routes_by_id)
     return {
         "trip_id": f"#{trip_id}",
         "trip_id_num": trip_id,
@@ -198,31 +192,75 @@ def get_dispatch_board(
 
     column_trips: dict[str, list[dict[str, Any]]] = {col: [] for col in COLUMN_KEYS}
 
-    # Fetch per-status through TripService (company-scoped) and bucket by column.
+    # Fetch ALL board statuses in ONE company-scoped query (was: one query
+    # per status) and bucket by column in Python.  ``limit`` still caps each
+    # status, so the batch is bounded by ``limit * len(STATUS_TO_COLUMN)`` —
+    # the same worst-case row volume the old per-status loop fetched.
     try:
+        all_statuses = list(STATUS_TO_COLUMN.keys())
+        trips = service.get_filtered(
+            search="", statuses=all_statuses,
+            limit=limit * len(all_statuses), company_id=company_id,
+        ) or []
+
+        # First pass: dedupe, re-apply the per-status ``limit`` cap, bucket by
+        # column, and collect the route ids that will be shown so routes can
+        # be resolved in ONE batched query (``get_routes_by_ids``).
         seen: set[int] = set()
-        for raw_status in STATUS_TO_COLUMN:
-            trips = service.get_filtered(
-                search="", status=raw_status, limit=limit, company_id=company_id,
+        per_status_seen: dict[str, int] = {}
+        accepted: list[tuple[dict[str, Any], str]] = []
+        route_ids: list[int] = []
+        for trip in trips:
+            trip_id = trip.get("id")
+            if trip_id is None or trip_id in seen:
+                continue
+            seen.add(trip_id)
+
+            raw_status = trip.get("status", "")
+            column = STATUS_TO_COLUMN.get(raw_status)
+            if not column:
+                continue
+
+            # Keep the documented "max trips per status" cap: the batched SQL
+            # is bounded globally, so enforce the per-status cap here.
+            if per_status_seen.get(raw_status, 0) >= limit:
+                continue
+            per_status_seen[raw_status] = per_status_seen.get(raw_status, 0) + 1
+
+            # Delivered/cancelled trips outside the window are hidden.
+            if column in ("Delivered", "Cancelled"):
+                trip_date = trip.get("end_date", "") or trip.get("created_at", "")
+                trip_date = str(trip_date)[:10] if trip_date else ""
+                if trip_date and trip_date < cutoff:
+                    continue
+
+            accepted.append((trip, column))
+            route_id = trip.get("route_history_v2_id")
+            if route_id:
+                try:
+                    route_ids.append(int(route_id))
+                except (ValueError, TypeError):
+                    # Non-numeric ids were silently tolerated by the old
+                    # per-trip path (returned "", "") — keep that behaviour.
+                    pass
+
+        # Batch-resolve routes (best-effort; falls back to per-trip
+        # ``get_by_id`` only for routes missing from the batch result).
+        routes_by_id: dict[int, dict[str, Any]] = {}
+        if route_repo is not None and route_ids:
+            try:
+                routes = route_repo.get_routes_by_ids(route_ids) or []
+                routes_by_id = {r["id"]: r for r in routes}
+            except Exception:
+                logger.debug(
+                    "dispatch: batch route resolution failed — falling back to per-trip lookups",
+                    exc_info=True,
+                )
+
+        for trip, column in accepted:
+            column_trips[column].append(
+                _build_card_data(trip, route_repo, column, routes_by_id),
             )
-            for trip in trips or []:
-                trip_id = trip.get("id")
-                if trip_id is None or trip_id in seen:
-                    continue
-                seen.add(trip_id)
-
-                column = STATUS_TO_COLUMN.get(trip.get("status", ""))
-                if not column:
-                    continue
-
-                # Delivered/cancelled trips outside the window are hidden.
-                if column in ("Delivered", "Cancelled"):
-                    trip_date = trip.get("end_date", "") or trip.get("created_at", "")
-                    trip_date = str(trip_date)[:10] if trip_date else ""
-                    if trip_date and trip_date < cutoff:
-                        continue
-
-                column_trips[column].append(_build_card_data(trip, route_repo, column))
     except Exception as exc:
         logger.error("dispatch: failed to load board data: %s", exc, exc_info=True)
 
@@ -507,6 +545,20 @@ class BulkAssignmentRequest(BaseModel):
     driver_id: Optional[int] = None
 
 
+class BulkStatusUpdateRequest(BaseModel):
+    """Request body for a bulk trip status transition.
+
+    Mirrors :class:`BulkAssignmentRequest`: ``status`` is applied
+    best-effort to every ``trip_ids`` entry through the same validated
+    transition path as ``PATCH /trips/{trip_id}/status`` (status
+    normalization + ``VALID_TRANSITIONS`` + company-scoped
+    ``TripService.update``).
+    """
+
+    trip_ids: list[int] = []
+    status: str
+
+
 def _build_assignment_update(
     db: DatabaseManager,
     data: TripAssignmentRequest | BulkAssignmentRequest,
@@ -668,6 +720,69 @@ def bulk_update_assignments(
 
     if data.driver_id is not None and data.truck_id is not None:
         _record_driver_truck_pairing(db, data.driver_id, data.truck_id)
+
+    return {"updated": updated, "failed": failed}
+
+
+@router.post("/trips/bulk-status")
+def bulk_update_trip_statuses(
+    data: BulkStatusUpdateRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: TripService = Depends(get_trip_service),
+):
+    """Transition many trips to one status (best-effort, company-scoped).
+
+    Every ``trip_ids`` entry goes through the SAME validated transition path
+    as ``PATCH /trips/{trip_id}/status``: company-scoped ``TripService.get_by_id``
+    (a trip from another company resolves as "not found"), status normalization,
+    ``VALID_TRANSITIONS`` validation, then company-scoped ``TripService.update``.
+    Failures are collected per trip — a bad trip never aborts the batch.
+    Returns::
+
+        {"updated": [trip_id, ...], "failed": [{"trip_id": ..., "error": ...}, ...]}
+
+    so callers can report partial success per trip (mirrors ``POST /assignments/bulk``).
+    """
+    company_id = current_user.get("company_id", 0)
+    normalized_new = _normalize_status(data.status)
+
+    updated: list[int] = []
+    failed: list[dict[str, Any]] = []
+    for trip_id in data.trip_ids or []:
+        try:
+            trip = service.get_by_id(trip_id, company_id=company_id)
+            if not trip:
+                failed.append({"trip_id": trip_id, "error": "Trip not found"})
+                continue
+
+            old_status = trip.get("status", "")
+            normalized_old = _normalize_status(old_status)
+            valid_targets = VALID_TRANSITIONS.get(normalized_old, [])
+            if normalized_new not in valid_targets:
+                failed.append({
+                    "trip_id": trip_id,
+                    "error": (
+                        f"Cannot transition trip #{trip_id} from '{old_status}' "
+                        f"to '{data.status}' — valid options: {valid_targets}"
+                    ),
+                })
+                continue
+
+            result = service.update(
+                trip_id, TripUpdate(status=normalized_new), company_id=company_id,
+            )
+            if not result.success:
+                msg = result.errors[0].message if result.errors else "Update failed"
+                failed.append({"trip_id": trip_id, "error": msg})
+                continue
+            updated.append(trip_id)
+        except HTTPException as exc:
+            failed.append({"trip_id": trip_id, "error": exc.detail})
+        except Exception as exc:
+            logger.warning(
+                "dispatch: bulk status update failed for trip #%s: %s", trip_id, exc,
+            )
+            failed.append({"trip_id": trip_id, "error": str(exc)})
 
     return {"updated": updated, "failed": failed}
 

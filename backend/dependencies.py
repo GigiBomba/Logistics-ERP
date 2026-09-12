@@ -187,3 +187,53 @@ async def get_payment_profile_service(
     db: DatabaseManager = Depends(get_db),
 ) -> PaymentProfileService:
     return PaymentProfileService(db)
+
+
+# ── Service factories (avoid re-initialising heavy clients per request) ────
+
+# Shared ``RouteService``: its ``GraphHopperClient`` owns a ``requests.Session``
+# connection pool that is expensive to recreate per request.  The client is
+# stateless after ``__init__`` (no per-request mutable state) and the service's
+# in-memory route/geocode caches are thread-safe, so one process-wide instance
+# is reused.  The class is imported inside the factory so tests that patch
+# ``backend.services.route_service.RouteService`` keep intercepting it; the
+# cache is keyed by the resolved class so a patched (mock) class gets its own
+# isolated entry instead of leaking the production instance.
+_route_service_instances: dict = {}
+_route_service_lock = threading.Lock()
+
+
+def get_route_service(
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return the shared ``RouteService`` (GraphHopperClient session reused)."""
+    from backend.services.route_service import RouteService
+
+    instance = _route_service_instances.get(RouteService)
+    if instance is None:
+        with _route_service_lock:
+            instance = _route_service_instances.get(RouteService)
+            if instance is None:
+                instance = RouteService(db)
+                _route_service_instances[RouteService] = instance
+    return instance
+
+
+def get_fuel_price_service():
+    """Return the shared ``FuelPriceService`` (itself a process-wide singleton)."""
+    from backend.services.fuel_price_service import FuelPriceService
+
+    return FuelPriceService()
+
+
+async def get_export_service(
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return an ``ExportService`` wired with the request-scoped db session.
+
+    ``ExportService`` holds no heavy clients and keeps the (request-scoped)
+    db reference, so it is constructed per request like ``get_trip_service``.
+    """
+    from backend.services.export_service import ExportService
+
+    return ExportService(db=db)

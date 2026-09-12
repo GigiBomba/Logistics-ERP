@@ -3,6 +3,7 @@ Blueprint: §9.1 — Tracking, Level 0.
 """
 
 from __future__ import annotations
+import logging
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
 from backend.copilot.tools.base import BaseTool, ToolExecutionContext, cap_result_list
 from backend.copilot.tools.registry import register_tool
+
+logger = logging.getLogger(__name__)
 
 
 # ── Parameters ──────────────────────────────────────────────────────────────
@@ -128,6 +131,7 @@ class GetVehicleHistoryTool(BaseTool):
                     if truck:
                         truck_plate = (truck.get("plate_number") or "").upper()
                 except Exception:
+                    logger.warning("Failed to resolve truck plate for vehicle %s", params.vehicle_id, exc_info=True)
                     pass
 
             # Filter positions matching the requested vehicle_id

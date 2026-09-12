@@ -50,7 +50,14 @@ class CircuitBreakerState(BaseModel):
 class CircuitBreaker:
     """Manages per-company circuit breakers for Autonomous Mode.
 
-    PHASE 0 STUB — full implementation in Phase 4.
+    State is held in-memory per process in the ``_states`` dict and resets
+    on process restart. Trip events are audited to the copilot audit log
+    (``copilot_audit_log``) and admin-alerted via ``_notify_trip``
+    (AuditManager -> EventBus -> NotificationCenter -> admin email when
+    SMTP is configured). Redis-backed persistence per blueprint §23.1 is
+    deferred (documented decision 2026-09-09); state resets are acceptable
+    for the current single-worker deployment. All side effects are
+    best-effort — this class never raises.
     """
 
     _states: Dict[int, CircuitBreakerState] = {}

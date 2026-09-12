@@ -24,9 +24,11 @@ from backend.api.v1 import (
     metrics,
     migration,
     mobile,
+    mobile_pairing,
     oauth2,
     ocr,
     organizations,
+    payment_methods,
     payments,
     receipts,
     registration,
@@ -74,6 +76,7 @@ api_v1_router.include_router(route_demo.router)
 api_v1_router.include_router(users.router)
 api_v1_router.include_router(oauth2.router)
 api_v1_router.include_router(payments.router)
+api_v1_router.include_router(payment_methods.router)
 api_v1_router.include_router(feature_flags.router)
 api_v1_router.include_router(gdpr.router)
 api_v1_router.include_router(slo.router)
@@ -85,4 +88,6 @@ api_v1_router.include_router(mobile.router)
 # New mobile entity routers (blueprint §6) — mounted alongside the legacy
 # mobile.py router; subpaths (/fleet, /drivers, …) do not collide with it.
 api_v1_router.include_router(mobile.mobile_router)
+# Mobile QR pairing-token endpoints (blueprint §5.3).
+api_v1_router.include_router(mobile_pairing.router)
 

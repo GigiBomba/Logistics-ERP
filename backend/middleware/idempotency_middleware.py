@@ -187,6 +187,7 @@ class RedisIdempotencyStore:
             value = json.dumps([status, content_type, body])
             await self._async.setex(key, self._ttl, value)
         except Exception:
+            logger.warning("Failed to store idempotency response in Redis", exc_info=True)
             pass
 
     # ── admin / introspection (sync, existing behaviour) ──────────────
@@ -213,6 +214,7 @@ class RedisIdempotencyStore:
                     if len(result) >= limit:
                         break
         except Exception:
+            logger.warning("Failed to introspect idempotency keys from Redis", exc_info=True)
             pass
         return result
 

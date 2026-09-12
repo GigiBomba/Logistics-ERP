@@ -14,6 +14,17 @@ from repositories.gps_telemetry_repository import GpsTelemetryRepository
 
 logger = logging.getLogger(__name__)
 
+# ── Batch bounds ─────────────────────────────────────────────────────────────
+# ``batch_ocr_documents`` used to enqueue one Celery task per document; we now
+# chunk the ids and run one ``process_ocr_chunk`` task per chunk (bounded fan-
+# out on the broker).
+OCR_CHUNK_SIZE = 15
+
+# TTL (seconds) refreshed on ``gps:batch:{company_id}`` after every push in
+# ``backend.api.v1.fleet``; the flush also refreshes it as defence-in-depth so
+# the queue key can never outlive its content's freshness window.
+GPS_BATCH_TTL_SECONDS = 3600
+
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def process_document_ocr(
@@ -73,6 +84,7 @@ def process_document_ocr(
             if not os.path.isfile(file_path):
                 return {"error": "File not on disk", "document_id": document_id, "path": file_path}
         except Exception:
+            logger.warning("Failed to stat document file before OCR: %s", file_path, exc_info=True)
             pass
 
         result_text = ""
@@ -123,6 +135,45 @@ def process_document_ocr(
         db.close()
 
 
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
+def process_ocr_chunk(
+    self, document_ids: list, company_id: int, engine: str = "auto"
+) -> Dict[str, Any]:
+    """Process a chunk of documents inline — one Celery task per chunk.
+
+    Dispatched by ``batch_ocr_documents`` (``OCR_CHUNK_SIZE`` documents per
+    chunk) so a 500-document batch enqueues ~33 broker tasks instead of 500.
+    Each document runs with its own try/except so a single failure cannot
+    kill the chunk.  ``process_document_ocr`` is invoked directly (its
+    ``self.retry(exc=exc)`` re-raises here when called directly, which is
+    caught per document); the per-document idempotency guard inside
+    ``process_document_ocr`` is untouched — already-processed docs report
+    ``already_processed`` without re-running extraction.
+    """
+    logger.info(
+        "process_ocr_chunk: count=%d company_id=%d engine=%s",
+        len(document_ids), company_id, engine,
+    )
+    results = []
+    errors = 0
+    for doc_id in document_ids:
+        try:
+            result = process_document_ocr(doc_id, company_id, engine)
+            results.append({"document_id": doc_id, "result": result})
+        except Exception as exc:
+            errors += 1
+            logger.warning(
+                "process_ocr_chunk: document_id=%d failed: %s", doc_id, exc,
+            )
+            results.append({"document_id": doc_id, "error": str(exc)})
+    return {
+        "status": "batch_processed",
+        "processed": len(document_ids) - errors,
+        "errors": errors,
+        "results": results,
+    }
+
+
 @celery_app.task(bind=True, max_retries=2)
 def batch_ocr_documents(
     self, document_ids: list, company_id: int, engine: str = "auto"
@@ -131,11 +182,19 @@ def batch_ocr_documents(
         "batch_ocr_documents: count=%d company_id=%d engine=%s",
         len(document_ids), company_id, engine,
     )
-    results = []
-    for doc_id in document_ids:
-        result = process_document_ocr.delay(doc_id, company_id, engine)
-        results.append({"document_id": doc_id, "task_id": result.id})
-    return {"status": "batch_enqueued", "tasks": results}
+    chunks = [
+        document_ids[i:i + OCR_CHUNK_SIZE]
+        for i in range(0, len(document_ids), OCR_CHUNK_SIZE)
+    ]
+    tasks = []
+    for chunk in chunks:
+        result = process_ocr_chunk.delay(chunk, company_id, engine)
+        tasks.append({
+            "document_ids": chunk,
+            "task_id": result.id,
+            "count": len(chunk),
+        })
+    return {"status": "batch_enqueued", "tasks": tasks}
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=30)
@@ -174,28 +233,47 @@ def flush_gps_batch_to_postgres(self) -> Dict[str, Any]:
         for company_id in companies:
             set_tenant_context(company_id)
             key = f"gps:batch:{company_id}"
-            items = cache.lrange(key, 0, -1) or []
-            if not items:
+            # Per-company lock: a run that outlasts the 30 s beat interval must
+            # not overlap the next run on the same queue (double drains would
+            # still be safe thanks to INSERT OR IGNORE, but the lock makes the
+            # flush exclusive).  Skipped companies are picked up by the next
+            # beat — nothing is lost, the queue is only drained once.
+            lock_key = f"flush_lock:{company_id}"
+            lock_token = cache.acquire_lock(lock_key, ttl=60)
+            if lock_token is None:
+                logger.info(
+                    "flush_gps_batch_to_postgres: lock busy for company_id=%d — skipping this run",
+                    company_id,
+                )
                 continue
-            records = []
-            for raw in items:
-                ping = json.loads(raw)
-                records.append({
-                    "truck_id": ping.get("truck_id"),
-                    "latitude": ping.get("latitude"),
-                    "longitude": ping.get("longitude"),
-                    "speed_kmh": ping.get("speed_kmh", 0),
-                    "heading": ping.get("heading", 0),
-                    "driver_id": ping.get("driver_id"),
-                    "recorded_at": ping.get("timestamp", ""),
-                })
-            repo.create_many(records)  # commits internally (INSERT OR IGNORE)
-            cache.ltrim(key, len(records), -1)
-            total += len(records)
-            logger.info(
-                "flush_gps_batch_to_postgres: flushed %d pings for company_id=%d",
-                len(records), company_id,
-            )
+            try:
+                items = cache.lrange(key, 0, -1) or []
+                if not items:
+                    continue
+                records = []
+                for raw in items:
+                    ping = json.loads(raw)
+                    records.append({
+                        "truck_id": ping.get("truck_id"),
+                        "latitude": ping.get("latitude"),
+                        "longitude": ping.get("longitude"),
+                        "speed_kmh": ping.get("speed_kmh", 0),
+                        "heading": ping.get("heading", 0),
+                        "driver_id": ping.get("driver_id"),
+                        "recorded_at": ping.get("timestamp", ""),
+                    })
+                repo.create_many(records)  # commits internally (INSERT OR IGNORE)
+                cache.ltrim(key, len(records), -1)
+                # Defence-in-depth (same bound as the push side): the queue key
+                # never outlives its freshness window even if pushes stopped.
+                cache.expire(key, GPS_BATCH_TTL_SECONDS)
+                total += len(records)
+                logger.info(
+                    "flush_gps_batch_to_postgres: flushed %d pings for company_id=%d",
+                    len(records), company_id,
+                )
+            finally:
+                cache.release_lock(lock_key, lock_token)
         return {"status": "ok", "flushed": total}
     except Exception as exc:
         self.retry(exc=exc)

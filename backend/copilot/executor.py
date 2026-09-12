@@ -576,6 +576,30 @@ async def execute_plan(
         logger.warning("Plan %s blocked by guardrails: %s", plan.plan_id, guardrail_errors)
         return plan
 
+    # ── Confirmation gate (§5.6) — defense-in-depth ─────────────────────
+    # The router already refuses to auto-execute ``requires_confirmation``
+    # plans (only POST /plans/{id}/confirm → ``confirm_and_execute`` runs
+    # them), but the executor must never be confirmation-agnostic itself: a
+    # direct caller that bypasses the router cannot run DESTRUCTIVE steps of
+    # an unconfirmed plan.  Refusal keeps the plan's ``requires_confirmation``
+    # flag (the router's ``_plan_response_status`` therefore still reports
+    # ``awaiting_confirmation``) and marks every step skipped with the
+    # confirmation-required i18n key — nothing executes.  SAFE/BUSINESS plans
+    # and confirmed plans (``confirm_and_execute`` has its own loop) are
+    # unaffected.
+    if plan.requires_confirmation and any(
+        step.confirmation_level >= ConfirmationLevel.DESTRUCTIVE
+        for step in plan.steps
+    ):
+        for step in plan.steps:
+            step.status = "skipped"
+            step.error = "copilot.timeline.confirmation_needed"
+        logger.warning(
+            "Plan %s refused — confirmation required before DESTRUCTIVE execution",
+            plan.plan_id,
+        )
+        return plan
+
     # ── Circuit breaker check (§23.1) ──────────────────────────────────
     from backend.copilot.circuit_breaker import get_circuit_breaker
     cb = get_circuit_breaker()

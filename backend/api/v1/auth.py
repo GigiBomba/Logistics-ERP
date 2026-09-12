@@ -106,6 +106,7 @@ def _check_lockout(email: str) -> None:
         except HTTPException:
             raise
         except Exception:
+            logger.warning("Redis lockout check failed; falling back to in-memory store", exc_info=True)
             pass  # fall through to in-memory
 
     # In-memory fallback
@@ -136,6 +137,7 @@ def _record_failure(email: str) -> None:
             r.expire(key, LOCKOUT_WINDOW)
             return
         except Exception:
+            logger.warning("Redis lockout record failed; falling back to in-memory store", exc_info=True)
             pass  # fall through to in-memory
 
     now = time.time()
@@ -154,7 +156,7 @@ def _clear_lockout(email: str) -> None:
             r.delete(_lockout_key(email))
             return
         except Exception:
-            pass
+            logger.warning("Failed to clear Redis lockout for %s", email, exc_info=True)
     _failed_attempts.pop(email, None)
 
 
@@ -278,14 +280,18 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+def _set_refresh_cookie(
+    response: Response, refresh_token: str, max_age_days: int
+) -> None:
     """Set the refresh token as an httpOnly, secure, SameSite=Strict cookie.
 
     This protects the refresh token from XSS-based theft in the web frontend.
     The desktop client reads the refresh token from the response body instead.
+
+    *max_age_days* controls the cookie lifetime: long for "remember me"
+    logins (30 days), short for session-only logins (7 days).
     """
-    settings = get_settings()
-    max_age = settings.refresh_token_expire_days * 86400
+    max_age = max_age_days * 86400
     is_secure = _env == "production"
     response.set_cookie(
         key="refresh_token",
@@ -310,11 +316,14 @@ def _issue_tokens(
     ip_address: str = "",
     company_id: int = 0,
     db: Optional[Any] = None,
+    remember: bool = True,
 ) -> Dict[str, Any]:
     """Create and persist an access token + refresh token pair.
 
     If *response* is provided, the refresh token is also set as an httpOnly
-    cookie for the web frontend (prevents XSS theft).
+    cookie for the web frontend (prevents XSS theft).  The cookie lifetime is
+    driven by *remember*: ``settings.remember_token_expire_days`` (30d) when
+    True, ``settings.session_token_expire_days`` (7d) when False.
 
     If *device_id* is provided, it is stored in the refresh token payload
     so that the refresh flow can verify the device is still active.
@@ -359,7 +368,15 @@ def _issue_tokens(
             logger.debug("Failed to record auth session", exc_info=True)
 
     if response is not None:
-        _set_refresh_cookie(response, refresh_token)
+        _set_refresh_cookie(
+            response,
+            refresh_token,
+            max_age_days=(
+                settings.remember_token_expire_days
+                if remember
+                else settings.session_token_expire_days
+            ),
+        )
 
     return {
         "access_token": access_token,
@@ -382,6 +399,7 @@ async def login_for_access_token(
     device_id: Optional[str] = Form(None),
     device_name: Optional[str] = Form(None),
     device_platform: Optional[str] = Form(None),
+    remember: bool = Form(False),
 ) -> Dict[str, Any]:
     """Authenticate and return an access token + refresh token pair.
 
@@ -389,7 +407,9 @@ async def login_for_access_token(
     Admin authentication is **zero-database**.
 
     The refresh token is also set as an httpOnly cookie on the response
-    for XSS-resistant browser storage.
+    for XSS-resistant browser storage.  ``remember=True`` ("remember me"
+    checked) yields a 30-day refresh cookie; otherwise a 7-day session
+    cookie is set.
 
     If *device_id* is provided, it is stored in the refresh token payload
     so that the refresh flow can verify the device is still active.
@@ -426,6 +446,7 @@ async def login_for_access_token(
                 email, "admin", response, device_id,
                 device_name=device_name, device_platform=device_platform,
                 ip_address=client_ip,
+                remember=remember,
             )
         # No admin hash configured — fall through to database check below
 
@@ -484,6 +505,7 @@ async def login_for_access_token(
             device_id, device_name=device_name,
             device_platform=device_platform, ip_address=client_ip,
             company_id=user.get("company_id", 0), db=db,
+            remember=remember,
         )
 
     raise HTTPException(
@@ -574,7 +596,10 @@ def refresh_access_token(
         except Exception:
             # If the mobile_devices table doesn't exist yet or a query
             # fails, allow the refresh to proceed (defensive).
-            pass
+            logger.warning(
+                "Mobile device active check failed during refresh; proceeding defensively",
+                exc_info=True,
+            )
 
     # Rotate: delete old refresh token, issue new pair
     _delete_refresh(token_hash)
@@ -712,7 +737,7 @@ def revoke_session(
         )
         db.commit()
     except Exception:
-        pass
+        logger.warning("Failed to delete auth session %s", session_id, exc_info=True)
 
     logger.info("Session %s revoked for company %s", session_id, company_id)
     return {"status": "ok", "detail": "Session revoked. Device will be logged out on next request."}

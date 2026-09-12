@@ -116,6 +116,7 @@ def subscribe_newsletter(
         )
         db.conn.commit()
     except Exception:
+        logger.debug("Could not create newsletter_subscriptions table (may already exist)", exc_info=True)
         # Table already exists / unavailable — let the INSERT report real errors.
         pass
 
@@ -266,6 +267,7 @@ def update_notification_preferences(
     try:
         db.conn.execute("ALTER TABLE users ADD COLUMN notification_prefs TEXT DEFAULT '{}'")
     except Exception:
+        logger.debug("Could not add notification_prefs column (may already exist)", exc_info=True)
         pass
     db.conn.execute(
         "UPDATE users SET notification_prefs = ? WHERE id = ?",

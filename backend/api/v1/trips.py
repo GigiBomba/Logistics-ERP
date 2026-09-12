@@ -7,7 +7,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
-from backend.dependencies import get_db, get_trip_service
+from backend.dependencies import get_db, get_export_service, get_trip_service
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.trip import (
     TripConflictCheckRequest,
@@ -52,13 +52,20 @@ def list_trips(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     search: str = Query("", description="Search query"),
     status: str = Query("", description="Status filter"),
+    statuses: str = Query("", description="Comma-separated statuses to filter by"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=200, description="Items per page"),
     service: TripService = Depends(get_trip_service),
 ):
     """Return paginated list of trips."""
     company_id = current_user.get("company_id", 0)
-    items = service.get_filtered(company_id=company_id, search=search, status=status, limit=page_size)
+    status_list = (
+        [s.strip() for s in statuses.split(",") if s.strip()] if statuses else []
+    )
+    items = service.get_filtered(
+        company_id=company_id, search=search, status=status,
+        statuses=status_list, limit=page_size,
+    )
     return PaginatedResponse.from_items(
         items=[TripResponse(**t) for t in items],
         total=len(items),
@@ -197,10 +204,9 @@ def export_trip_pdf(
     trip_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
+    svc=Depends(get_export_service),
 ):
     company_id = current_user.get("company_id", 0)
-    from backend.services.export_service import ExportService
-    svc = ExportService()
     trip = TripService(db).get_by_id(trip_id, company_id=company_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -216,10 +222,9 @@ def export_trip_excel(
     trip_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
+    svc=Depends(get_export_service),
 ):
     company_id = current_user.get("company_id", 0)
-    from backend.services.export_service import ExportService
-    svc = ExportService()
     trip = TripService(db).get_by_id(trip_id, company_id=company_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")

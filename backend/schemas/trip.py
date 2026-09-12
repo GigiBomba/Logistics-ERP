@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -51,7 +52,7 @@ class TripCreateRequest(BaseModel):
     start_date: str = ""
     end_date: Optional[str] = None
     promised_date: Optional[str] = None
-    price_eur: float = 0.0
+    price_eur: Decimal = Decimal("0.0")
     currency: str = "EUR"
     distance_km: Optional[float] = None
     notes: str = ""
@@ -64,13 +65,13 @@ class TripCreateRequest(BaseModel):
     loading_country: Optional[str] = None
     delivery_city: str = ""
     delivery_country: Optional[str] = None
-    fuel_cost: Optional[float] = None
-    toll_cost: Optional[float] = None
-    salary_cost: Optional[float] = None
-    extra_costs: Optional[float] = None
+    fuel_cost: Optional[Decimal] = None
+    toll_cost: Optional[Decimal] = None
+    salary_cost: Optional[Decimal] = None
+    extra_costs: Optional[Decimal] = None
     payment_date: Optional[str] = None
-    net_profit: Optional[float] = None
-    rate_per_km: Optional[float] = None
+    net_profit: Optional[Decimal] = None
+    rate_per_km: Optional[Decimal] = None
 
 
 class TripUpdateRequest(BaseModel):
@@ -84,7 +85,7 @@ class TripUpdateRequest(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     promised_date: Optional[str] = None
-    price_eur: Optional[float] = None
+    price_eur: Optional[Decimal] = None
     currency: Optional[str] = None
     distance_km: Optional[float] = None
     notes: Optional[str] = None
@@ -96,13 +97,13 @@ class TripUpdateRequest(BaseModel):
     loading_country: Optional[str] = None
     delivery_city: Optional[str] = None
     delivery_country: Optional[str] = None
-    fuel_cost: Optional[float] = None
-    toll_cost: Optional[float] = None
-    salary_cost: Optional[float] = None
-    extra_costs: Optional[float] = None
+    fuel_cost: Optional[Decimal] = None
+    toll_cost: Optional[Decimal] = None
+    salary_cost: Optional[Decimal] = None
+    extra_costs: Optional[Decimal] = None
     payment_date: Optional[str] = None
-    net_profit: Optional[float] = None
-    rate_per_km: Optional[float] = None
+    net_profit: Optional[Decimal] = None
+    rate_per_km: Optional[Decimal] = None
 
 
 class TripConflictCheckRequest(BaseModel):

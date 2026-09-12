@@ -110,6 +110,7 @@ class ChatResponse(BaseModel):
     clarification_params: Dict[str, Any] = {}
     timeline: list = []
     plan_id: Optional[str] = None
+    plan: Optional[ExecutionPlan] = None
 
 
 # ── Kill switch check (checked FIRST, before anything else — §26) ──────────
@@ -347,7 +348,7 @@ async def chat(
     try:
         await asyncio.to_thread(record_usage, company_id)
     except Exception:
-        pass
+        logger.warning("Failed to record Co-Pilot usage for company %s", company_id, exc_info=True)
 
     # Build simplified response
     return ChatResponse(
@@ -369,6 +370,7 @@ async def chat(
             for s in response.timeline
         ],
         plan_id=response.plan.plan_id if response.plan else None,
+        plan=response.plan,
     )
 
 
@@ -476,7 +478,7 @@ async def voice_input(
     try:
         await asyncio.to_thread(record_usage, company_id)
     except Exception:
-        pass
+        logger.warning("Failed to record Co-Pilot usage for company %s", company_id, exc_info=True)
 
     return ChatResponse(
         conversation_id=response.conversation_id,
@@ -497,6 +499,7 @@ async def voice_input(
             for s in response.timeline
         ],
         plan_id=response.plan.plan_id if response.plan else None,
+        plan=response.plan,
     )
 
 
@@ -1317,7 +1320,10 @@ def _make_step_update_callback(conversation_id: str):
             try:
                 asyncio.run(_push(step_id, status, tool_name))
             except Exception:
-                pass
+                logger.warning(
+                    "WS step update fallback push failed for conversation %s",
+                    conversation_id, exc_info=True,
+                )
 
     return _callback
 
@@ -1528,11 +1534,17 @@ async def copilot_websocket(
         try:
             _ws_connections.get(conversation_id, []).remove(websocket)
         except ValueError:
-            pass
+            logger.warning(
+                "Co-Pilot WebSocket connection already removed: conversation=%s",
+                conversation_id, exc_info=True,
+            )
         try:
             await websocket.close()
         except Exception:
-            pass
+            logger.warning(
+                "Failed to close Co-Pilot WebSocket: conversation=%s",
+                conversation_id, exc_info=True,
+            )
 
 
 # ── Kill switch management helpers (§26) ────────────────────────────────

@@ -27,6 +27,7 @@ from database.time_utils import utc_now_iso
 from backend.schemas.mobile import (
     ActivityItem,
     ApprovalActionRequest,
+    DeviceBulkDeactivateRequest,
     DeviceRegisterRequest,
     DispatcherAlertResponse,
     DispatcherDriverResponse,
@@ -172,6 +173,21 @@ def _map_trip_status(status: Any) -> Optional[str]:
     if not status:
         return None
     return _TRIP_STATUS_TO_CONTRACT.get(str(status).strip().lower())
+
+
+def _canonical_utc(value: Any) -> Any:
+    """Render a DB timestamp in the canonical UTC ``YYYY-MM-DDTHH:MM:SSZ`` form.
+
+    PostgreSQL returns TIMESTAMPTZ columns as ``datetime`` objects while
+    SQLite returns the stored TEXT.  Datetimes are converted to the same
+    canonical string the sync layer uses; strings (and None) pass through
+    unchanged so both engines produce identical values.
+    """
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return value
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -366,11 +382,11 @@ def driver_trip_overview(
         origin=(r.get("place_of_loading") or "").strip() or None,
         destination=(r.get("delivery_country") or "").strip() or None,
         status=_map_trip_status(r.get("status")),
-        status_since=status_changed_at or r.get("created_at"),
-        eta=(r.get("end_date") or "").strip() or None,
+        status_since=_canonical_utc(status_changed_at or r.get("created_at")),
+        eta=str(r.get("end_date") or "").strip() or None,
         # end_date is a planned ETA (stale, not live telemetry) — "stale"
         # keeps it truthful while letting the app surface the value.
-        eta_confidence="stale" if (r.get("end_date") or "").strip() else None,
+        eta_confidence="stale" if str(r.get("end_date") or "").strip() else None,
     )
 
 
@@ -925,6 +941,36 @@ def deactivate_device(
     return {"status": "deactivated"}
 
 
+@router.post("/devices/bulk-deactivate")
+def bulk_deactivate_devices(
+    body: DeviceBulkDeactivateRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Deactivate multiple devices by UUID in a single statement.
+
+    Idempotent: device ids that do not exist (or belong to another
+    company) are simply counted in ``not_found``.  Only accessible by
+    admin, manager, or dispatcher.
+    """
+    company_id = current_user["company_id"]
+    device_ids = body.device_ids
+
+    if not device_ids:
+        return {"deactivated": 0, "not_found": 0}
+
+    placeholders = ", ".join("?" for _ in device_ids)
+    cur = db.execute(
+        f"UPDATE mobile_devices SET is_active = 0 "
+        f"WHERE device_id IN ({placeholders}) AND company_id = ?",
+        (*device_ids, company_id),
+    )
+    db.commit()
+
+    rows = cur.rowcount if cur is not None else 0
+    return {"deactivated": rows, "not_found": len(device_ids) - rows}
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  SYNC ENDPOINT
 # ══════════════════════════════════════════════════════════════════════
@@ -1279,7 +1325,7 @@ def dispatcher_overview(
         """SELECT COALESCE(SUM(total_price_eur), 0) AS revenue
            FROM trips
            WHERE company_id = ?
-             AND start_date IS NOT NULL AND start_date != ''
+             AND start_date IS NOT NULL
              AND start_date >= ?""",
         (company_id, first_of_month),
     ).fetchone()
@@ -1673,7 +1719,7 @@ def company_export_manifest(
     try:
         rows = db.execute(
             f"""SELECT id, category, file_name, file_size,
-                       COALESCE(NULLIF(updated_at, ''), uploaded_at) AS modified_at
+                       COALESCE(updated_at, uploaded_at) AS modified_at
                 FROM documents
                 WHERE {where}
                 ORDER BY modified_at DESC
@@ -1769,11 +1815,11 @@ def _trip_history_manifest(
 
     if body.date_from:
         _validate_date_from(body.date_from)
-        clauses.append("COALESCE(NULLIF(created_at, ''), start_date) >= ?")
+        clauses.append("COALESCE(created_at, start_date) >= ?")
         params.append(body.date_from)
     if body.date_to:
         _validate_date_to(body.date_to)
-        clauses.append("COALESCE(NULLIF(created_at, ''), start_date) <= ?")
+        clauses.append("COALESCE(created_at, start_date) <= ?")
         if "T" not in body.date_to and " " not in body.date_to:
             params.append(f"{body.date_to}T23:59:59")
         else:

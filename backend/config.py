@@ -124,6 +124,10 @@ class BackendSettings(BaseSettings):
 
     # ── Refresh token ─────────────────────────────────────────────────────
     refresh_token_expire_days: int = 7
+    # "Remember me" login → long-lived refresh cookie; session login → short.
+    # Env: OPERION_REMEMBER_TOKEN_EXPIRE_DAYS / OPERION_SESSION_TOKEN_EXPIRE_DAYS.
+    remember_token_expire_days: int = 30
+    session_token_expire_days: int = 7
 
     # ── Field-level encryption (used for SMTP passwords etc.) ─────────────
     encryption_key: str = ""
@@ -138,6 +142,14 @@ class BackendSettings(BaseSettings):
     # ── operion-ops support-service proxy ─────────────────────────────────
     support_internal_auth: str = "dev-insecure-replace-in-production"
     support_service_url: str = "http://host.docker.internal:8100"
+
+    # ── Stripe (billing, blueprint §4) ────────────────────────────────────
+    # Env: OPERION_STRIPE_SECRET_KEY / OPERION_STRIPE_WEBHOOK_SECRET /
+    # OPERION_STRIPE_PUBLISHABLE_KEY. Stripe is strictly env-gated: billing
+    # endpoints degrade to mocks / empty lists when these are unset.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_publishable_key: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="OPERION_",

@@ -12,6 +12,7 @@ try:
     if os.path.isfile(env_path):
         load_dotenv(env_path)
 except Exception:
+    logging.getLogger(__name__).debug("Failed to load .env file; continuing with environment defaults")
     pass
 
 from fastapi import FastAPI, Request
@@ -67,6 +68,7 @@ def _capture_exception(exc: BaseException) -> None:
         if sentry_sdk.get_client().is_enabled():
             sentry_sdk.capture_exception(exc)
     except Exception:
+        logger.debug("Sentry capture unavailable; continuing without error reporting", exc_info=True)
         pass  # Sentry absent or not initialised — never break request handling.
 
 

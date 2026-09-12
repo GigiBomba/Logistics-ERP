@@ -24,6 +24,7 @@ payload.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -43,6 +44,8 @@ from backend.repositories.trip_repository import TripRepository
 from database.time_utils import utc_now_iso
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+
+logger = logging.getLogger(__name__)
 
 # ── Shared contract (must match the desktop Phase 1 lane exactly) ────────
 # Phase B: all 25 entity types in the v1 push scope.  Anything else gets
@@ -489,6 +492,7 @@ def _resolve_mapping(db: DatabaseManager, company_id: int, device_id: str, entit
             )
             db.commit()
         except Exception:
+            logger.debug("Concurrent device claimed legacy sync_server_map row during adoption", exc_info=True)
             # A concurrent device already re-created the row → its namespace
             # wins; the legacy row is gone, so fall through to the caller's
             # normal handling.

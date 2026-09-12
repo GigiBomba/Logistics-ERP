@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
@@ -16,7 +17,7 @@ class InvoiceGenerateRequest(BaseModel):
 
     # Trip data fields used by the invoice service internals
     client_name: str = ""
-    total_price_eur: float = 0.0
+    total_price_eur: Decimal = Decimal("0.0")
     client_id: Optional[int] = None
     created_at: Optional[str] = None
 

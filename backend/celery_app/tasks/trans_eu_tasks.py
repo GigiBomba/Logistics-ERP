@@ -29,13 +29,23 @@ settings = BackendSettings()
 # stall the whole 10-minute sync cycle (C1b).
 TRANS_EU_SYNC_FREIGHT_TIMEOUT_SECONDS = 30
 
+# C1d: max concurrent in-flight Trans.eu ``get_load`` fetches per task run
+# during trans_eu_sync_active_freights.  The per-freight fetches run
+# concurrently on the one shared event loop but no more than this many are in
+# flight at once, so a large active-freight list completes in ~N/concurrency ×
+# latency (instead of N × latency) without hammering the external API.
+TRANS_EU_SYNC_MAX_CONCURRENT_FETCHES = 6
 
-@celery_app.task(bind=True, max_retries=0)
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
 def trans_eu_refresh_tokens(self) -> dict:
     """Scan trans_eu_user_tokens for tokens expiring within 1 hour
     and refresh them proactively.
 
     Runs every 30 minutes (crontab minute="*/30").
+    Task-level retries use exponential backoff (60s, 120s) so a transient
+    provider/DB outage self-heals instead of waiting for the next beat.
+    Per-token failures stay best-effort (logged + marked for re-auth).
     """
     db = DatabaseManager(Config.DB_PATH)
     try:
@@ -87,7 +97,8 @@ def trans_eu_refresh_tokens(self) -> dict:
 
     except Exception as e:
         logger.exception("trans_eu_refresh_tokens failed: %s", e)
-        return {"error": str(e)}
+        # Exponential backoff: 60s on the first retry, 120s on the second.
+        raise self.retry(exc=e, countdown=self.default_retry_delay * (2 ** self.request.retries))
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=120)
@@ -124,6 +135,17 @@ def trans_eu_sync_active_freights(self, company_id: int = None,
                 rows = offer_repo.get_distinct_company_ids_by_status(exclude_statuses)
 
             synced = 0
+
+            # C1d: bounded-concurrency limiter for the per-freight HTTP fetches,
+            # shared across every company in this task run.  It is created on the
+            # shared loop (via run_until_complete) so it binds to that loop on every
+            # supported Python (asyncio.Semaphore must be created while its loop is
+            # the running loop to bind correctly on 3.9).
+            async def _new_fetch_limiter() -> asyncio.Semaphore:
+                return asyncio.Semaphore(TRANS_EU_SYNC_MAX_CONCURRENT_FETCHES)
+
+            fetch_limiter = loop.run_until_complete(_new_fetch_limiter())
+
             for row in rows:
                 cid = row["company_id"]
                 set_company_context(cid)
@@ -131,33 +153,63 @@ def trans_eu_sync_active_freights(self, company_id: int = None,
                 # Get active freights for this company
                 freights = offer_repo.get_freight_ids_by_company_and_status(cid, exclude_statuses)
 
+                # C1d: parallelize the per-freight Trans.eu fetches.  The per-freight
+                # coroutine (adapter.get_load) is PURE HTTP — it only opens an httpx
+                # client with the passed session, with NO DB reads and NO tenant-context
+                # global access.  So all freights of this company are fetched
+                # concurrently on the one shared loop, bounded by
+                # TRANS_EU_SYNC_MAX_CONCURRENT_FETCHES, and the statuses are then
+                # persisted back on this sync thread (serialized).  Session lookup and
+                # status persistence never run inside the parallel coroutine.
+                from services.freight_exchange.connection_manager import ConnectionManagerService
+                from services.freight_exchange.registry import get_adapter
+
+                conn_mgr = ConnectionManagerService(db)
+                adapter = get_adapter("trans_eu")
+
+                # Per-freight session lookup + adapter check — same per-freight
+                # behaviour as before (missing session/adapter → skip that freight).
+                planned = []  # (fid, session) for freights we will fetch
                 for freight_row in freights:
                     try:
                         fid = freight_row["trans_eu_freight_id"]
-                        # Fetch current status from Trans.eu
-                        from services.freight_exchange.connection_manager import ConnectionManagerService
-                        from services.freight_exchange.registry import get_adapter
-
-                        conn_mgr = ConnectionManagerService(db)
                         session = conn_mgr.get_active_session_sync(cid, "trans_eu")
-                        if session is None:
+                        if session is None or adapter is None:
                             continue
+                        planned.append((fid, session))
+                    except Exception as e:
+                        logger.warning("Failed to sync freight %d for company %d: %s", fid, cid, e)
 
-                        adapter = get_adapter("trans_eu")
-                        if adapter is None:
-                            continue
+                if not planned:
+                    continue
 
-                        # C1b: run the async get_load on the shared loop, bounded by a
-                        # per-freight timeout so one hung freight can't stall the
-                        # whole 10-minute cycle. A timeout surfaces as an exception
-                        # and is caught below (log + skip that freight only).
-                        result = loop.run_until_complete(
-                            asyncio.wait_for(
-                                adapter.get_load(session, str(fid)),
-                                timeout=TRANS_EU_SYNC_FREIGHT_TIMEOUT_SECONDS,
-                            )
+                async def _fetch_freight(adapter, session, fid):
+                    # C1b: bounded by a per-freight timeout so one hung freight can't
+                    # stall the whole 10-minute cycle. The timeout surfaces as an
+                    # exception and is handled per-freight below.
+                    async with fetch_limiter:
+                        return await asyncio.wait_for(
+                            adapter.get_load(session, str(fid)),
+                            timeout=TRANS_EU_SYNC_FREIGHT_TIMEOUT_SECONDS,
                         )
 
+                async def _fetch_all_freights():
+                    # Concurrent, bounded fetch of every freight; exceptions are
+                    # captured per-freight (return_exceptions=True) so one failed
+                    # freight can't fail the batch. gather() is created here, while
+                    # the loop is running, so every child future binds to *loop*.
+                    return await asyncio.gather(
+                        *(_fetch_freight(adapter, session, fid) for fid, session in planned),
+                        return_exceptions=True,
+                    )
+
+                outcomes = loop.run_until_complete(_fetch_all_freights())
+
+                for (fid, _session), outcome in zip(planned, outcomes):
+                    try:
+                        if isinstance(outcome, Exception):
+                            raise outcome
+                        result = outcome
                         if result:
                             # Sync status from raw_payload
                             raw = result.raw_payload if hasattr(result, 'raw_payload') else {}

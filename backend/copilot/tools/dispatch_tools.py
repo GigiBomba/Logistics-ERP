@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.copilot.schemas import ConfirmationLevel, ToolResult
 from backend.copilot.tools.base import BaseTool, ToolExecutionContext
@@ -43,14 +43,11 @@ class DispatchCreateParams(BaseModel):
             return None
         return v
 
-    @field_validator("trip_id", mode="after")
-    @classmethod
-    def _check_at_least_one(cls, v: int, info: Any) -> int:
-        truck = info.data.get("truck_id")
-        driver = info.data.get("driver_id")
-        if truck is None and driver is None:
+    @model_validator(mode="after")
+    def _check_at_least_one(self) -> "DispatchCreateParams":
+        if self.truck_id is None and self.driver_id is None:
             raise ValueError("At least one of truck_id or driver_id must be provided")
-        return v
+        return self
 
 
 class BulkAssignParams(BaseModel):

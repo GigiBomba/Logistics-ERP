@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -12,7 +13,18 @@ from backend.schemas.fleet import GpsBatchRequest, GpsPing, GpsPosition, TruckRe
 from backend.db import DatabaseManager
 from backend.services.fleet_service import FleetService
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/fleet", tags=["fleet"])
+
+# ── GPS batch queue bounds ───────────────────────────────────────────────────
+# ``gps:batch:{company_id}`` is drained by the flush task
+# (``backend.celery_app.tasks.ocr_tasks.flush_gps_batch_to_postgres``, beat
+# every 30 s).  If that worker is down the list would grow forever, so every
+# push (a) refreshes a TTL and (b) is skipped once the queue hits a hard cap —
+# bounded memory even under a dead-worker / outage window.
+GPS_BATCH_TTL_SECONDS = 3600
+GPS_BATCH_MAX_LEN = 10000
 
 
 class TruckListResponse(PaginatedResponse[TruckResponse]):
@@ -133,7 +145,22 @@ def ingest_gps_ping(
     cache = get_cache()
     key = f"gps:live:{company_id}:{ping.truck_id}"
     cache.set(key, ping.model_dump(), ttl=120)
-    cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
+    batch_key = f"gps:batch:{company_id}"
+    # Safety cap (least invasive: never deletes data, just stops appending
+    # beyond the cap — the ping's live position is already stored).  The
+    # flush worker drains the queue on the next beat and the TTL refresh
+    # bounds the key even if that worker is down.  (``isinstance`` guard:
+    # ``llen`` returns int on the real RedisCache; mock caches in tests
+    # return non-int mocks and must keep taking the normal push path.)
+    queue_len = cache.llen(batch_key)
+    if isinstance(queue_len, int) and queue_len > GPS_BATCH_MAX_LEN:
+        logger.warning(
+            "gps:batch:%s length %d exceeds cap %d — skipping rpush",
+            company_id, queue_len, GPS_BATCH_MAX_LEN,
+        )
+    else:
+        cache.rpush(batch_key, ping.model_dump_json())
+        cache.expire(batch_key, GPS_BATCH_TTL_SECONDS)
     return {"status": "accepted"}
 
 
@@ -179,10 +206,23 @@ def ingest_gps_batch(
     if len(owned) != len(truck_ids):
         raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
+    batch_key = f"gps:batch:{company_id}"
+    # Same bounded-queue guard as the single-ingest endpoint: check the cap
+    # once for the whole batch (soft cap — live positions are still written).
+    queue_len = cache.llen(batch_key)
+    over_cap = isinstance(queue_len, int) and queue_len > GPS_BATCH_MAX_LEN
+    if over_cap:
+        logger.warning(
+            "gps:batch:%s length %d exceeds cap %d — skipping %d rpush(es)",
+            company_id, queue_len, GPS_BATCH_MAX_LEN, len(pings.root),
+        )
     for ping in pings.root:
         key = f"gps:live:{company_id}:{ping.truck_id}"
         cache.set(key, ping.model_dump(), ttl=120)
-        cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
+        if over_cap:
+            continue
+        cache.rpush(batch_key, ping.model_dump_json())
+        cache.expire(batch_key, GPS_BATCH_TTL_SECONDS)
     return {"status": "accepted", "count": len(pings.root)}
 
 

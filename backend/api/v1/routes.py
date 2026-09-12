@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.dependencies import get_db
+from backend.dependencies import get_db, get_route_service
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.route import RouteCalculateRequest, RouteResponse
@@ -69,15 +69,13 @@ def calculate_route(
     data: RouteCalculateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
+    route_svc=Depends(get_route_service),
 ):
-    from backend.services.route_service import RouteService
-
     points = data.points
     if not points or len(points) < 2:
         raise HTTPException(status_code=400, detail="At least 2 points (start + end) are required")
 
     profile = data.profile
-    route_svc = RouteService()
 
     try:
         from services.geocode_nominatim import geocode_place

@@ -43,7 +43,7 @@ def _extract_db_path(db) -> str:
     return Config.DB_PATH
 
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=10)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def export_trips_job(
     self,
     job_id: int,
@@ -79,6 +79,15 @@ def export_trips_job(
         return {"status": "success", "result_path": result_path}
     except Exception as exc:
         logger.exception("export_trips_job %d failed", job_id)
+        # Worker retry with exponential backoff (10s, 20s, 40s).  Eager /
+        # direct invocations (tests, task_always_eager) keep the historical
+        # mark-error-and-return behavior so no caller sees a retry raise.
+        if not self.request.is_eager and not self.request.called_directly \
+                and self.request.retries < self.max_retries:
+            raise self.retry(
+                exc=exc,
+                countdown=self.default_retry_delay * (2 ** self.request.retries),
+            )
         try:
             ExportJobRepository(db).mark_error(job_id, str(exc), company_id)
         except Exception:

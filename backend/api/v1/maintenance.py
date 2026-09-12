@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
-from backend.dependencies import get_db
+from backend.dependencies import get_db, get_fuel_price_service
 from backend.dependencies_security import require_dispatcher
 from backend.db import DatabaseManager
 from backend.repositories.fleet_repository import FleetRepository
@@ -123,6 +123,7 @@ def get_maintenance_top_categories(
 def get_fuel_price(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
+    svc=Depends(get_fuel_price_service),
 ):
     """Return the current diesel fuel price and last-update timestamp.
 
@@ -130,9 +131,6 @@ def get_fuel_price(
     live scrape, deterministic). ``db`` is injected for API consistency even
     though the service keeps its own on-disk cache.
     """
-    from backend.services.fuel_price_service import FuelPriceService
-
-    svc = FuelPriceService()
     return {
         "price": round(float(svc.get_price("DEFAULT", "EUR")), 3),
         "currency": "EUR",

@@ -179,16 +179,23 @@ def fuel_cost_trend_job(self) -> dict:
         companies = _get_company_ids(db)
         insights_created = 0
         errors = 0
-        for company_id in companies:
-            try:
-                price = svc.get_price_for_country("DEFAULT")
-                if price and price > 2.0:
+        # Hoisted: the DEFAULT fuel price is company-agnostic — fetch it ONCE
+        # before the loop instead of once per company per run.  Threshold
+        # logic is unchanged (insight only when ``price and price > 2.0``).
+        try:
+            price = svc.get_price_for_country("DEFAULT")
+        except Exception as exc:
+            logger.warning("fuel_cost_trend_job: fuel price fetch failed: %s", exc)
+            price = None
+        if price and price > 2.0:
+            for company_id in companies:
+                try:
                     _insert_insight(db, company_id, "fuel_cost_trend", "medium",
                                     {"current_price": price, "trend": "high"})
                     insights_created += 1
-            except Exception as exc:
-                errors += 1
-                logger.warning("fuel_cost_trend_job failed for company %s: %s", company_id, exc)
+                except Exception as exc:
+                    errors += 1
+                    logger.warning("fuel_cost_trend_job failed for company %s: %s", company_id, exc)
         logger.info("fuel_cost_trend_job: %d insights created", insights_created)
         if errors:
             logger.warning("fuel_cost_trend_job: %d company pass(es) failed", errors)

@@ -207,7 +207,7 @@ class WorldModelService:
                     available += 1
             return FleetSummary(total_vehicles=total, available_count=available)
         except Exception:
-            pass
+            logger.warning("World Model fleet summary failed", exc_info=True)
         return FleetSummary()
 
     def _build_driver_summary(self, company_id: int = 0) -> DriverSummary:
@@ -227,7 +227,7 @@ class WorldModelService:
             available = sum(1 for r in (rows or []) if r.get("is_active"))
             return DriverSummary(total_drivers=total, available_count=available)
         except Exception:
-            pass
+            logger.warning("World Model driver summary failed", exc_info=True)
         return DriverSummary()
 
     def _build_trip_summary(self, company_id: int = 0) -> TripSummary:
@@ -255,7 +255,7 @@ class WorldModelService:
                             completed_today += 1
                 return TripSummary(active_trips=active, completed_today=completed_today)
         except Exception:
-            pass
+            logger.warning("World Model trip summary failed", exc_info=True)
         return TripSummary()
 
     def _build_document_summary(self, company_id: int = 0) -> DocumentSummary:
@@ -282,7 +282,7 @@ class WorldModelService:
                     expiring += 1
             return DocumentSummary(pending_ocr=pending, expiring_soon=expiring)
         except Exception:
-            pass
+            logger.warning("World Model document summary failed", exc_info=True)
         return DocumentSummary()
 
     def _build_dispatch_summary(self, company_id: int = 0) -> DispatchSummary:
@@ -301,7 +301,7 @@ class WorldModelService:
                     in_transit += 1
             return DispatchSummary(pending_dispatches=pending, in_transit=in_transit)
         except Exception:
-            pass
+            logger.warning("World Model dispatch summary failed", exc_info=True)
         return DispatchSummary()
 
     def _build_maintenance_summary(self, company_id: int = 0) -> MaintenanceSummary:
@@ -313,7 +313,7 @@ class WorldModelService:
             due_soon = summary.get("due_soon_count", 0) if isinstance(summary, dict) else 0
             return MaintenanceSummary(overdue_count=overdue, due_soon_count=due_soon)
         except Exception:
-            pass
+            logger.warning("World Model maintenance summary failed", exc_info=True)
         return MaintenanceSummary()
 
     def _build_financial_summary(self, company_id: int = 0) -> FinancialSummary:
@@ -326,7 +326,7 @@ class WorldModelService:
                 count = len(overdue_list) if isinstance(overdue_list, list) else 0
                 return FinancialSummary(overdue_invoices=count, total_outstanding=float(total or 0))
         except Exception:
-            pass
+            logger.warning("World Model financial summary failed", exc_info=True)
         return FinancialSummary()
 
     def _build_notification_summary(self, company_id: int = 0) -> NotificationSummary:
@@ -348,7 +348,7 @@ class WorldModelService:
                     critical_count=int(row["critical"] or 0),
                 )
         except Exception:
-            pass
+            logger.warning("World Model notification summary failed", exc_info=True)
         return NotificationSummary()
 
     def _build_open_problems(self, company_id: int = 0) -> List[OpenProblem]:
@@ -363,7 +363,7 @@ class WorldModelService:
                     summary_params={"count": financial.overdue_invoices},
                 ))
         except Exception:
-            pass
+            logger.warning("World Model open-problem financial build failed", exc_info=True)
         try:
             maint = self._build_maintenance_summary(company_id)
             if maint.overdue_count > 0:
@@ -374,7 +374,7 @@ class WorldModelService:
                     summary_params={"count": maint.overdue_count},
                 ))
         except Exception:
-            pass
+            logger.warning("World Model open-problem maintenance build failed", exc_info=True)
         return problems
 
     def _build_todays_objectives(self, company_id: int = 0) -> List[Objective]:

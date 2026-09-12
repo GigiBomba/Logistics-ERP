@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from typing import Any, Dict
@@ -13,6 +14,8 @@ from backend.schemas.cmr import CmrGenerateRequest
 from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/cmr", tags=["cmr"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("/generate")
@@ -46,4 +49,5 @@ def generate_cmr(
             import shutil
             shutil.rmtree(output_dir, ignore_errors=True)
         except Exception:
+            logger.warning("Failed to clean up temporary CMR output directory", exc_info=True)
             pass

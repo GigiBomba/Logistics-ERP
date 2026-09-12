@@ -178,6 +178,7 @@ async def delete_company_data(company_id: int, confirm: str = "",
             company_id=company_id,
         )
     except Exception:
+        logger.warning("GDPR deletion audit event could not be recorded for company %s", company_id, exc_info=True)
         pass
 
     logger.info("GDPR deletion: company_id=%d, tables=%d", company_id, len(deleted))

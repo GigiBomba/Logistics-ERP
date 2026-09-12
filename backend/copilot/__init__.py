@@ -7,3 +7,9 @@ from __future__ import annotations
 # and never bypasses permission or validation layers.
 #
 # Blueprint: Operion_AI_CoPilot_Blueprint_V4.md
+
+# Install correlation-ID propagation on the copilot loggers at import time.
+# Idempotent: install_copilot_logging() skips an already-attached filter.
+from backend.copilot.telemetry import install_copilot_logging as _install_copilot_logging
+
+_install_copilot_logging()

@@ -111,6 +111,7 @@ def _record_confidence_metric(score: float) -> None:
         from utils.observability import metrics
         metrics.increment(f"copilot.confidence.{confidence_bucket(score)}")
     except Exception:
+        logger.debug("Copilot confidence metric not recorded (metrics unavailable)", exc_info=True)
         pass
 
 # ── Tool auto-loading ───────────────────────────────────────────────────────
@@ -848,6 +849,42 @@ async def process_utterance(
         )
 
 
+def _collect_summary_params(result_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten tool-result data into template-usable scalar summary params.
+
+    Level-0 scalars keep their names; lists become ``<name>_count``; nested
+    dicts contribute their scalar values directly so rich results (health
+    scores, hour checks, cost breakdowns) reach the summary templates
+    instead of an empty params dict.  Floats are rounded to 2 decimals —
+    raw engine floats are not display-friendly.  First-wins on name
+    collisions (a top-level scalar can never be clobbered by a nested one).
+    """
+    out: Dict[str, Any] = {}
+
+    def _store(key: str, value: Any) -> None:
+        if key in out:
+            return
+        if isinstance(value, bool):
+            out[key] = value
+        elif isinstance(value, (int, float)):
+            out[key] = round(value, 2) if isinstance(value, float) else value
+        elif isinstance(value, str):
+            out[key] = value
+
+    for k, v in result_data.items():
+        if isinstance(v, (str, int, float, bool)):
+            _store(k, v)
+        elif isinstance(v, list):
+            _store(f"{k}_count", len(v))
+        elif isinstance(v, dict):
+            for k2, v2 in v.items():
+                if isinstance(v2, (str, int, float, bool)):
+                    _store(k2, v2)
+                elif isinstance(v2, list):
+                    _store(f"{k2}_count", len(v2))
+    return out
+
+
 async def _run_deterministic(
     utterance: str,
     global_ctx: GlobalContext,
@@ -1063,13 +1100,6 @@ async def _run_deterministic(
             )
 
     # ── 8. Build response ───────────────────────────────────────────────
-    summary_parts = []
-    for step in plan.steps:
-        if step.status == "succeeded" and step.result:
-            summary_parts.append(step.result.get("message_key", ""))
-        elif step.status == "failed":
-            summary_parts.append(step.error or "Failed")
-
     summary_key = f"copilot.summary.{intent.name}"
     summary_params = {
         "intent": intent.name,
@@ -1081,9 +1111,15 @@ async def _run_deterministic(
         if step.status == "succeeded" and step.result:
             result_data = step.result.get("data", {})
             if isinstance(result_data, dict):
-                for k, v in result_data.items():
-                    if isinstance(v, (str, int, float, bool)):
-                        summary_params[k] = v
+                for k, v in _collect_summary_params(result_data).items():
+                    # First-wins — a tool data key can never clobber the
+                    # intent/steps_* bookkeeping params.
+                    summary_params.setdefault(k, v)
+
+    if summary_params["steps_succeeded"] == 0:
+        # No step produced data — the per-intent template's placeholders
+        # would leak raw.  Surface a generic failure summary instead.
+        summary_key = "copilot.summary.error"
 
     return CoPilotResponse(
         conversation_id=conversation_id,

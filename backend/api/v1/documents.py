@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import date
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
@@ -55,6 +56,66 @@ def list_documents(
         items=[DocumentResponse(**doc) for doc in result["items"]],
         total=result["total"],
         total_pages=result["total_pages"],
+    )
+
+
+@router.get("/expiring", response_model=PaginatedResponse[DocumentResponse])
+def list_expiring_documents(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    days: int = Query(30, description="Days ahead — expiry within the next N days"),
+    page: int = Query(0, ge=0),
+    page_size: int = Query(20, ge=1, le=100),
+    service=Depends(get_document_service),
+):
+    """Return documents expiring within the next ``days`` days (not yet expired).
+
+    Company-scoped: the repository query is filtered by the JWT-derived
+    ``company_id`` (``_company_filter_for``), so a document belonging to
+    another company is never returned.  Expired documents (``expiry_date``
+    before today) are excluded — only upcoming expiries are reported.
+    Response shape mirrors ``GET /documents/``::
+
+        {"items": [...], "total": n, "total_pages": p}
+    """
+    company_id = current_user.get("company_id", 0)
+    docs = service.get_expiring(days_ahead=days, company_id=company_id) or []
+    today = date.today().isoformat()
+    docs = [d for d in docs if (d.get("expiry_date") or "") >= today]
+    total = len(docs)
+    offset = page * page_size
+    page_items = docs[offset:offset + page_size]
+    total_pages = max(1, (total + page_size - 1) // page_size) if page_size else 0
+    return PaginatedResponse(
+        items=[DocumentResponse(**doc) for doc in page_items],
+        total=total,
+        total_pages=total_pages,
+    )
+
+
+@router.get("/overdue", response_model=PaginatedResponse[DocumentResponse])
+def list_overdue_documents(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    page: int = Query(0, ge=0),
+    page_size: int = Query(20, ge=1, le=100),
+    service=Depends(get_document_service),
+):
+    """Return documents whose ``expiry_date`` is in the past.
+
+    Company-scoped: the repository query is filtered by the JWT-derived
+    ``company_id`` (``_company_filter_for``), so a document belonging to
+    another company is never returned.  Response shape mirrors
+    ``GET /documents/``: ``{"items": [...], "total": n, "total_pages": p}``.
+    """
+    company_id = current_user.get("company_id", 0)
+    docs = service.get_overdue(company_id=company_id) or []
+    total = len(docs)
+    offset = page * page_size
+    page_items = docs[offset:offset + page_size]
+    total_pages = max(1, (total + page_size - 1) // page_size) if page_size else 0
+    return PaginatedResponse(
+        items=[DocumentResponse(**doc) for doc in page_items],
+        total=total,
+        total_pages=total_pages,
     )
 
 

@@ -167,6 +167,11 @@ class DeviceRegisterRequest(BaseModel):
     device_name: Optional[str] = ""
 
 
+class DeviceBulkDeactivateRequest(BaseModel):
+    """Deactivate a batch of devices for the current company."""
+    device_ids: List[str]
+
+
 # ──────────────────────────────────────────────────────────────────────
 #  Dispatcher / Manager
 # ──────────────────────────────────────────────────────────────────────

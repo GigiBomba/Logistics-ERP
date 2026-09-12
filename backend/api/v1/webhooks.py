@@ -304,6 +304,7 @@ async def _handle_trans_eu_webhook(payload: dict, db, event_id: int) -> dict:
                 if row:
                     company_id = row[0]
             except Exception:
+                logger.warning("Failed to resolve company_id for Trans.eu event %s", trans_eu_event_id, exc_info=True)
                 pass
 
     if company_id is None:
@@ -337,6 +338,7 @@ def _extract_company_from_trans_eu_event(payload: dict, db) -> int | None:
             if row:
                 return row[0]
         except Exception:
+            logger.warning("Failed to resolve company_id from Trans.eu freight_id lookup", exc_info=True)
             pass
 
     # Try from data section (some events embed freight_id there)
@@ -351,6 +353,7 @@ def _extract_company_from_trans_eu_event(payload: dict, db) -> int | None:
             if row:
                 return row[0]
         except Exception:
+            logger.warning("Failed to resolve company_id from Trans.eu data freight_id lookup", exc_info=True)
             pass
 
     return None

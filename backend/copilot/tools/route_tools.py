@@ -10,6 +10,7 @@ All three are **SAFE** (read-only, execute immediately) and require ``routes:rea
 
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,8 @@ from backend.copilot.schemas import ConfirmationLevel, ToolResult
 from backend.copilot.tools.base import BaseTool, ToolExecutionContext
 from backend.copilot.tools.registry import register_tool
 from repositories.route_repository import RouteRepository
+
+logger = logging.getLogger(__name__)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -120,12 +123,14 @@ def _get_truck_dict(fleet_service, truck_id: int) -> Optional[dict]:
         if result.success and result.data is not None:
             return result.data.model_dump()
     except Exception:
+        logger.warning("Fleet service get() lookup failed for truck %s", truck_id, exc_info=True)
         pass
     try:
         raw = fleet_service.get_truck(truck_id)
         if raw:
             return dict(raw)
     except Exception:
+        logger.warning("Fleet service get_truck() lookup failed for truck %s", truck_id, exc_info=True)
         pass
     return None
 
@@ -149,6 +154,7 @@ def _legs_from_graphhopper_response(result: dict) -> List[dict]:
                 for leg in legs
             ]
     except Exception:
+        logger.warning("Failed to parse GraphHopper legs; returning empty leg list", exc_info=True)
         pass
     return []
 
@@ -355,6 +361,7 @@ class RouteCalculateTool(BaseTool):
                                 "currency": b.currency,
                             }
                     except Exception:
+                        logger.warning("Cost estimate skipped: cost engine failed for truck %s", p.truck_id, exc_info=True)
                         pass
 
             return ToolResult(

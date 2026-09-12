@@ -816,8 +816,26 @@ class FreightRecommendDispatchTool(BaseTool):
                 provider_load_id=params.provider_load_id,
             )
 
-            # ── Step 2: Find best trucks ──────────────────────────────────
+            # ── Step 2: Fleet-occupancy guard + find best trucks ──────────
+            # Blueprint §5.4 "Bids without checking if truck is available":
+            # never recommend a dispatch when EVERY truck is in a
+            # dispatch-blocked state ('In Service' / maintenance / inactive /
+            # active_status == 0).  Partial availability is fine — ranking
+            # below only ever sees dispatchable trucks.
             matcher_svc = await _get_fleet_matcher(ctx)
+            if matcher_svc is not None and not matcher_svc.has_available_trucks(ctx.company_id):
+                return ToolResult(
+                    status="failed",
+                    data={
+                        "evaluation": evaluation.model_dump(mode="json"),
+                        "best_trucks": [],
+                        "import_result": None,
+                        "load_viable": False,
+                    },
+                    message_key="copilot.tool.freight.recommend_dispatch_no_available_trucks",
+                    message_params={"load_id": params.provider_load_id},
+                )
+
             best_trucks: list = []
             if matcher_svc is not None:
                 best_trucks = await matcher_svc.find_best_trucks(
@@ -1179,6 +1197,7 @@ class FreightMonitorTransportTool(BaseTool):
                         f"/transports-api/api/rest/v1/transports/{params.transport_id}/trace",
                     )
                 except Exception:
+                    logger.warning("Failed to fetch Trans.eu transport trace; continuing without trace", exc_info=True)
                     pass
 
             data = {"transport": result}

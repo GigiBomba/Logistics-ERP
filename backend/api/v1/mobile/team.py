@@ -21,6 +21,7 @@ via PATCH later (documented in the module docstring and the openapi tags).
 """
 from __future__ import annotations
 
+import logging
 import secrets
 from typing import Any, Dict, Optional
 
@@ -40,6 +41,8 @@ from backend.security import hash_password
 from services.permission_service import PermissionService
 
 router = APIRouter(prefix="/team", tags=["mobile_team"])
+
+logger = logging.getLogger(__name__)
 
 
 def _check_manage_users(db: DatabaseManager, user_id: int) -> None:
@@ -97,6 +100,7 @@ def _deactivate_user_cascade(
     try:
         db.execute("DELETE FROM auth_sessions WHERE user_email = ?", (email,))
     except Exception:
+        logger.debug("Failed to delete auth_sessions (table may not exist on old databases)", exc_info=True)
         # auth_sessions may not exist on very old databases; non-fatal.
         pass
     db.commit()
@@ -107,6 +111,7 @@ def _deactivate_user_cascade(
     try:
         revoke_user_refresh_tokens(email)
     except Exception:
+        logger.debug("Failed to revoke refresh tokens (best-effort; DB deactivation already applied)", exc_info=True)
         # Revocation is best-effort; the DB deactivation already blocks login
         # and JWT refresh for device-less flows.
         pass

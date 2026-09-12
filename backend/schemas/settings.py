@@ -18,6 +18,12 @@ class CompanyConfigUpdateRequest(BaseModel):
     company_color: Optional[str] = Field(None, max_length=50)
     signature_path: Optional[str] = Field(None, max_length=500)
     stamp_path: Optional[str] = Field(None, max_length=500)
+    # Desktop settings form collects 15 keys; without these the remote save 422s.
+    county: Optional[str] = Field(None, max_length=100)
+    city: Optional[str] = Field(None, max_length=100)
+    country: Optional[str] = Field(None, max_length=100)
+    iban: Optional[str] = Field(None, max_length=100)
+    bank_name: Optional[str] = Field(None, max_length=200)
 
 
 class SettingUpdateRequest(BaseModel):
