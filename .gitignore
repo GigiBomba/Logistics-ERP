@@ -107,3 +107,15 @@ data/staging.db
 
 data/server.db
 data/cashflow.db.bak-*
+
+# Completed blueprints & plans archive (moved here when audit confirms full implementation)
+archive/
+
+# Tool/runtime artifacts
+node_modules/
+.pytest_cache/
+website/playwright-report/
+website/test-results/
+website/coverage/
+website/reports/
+mutation-report/
