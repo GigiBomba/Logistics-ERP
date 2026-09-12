@@ -1,0 +1,80 @@
+name: Desktop Build Smoke Test
+
+# Runs a PyInstaller build of the client spec plus a headless startup smoke
+# test whenever client-facing code or the client build spec changes.
+on:
+  push:
+    paths:
+      - "build_client.spec"
+      - "main_remote.py"
+      - "ui/**"
+      - "client/**"
+  pull_request:
+    paths:
+      - "build_client.spec"
+      - "main_remote.py"
+      - "ui/**"
+      - "client/**"
+  workflow_dispatch:
+
+jobs:
+  build-desktop:
+    name: Build & smoke-test desktop client
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.desktop.lock.txt
+            requirements.txt
+            pyproject.toml
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          pip install pyinstaller pyinstaller-hooks-contrib
+          if (Test-Path requirements.desktop.lock.txt) {
+            pip install -r requirements.desktop.lock.txt
+          } else {
+            pip install -r requirements.txt
+          }
+
+      - name: Build client bundle
+        shell: pwsh
+        run: |
+          python -m PyInstaller build_client.spec --noconfirm
+
+      - name: Headless smoke test (import/startup check)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          OPERION_ENV: test
+        run: |
+          python -c "import main_remote; print('main_remote import OK')"
+
+      - name: Launch built exe (headless liveness check)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          OPERION_ENV: test
+        run: |
+          $exe = Join-Path $PWD "dist\operion-client\operion-client.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Built exe not found: $exe"
+            exit 1
+          }
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) {
+            Write-Error "Operion client exited early (code $($p.ExitCode)) — startup failure."
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Output "Operion client stayed alive for 20s — smoke test passed."

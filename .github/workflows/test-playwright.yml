@@ -2,7 +2,13 @@ name: Playwright E2E Tests
 
 on:
   push:
+    paths:
+      - "website/**"
+      - ".github/workflows/test-playwright.yml"
   pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/test-playwright.yml"
   workflow_dispatch:
 
 jobs:

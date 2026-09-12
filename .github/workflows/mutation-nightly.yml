@@ -1,0 +1,107 @@
+name: Mutation Testing (Nightly)
+
+# Deferral D-F9 (blueprint §16.1): nightly mutation-testing CI.
+# Informational only — the job never blocks the pipeline (continue-on-error).
+#
+# Report paths (from website/src/__tests__/mutation/stryker.conf.json and
+# website/scripts/record-mutation-score.ts):
+#   - Stryker `json` reporter (default reportDirectory) → website/reports/mutation/mutation.json
+#   - HTML report → website/reports/mutation/html/
+#   - Committed score file (derived by record-mutation-score.ts) → website/mutation-score.json
+#   - Thresholds: high 80 / low 60 / break 50
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      commit_message:
+        description: "Commit message used when pushing the updated mutation score"
+        required: false
+        default: "chore: update mutation score"
+
+jobs:
+  mutation:
+    name: Mutation testing (informational, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        working-directory: website
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run mutation tests
+        run: npm run test:mutation
+        env:
+          CI: "true"
+
+      # Derive website/mutation-score.json from the Stryker JSON report.
+      # Stryker exits non-zero on a break-threshold breach, so this and the
+      # following steps must run regardless of the previous step's outcome.
+      - name: Record mutation score
+        if: always()
+        run: npx tsx scripts/record-mutation-score.ts || true
+
+      # Low threshold = 60 (stryker.conf.json thresholds: high 80 / low 60 / break 50).
+      # Emit a workflow warning when the score falls below it — never an error.
+      - name: Warn if mutation score below low threshold
+        if: always()
+        run: |
+          if [ ! -f mutation-score.json ]; then
+            echo "::warning::mutation-score.json not found; score check skipped"
+            exit 0
+          fi
+          node -e "
+            const s = require('./mutation-score.json');
+            const low = 60; // stryker.conf.json thresholds: high 80 / low 60 / break 50
+            const score = s.mutationScore;
+            if (score === null || score === undefined) {
+              console.log('::warning::Mutation score unavailable (no runnable mutants)');
+              process.exit(0);
+            }
+            const msg = 'Mutation score ' + score + '% is below the low threshold of ' + low +
+              '% (stryker.conf.json thresholds: high 80 / low 60 / break 50)';
+            if (score < low) {
+              console.log('::warning file=mutation-score.json::' + msg);
+            } else {
+              console.log('Mutation score ' + score + '% meets the low threshold of ' + low + '%');
+            }
+          "
+
+      # Only manual runs push the score file; nightly runs report but do not mutate history.
+      - name: Commit and push mutation score
+        if: always() && github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mutation-score.json
+          if ! git diff --cached --quiet; then
+            git commit -m "${{ inputs.commit_message }}"
+            git push
+          else
+            echo "No changes to mutation-score.json; skipping commit"
+          fi
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: website/reports/mutation/
+          if-no-files-found: warn

@@ -1,0 +1,153 @@
+name: Website CI (S-Grade gate)
+
+on:
+  push:
+    paths:
+      - "website/**"
+      - ".github/workflows/ci-website.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/ci-website.yml"
+  workflow_dispatch:
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # S-Grade §16.10 stages 1-6 — blocking fast-fail gate
+  #   1. lint   2. typecheck   3. unit (vitest)   4. i18n audit
+  #   5. test-manifest   6. build + critical E2E
+  # ──────────────────────────────────────────────────────────────────
+  fast-gates:
+    name: Fast Gates (lint → build → critical E2E)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: website
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: i18n audit
+        run: npm run i18n:audit
+
+      - name: Verify UI test manifest
+        run: npm run test:manifest
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Critical E2E
+        run: npx playwright test e2e/critical
+        env:
+          CI: "true"
+
+      - name: Upload critical E2E report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-playwright-report
+          path: website/playwright-report/
+          if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────────
+  # D5: coverage thresholds are red by design (targets, not current
+  # state). Informational only — must never block the fast-fail gate.
+  # ──────────────────────────────────────────────────────────────────
+  coverage-report:
+    name: Coverage (informational, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    defaults:
+      run:
+        working-directory: website
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Coverage
+        run: npm run test:coverage || true
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: website/coverage/
+          if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────────
+  # D6/D7: visual regression is a soft gate (baseline drift across
+  # OS/font rendering must not fail the pipeline). Windows runner
+  # matches the committed snapshots.
+  # ──────────────────────────────────────────────────────────────────
+  visual-soft-gate:
+    name: Visual regression (soft, non-blocking)
+    runs-on: windows-latest
+    continue-on-error: true
+
+    defaults:
+      run:
+        working-directory: website
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright chromium
+        run: npx playwright install chromium
+
+      - name: Visual regression tests
+        run: npm run test:visual
+        env:
+          CI: "true"
+
+      - name: Upload visual diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: website/test-results/
+          if-no-files-found: warn
