@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, waitFor, act } from "@testing-library/react"
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
+import { QueryClientProvider, QueryClient, useQuery } from "@tanstack/react-query"
 import { type ReactNode } from "react"
+import { toast } from "sonner"
 import {
   authApi, subscriptionApi, companyApi, supportApi, devicesApi, blogApi, adminBlogApi,
   organizationsApi, licensesApi, changelogApi, roadmapApi, statusApi, tutorialsApi,
@@ -50,10 +51,17 @@ import {
   useOpsTickets, useOpsTicket, useOpsApprovals, useOpsHandleApproval,
   useOpsGuardrails, useOpsResolveGuardrail, useOpsDashboard,
   useOpsKnowledgeDrafts, useOpsApproveKnowledgeDoc, useOpsRejectKnowledgeDoc,
+  createQueryClient,
 } from "@/services/queries"
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}))
 
 vi.mock("@/api/client", () => ({
   default: { post: vi.fn(), get: vi.fn() },
+  extractApiError: (error: unknown) =>
+    error instanceof Error ? error.message : "An unexpected error occurred",
 }))
 
 vi.mock("@/api/endpoints", () => ({
@@ -1813,5 +1821,40 @@ describe("useOpsRejectKnowledgeDoc", () => {
     })
     expect(opsApi.rejectKnowledgeDoc).toHaveBeenCalledWith("d2")
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["ops-knowledge-drafts"] })
+  })
+})
+
+// ─── Query Client Factory (P0 items 5 + 6) ───────────────────
+
+describe("createQueryClient", () => {
+  function factoryWrapper() {
+    const queryClient = createQueryClient()
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    }
+    return Wrapper
+  }
+
+  it("shows a global error toast when a query fails", async () => {
+    const Wrapper = factoryWrapper()
+    const queryFn = vi.fn().mockRejectedValue(new Error("boom"))
+    const { result } = renderHook(
+      () => useQuery({ queryKey: ["factory-failing"], queryFn, retry: 0 }),
+      { wrapper: Wrapper }
+    )
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(toast.error).toHaveBeenCalledWith("boom")
+  })
+
+  it("does not toast on 401 responses", async () => {
+    const Wrapper = factoryWrapper()
+    const unauthorized = Object.assign(new Error("Unauthorized"), { response: { status: 401 } })
+    const queryFn = vi.fn().mockRejectedValue(unauthorized)
+    const { result } = renderHook(
+      () => useQuery({ queryKey: ["factory-unauthorized"], queryFn, retry: 0 }),
+      { wrapper: Wrapper }
+    )
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(toast.error).not.toHaveBeenCalled()
   })
 })

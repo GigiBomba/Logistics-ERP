@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useLocale } from "@/i18n/locale-context"
+import type { LocaleCode } from "@/i18n/types"
 import type { PortalNotification } from "@/types"
 
 // ─── Type Config ────────────────────────────────────────────
@@ -34,7 +35,7 @@ const TYPE_CONFIG: Record<
 
 // ─── Helpers ────────────────────────────────────────────────
 
-function timeAgo(dateString: string): string {
+function timeAgo(dateString: string, locale: LocaleCode | "en-US" = "en-US"): string {
   const now = Date.now()
   const then = new Date(dateString).getTime()
   const seconds = Math.floor((now - then) / 1000)
@@ -46,7 +47,7 @@ function timeAgo(dateString: string): string {
   if (hours < 24) return `${hours}h ago`
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}d ago`
-  return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(dateString))
 }
 
 // ─── Props ──────────────────────────────────────────────────
@@ -70,7 +71,7 @@ export function NotificationCenter({
   loading = false,
   className,
 }: NotificationCenterProps) {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -228,7 +229,7 @@ export function NotificationCenter({
                           </p>
                           <div className="mt-1.5 flex items-center gap-3">
                             <span className="text-[11px] text-muted-foreground/60">
-                              {timeAgo(notification.created_at)}
+                              {timeAgo(notification.created_at, locale)}
                             </span>
                             {!notification.read && (
                               <button

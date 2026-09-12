@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
+import { toDataURL } from "qrcode"
 import {
   Smartphone,
   Monitor,
@@ -8,6 +9,8 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  QrCode,
+  X,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,7 +21,15 @@ import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { StatCard } from "@/components/shared/stat-card"
 import { EmptyState } from "@/components/shared/empty-state"
 import { DeviceList, formatDate, formatRelativeTime, getPlatformIcon, getPlatformLabel } from "@/components/shared/device-list"
-import { useDevices, useDeactivateDevice, useSessions, useRevokeSession } from "@/services/queries"
+import {
+  useDevices,
+  useDeactivateDevice,
+  useDeactivateDevices,
+  useRequestPairingToken,
+  usePairingStatus,
+  useSessions,
+  useRevokeSession,
+} from "@/services/queries"
 import { useLocale } from "@/i18n/locale-context"
 import type { DeviceInfo } from "@/types"
 import type { SessionInfo } from "@/api/endpoints"
@@ -251,10 +262,138 @@ function DeactivateButton({
   )
 }
 
+/**
+ * QR pairing modal. Requests a pairing token on open, renders the returned
+ * `qr_data` as a QR image, then polls the pairing status until the mobile app
+ * validates the token — at which point a success state is shown briefly and
+ * the modal closes itself.
+ */
+function PairingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useLocale()
+  const requestPairingToken = useRequestPairingToken()
+  const pairingPayload = requestPairingToken.data?.data
+  const pairingToken = pairingPayload?.pairing_token ?? ""
+  const qrData = pairingPayload?.qr_data
+  const pairingStatus = usePairingStatus(pairingToken)
+  const [qrImage, setQrImage] = useState<string | null>(null)
+  const [qrError, setQrError] = useState(false)
+
+  const isPaired = pairingStatus.data?.valid === true
+
+  // Request a fresh pairing token every time the modal opens.
+  useEffect(() => {
+    if (open) requestPairingToken.mutate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // Reset local state when the modal closes so the next open starts clean.
+  useEffect(() => {
+    if (!open) {
+      requestPairingToken.reset()
+      setQrImage(null)
+      setQrError(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // Render the QR payload to a data-URL image.
+  useEffect(() => {
+    if (!qrData) return
+    let cancelled = false
+    toDataURL(qrData)
+      .then((url) => {
+        if (!cancelled) setQrImage(url)
+      })
+      .catch(() => {
+        if (!cancelled) setQrError(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [qrData])
+
+  // Once the token validates, show the success state, then close.
+  useEffect(() => {
+    if (!isPaired || !open) return
+    const timeout = setTimeout(onClose, 1200)
+    return () => clearTimeout(timeout)
+  }, [isPaired, open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pair-modal-title"
+    >
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.15 }}
+        className="relative w-full max-w-md rounded-xl border bg-card p-6 shadow-xl"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 id="pair-modal-title" className="text-lg font-semibold">
+            {t("devices.pairingTitle")}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 hover:bg-muted"
+            aria-label={t("common.close")}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {isPaired ? (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <CheckCircle2 className="h-12 w-12 text-green-600" />
+            <p className="font-medium">{t("devices.pairedSuccess")}</p>
+          </div>
+        ) : requestPairingToken.isError ? (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <p className="text-sm text-muted-foreground">{t("devices.pairingError")}</p>
+            <Button variant="outline" size="sm" onClick={() => requestPairingToken.mutate()}>
+              {t("devices.tryAgain")}
+            </Button>
+          </div>
+        ) : qrError ? (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <p className="text-sm text-muted-foreground">{t("devices.qrError")}</p>
+          </div>
+        ) : qrImage ? (
+          <div className="flex flex-col items-center gap-3 py-2">
+            <img
+              src={qrImage}
+              alt={t("devices.scanToPair")}
+              className="h-56 w-56 rounded-lg border bg-white p-2"
+            />
+            <p className="text-center text-sm text-muted-foreground">{t("devices.scanToPair")}</p>
+            {pairingStatus.isError && (
+              <p className="text-xs text-destructive">{t("devices.pairingFailed")}</p>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">{t("devices.generatingQr")}</p>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  )
+}
+
 export default function DevicesPage() {
   const { data: devicesData, isLoading, isError, error } = useDevices()
   const deactivateDevice = useDeactivateDevice()
+  const deactivateDevices = useDeactivateDevices()
   const [activeTab, setActiveTab] = useState("all")
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [pairModalOpen, setPairModalOpen] = useState(false)
   const { t } = useLocale()
 
   const devices = devicesData ?? []
@@ -320,6 +459,10 @@ export default function DevicesPage() {
                 {t("devices.description")}
               </p>
             </div>
+            <Button variant="outline" onClick={() => setPairModalOpen(true)}>
+              <QrCode className="mr-1.5 h-4 w-4" />
+              {t("devices.pairDevice")}
+            </Button>
           </div>
         </motion.div>
 
@@ -396,6 +539,30 @@ export default function DevicesPage() {
         >
           <h2 className="text-xl font-bold tracking-tight mb-4">{t("devices.registeredDevices")}</h2>
 
+          {selectedIds.size > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+              <p className="text-sm font-medium">
+                {t("devices.nSelected").replace("{count}", String(selectedIds.size))}
+              </p>
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  isLoading={deactivateDevices.isPending}
+                  onClick={() => {
+                    deactivateDevices.mutate(Array.from(selectedIds))
+                    setSelectedIds(new Set())
+                  }}
+                >
+                  {t("devices.bulkDeactivate")}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                  {t("devices.clearSelection")}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {devices.length === 0 ? (
             <Card>
               <CardContent className="p-6">
@@ -434,6 +601,9 @@ export default function DevicesPage() {
                   <DeviceList
                     devices={displayedDevices}
                     variant="card"
+                    selectable
+                    selectedIds={selectedIds}
+                    onSelectionChange={setSelectedIds}
                     onDeactivate={handleDeactivate}
                     renderActions={(device) => (
                       <DeactivateButton
@@ -472,6 +642,9 @@ export default function DevicesPage() {
         {/* Desktop App Sessions */}
         <DesktopSessionsSection />
       </SectionWrapper>
+
+      {/* QR device pairing */}
+      <PairingModal open={pairModalOpen} onClose={() => setPairModalOpen(false)} />
     </>
   )
 }

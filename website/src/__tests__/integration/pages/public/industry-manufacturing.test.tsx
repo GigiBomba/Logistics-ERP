@@ -34,15 +34,20 @@ describe("IndustryManufacturingPage", () => {
     const supplyChainVisibility = screen.getAllByText("Supply Chain Visibility")
     expect(supplyChainVisibility.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("Inventory Integration")).toBeInTheDocument()
-    expect(screen.getByText("JIT Routing")).toBeInTheDocument()
+    // "JIT Routing" appears as a solution title and in the supply chain flow visual
+    const jitRouting = screen.getAllByText("JIT Routing")
+    expect(jitRouting.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("Multi-Site Management")).toBeInTheDocument()
   })
 
   it("renders workflow section", () => {
     render(<IndustryManufacturingPage />)
     expect(screen.getByText("Workflow Example")).toBeInTheDocument()
-    expect(screen.getByText("Demand Signal")).toBeInTheDocument()
-    expect(screen.getByText("Inventory Check")).toBeInTheDocument()
+    // "Demand Signal" and "Inventory Check" appear as workflow steps and in the visual
+    const demandSignal = screen.getAllByText("Demand Signal")
+    expect(demandSignal.length).toBeGreaterThanOrEqual(1)
+    const inventoryCheck = screen.getAllByText("Inventory Check")
+    expect(inventoryCheck.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("Route Optimize")).toBeInTheDocument()
     expect(screen.getByText("JIT Delivery")).toBeInTheDocument()
     expect(screen.getByText("Production Line")).toBeInTheDocument()
@@ -60,7 +65,7 @@ describe("IndustryManufacturingPage", () => {
   it("renders screenshot placeholder", () => {
     render(<IndustryManufacturingPage />)
     expect(screen.getByText("See It in Action")).toBeInTheDocument()
-    expect(screen.getByText("Screenshot: Manufacturing Supply Dashboard")).toBeInTheDocument()
+    expect(screen.getByText("Supply Chain Flow")).toBeInTheDocument()
   })
 
   it("renders CTA banner with Start Free Trial link", () => {
@@ -75,6 +80,6 @@ describe("IndustryManufacturingPage", () => {
     render(<IndustryManufacturingPage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/industries/manufacturing")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/industries/manufacturing")
   })
 })

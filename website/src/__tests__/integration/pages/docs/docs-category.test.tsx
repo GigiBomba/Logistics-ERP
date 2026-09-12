@@ -289,7 +289,6 @@ describe("DocsCategoryPage", () => {
     it("shows ChevronRight icon on each article card", () => {
       renderCategory("getting-started")
       // Each article card should have the category badge
-      const articleCount = 5
       const articleBadges = screen.getAllByText(/article(s)?/)
       expect(articleBadges.length).toBeGreaterThanOrEqual(1)
     })

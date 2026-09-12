@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { LanguageSwitcher } from "@/components/shared/language-switcher"
 
@@ -12,7 +12,7 @@ vi.mock("motion/react", () => ({
 const mockSetLocale = vi.fn()
 
 vi.mock("@/i18n/locale-context", async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof import("@/i18n/locale-context")>()
   return {
     ...actual,
     useLocale: () => ({
@@ -30,11 +30,11 @@ describe("LanguageSwitcher", () => {
     mockSetLocale.mockClear()
   })
 
-  it("renders the trigger button with the current locale flag", () => {
+  it("renders the trigger button with the current locale code", () => {
     render(<LanguageSwitcher />)
     const button = screen.getByRole("button", { name: /change language/i })
     expect(button).toBeInTheDocument()
-    expect(button).toHaveTextContent("🇬🇧")
+    expect(button).toHaveTextContent("EN")
   })
 
   it("shows dropdown with all supported languages when trigger is clicked", () => {
@@ -59,12 +59,9 @@ describe("LanguageSwitcher", () => {
     render(<LanguageSwitcher />)
     fireEvent.click(screen.getByRole("button", { name: /change language/i }))
 
-    // There are two buttons with "English" — the trigger and the dropdown item.
-    // Pick the dropdown item by finding the one that has the flag span inside it.
-    const allEnglishButtons = screen.getAllByRole("button", { name: /english/i })
-    const dropdownButton = allEnglishButtons.find(
-      (btn) => btn.querySelector("span") && btn.closest('[class*="rounded-lg"]')
-    )!
+    // The trigger renders the locale code ("EN"), so the only element with
+    // the "English" text is the dropdown option. Grab its button.
+    const dropdownButton = screen.getByText("English").closest("button")!
     expect(dropdownButton.className).toContain("bg-accent")
     expect(dropdownButton.className).toContain("font-medium")
   })
@@ -145,7 +142,7 @@ describe("LanguageSwitcher", () => {
 
   it("sets the aria-label on the trigger button dynamically based on current locale", () => {
     render(<LanguageSwitcher />)
-    const button = screen.getByRole("button", { name: /change language \(current: english\)/i })
+    const button = screen.getByRole("button", { name: /change language\. current: english/i })
     expect(button).toBeInTheDocument()
   })
 

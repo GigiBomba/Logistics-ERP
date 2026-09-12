@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button"
 import { CtaBanner } from "@/components/shared/cta-banner"
 import { enterpriseConfig } from "@/config/site"
 
+// DPA content dependency (business/counsel deliverable; deferred): the signed
+// Operion DPA PDF is not yet available. Same approved fallback as /trust#dpa.
+const DPA_HREF = "/trust#dpa"
+
 const enterpriseFeatureKeys = [
   "enterprise.feature1",
   "enterprise.feature2",
@@ -74,6 +78,11 @@ export default function EnterprisePage() {
           </Card>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {t("enterprise.ctaText")}
+          </p>
+          <p className="mt-3 text-center text-sm text-muted-foreground">
+            <a href={DPA_HREF} download={DPA_HREF !== "/trust#dpa"} className="underline underline-offset-4">
+              {t("trust.dpaDownload")}
+            </a>
           </p>
         </motion.div>
       </SectionWrapper>

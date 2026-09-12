@@ -103,7 +103,7 @@ describe("TrustCenterPage", () => {
   it("renders responsible disclosure section", () => {
     render(<TrustCenterPage />)
     expect(screen.getByText("Responsible Disclosure")).toBeInTheDocument()
-    expect(screen.getByText(/security@operion\.com/)).toBeInTheDocument()
+    expect(screen.getByText(/security@operionerp\.xyz/)).toBeInTheDocument()
   })
 
   it("renders security badges", () => {

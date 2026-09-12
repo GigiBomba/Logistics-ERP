@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@/test-utils"
+import userEvent from "@testing-library/user-event"
 import { StripeCheckout } from "@/components/shared/stripe-checkout"
 import { AxiosError } from "axios"
 
@@ -83,17 +84,21 @@ describe("StripeCheckout", () => {
     expect(window.location.href).toBe("")
   })
 
-  it("triggers checkout on Enter key", async () => {
+  it("triggers checkout on Enter key (native button activation)", async () => {
     render(<StripeCheckout>Pay</StripeCheckout>)
-    fireEvent.keyDown(screen.getByRole("button", { name: /pay/i }), { key: "Enter" })
+    const button = screen.getByRole("button", { name: /pay/i })
+    button.focus()
+    await userEvent.keyboard("{Enter}")
     await waitFor(() => {
       expect(createCheckoutSessionMock).toHaveBeenCalledTimes(1)
     })
   })
 
-  it("triggers checkout on Space key", async () => {
+  it("triggers checkout on Space key (native button activation)", async () => {
     render(<StripeCheckout>Pay</StripeCheckout>)
-    fireEvent.keyDown(screen.getByRole("button", { name: /pay/i }), { key: " " })
+    const button = screen.getByRole("button", { name: /pay/i })
+    button.focus()
+    await userEvent.keyboard(" ")
     await waitFor(() => {
       expect(createCheckoutSessionMock).toHaveBeenCalledTimes(1)
     })

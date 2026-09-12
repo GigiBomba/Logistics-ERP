@@ -114,8 +114,8 @@ describe("RoiCalculatorPage", () => {
 
   it("renders CTA section", () => {
     render(<RoiCalculatorPage />)
-    expect(screen.getByText("Get a detailed quote")).toBeInTheDocument()
-    expect(screen.getByText("Talk to sales")).toBeInTheDocument()
+    expect(screen.getByText("Join the waitlist — free during development")).toBeInTheDocument()
+    expect(screen.getByText("Explore features")).toBeInTheDocument()
   })
 
   it("fleet size slider can be changed", () => {

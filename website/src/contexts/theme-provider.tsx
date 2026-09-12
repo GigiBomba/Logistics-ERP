@@ -20,6 +20,19 @@ function getStoredTheme(): Theme {
   return (localStorage.getItem("operion-theme") as Theme) || "system"
 }
 
+function applyResolvedTheme(root: HTMLElement, resolved: "dark" | "light") {
+  root.classList.remove("light", "dark")
+  root.classList.add(resolved)
+
+  let meta = document.head.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')
+  if (!meta) {
+    meta = document.createElement("meta")
+    meta.name = "color-scheme"
+    document.head.appendChild(meta)
+  }
+  meta.content = resolved
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(getStoredTheme)
   const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">("light")
@@ -31,18 +44,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement
-    root.classList.remove("light", "dark")
 
     const resolved = theme === "system" ? getSystemTheme() : theme
-    root.classList.add(resolved)
+    applyResolvedTheme(root, resolved)
     setResolvedTheme(resolved)
 
     if (theme === "system") {
       const mq = window.matchMedia("(prefers-color-scheme: dark)")
       const handler = (e: MediaQueryListEvent) => {
         const sys = e.matches ? "dark" : "light"
-        root.classList.remove("light", "dark")
-        root.classList.add(sys)
+        applyResolvedTheme(root, sys)
         setResolvedTheme(sys)
       }
       mq.addEventListener("change", handler)

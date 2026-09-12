@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils"
 import { useLocale } from "@/i18n/locale-context"
 import { supportApi } from "@/api/endpoints"
 import { useCreateTicket } from "@/services/queries"
-import type { CreateTicketRequest } from "@/api/endpoints"
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -161,7 +160,7 @@ function TicketForm({ onSuccess }: { onSuccess: () => void }) {
         await createTicket.mutateAsync({
           subject: subject.trim(),
           description: description.trim(),
-        } as CreateTicketRequest)
+        })
         onSuccess()
       } catch {
         // Error state is handled by the mutation

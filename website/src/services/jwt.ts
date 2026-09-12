@@ -22,11 +22,15 @@ export function verifyJwt(token: string): JwtClaims | null {
       return null
     }
 
-    let payload = parts[1]
+    // Restore the base64url alphabet (-/_ → +//) used by JWT encoders.
+    let payload = parts[1].replace(/-/g, "+").replace(/_/g, "/")
 
-    // Restore base64 padding that was stripped by the JWT encoder
+    // Restore base64 padding that was stripped by the JWT encoder, but only
+    // when the payload doesn't already end with the required padding. This
+    // avoids double-padding malformed input (e.g. "...p===="), which atob
+    // rejects. Valid tokens remain byte-identical.
     const padding = 4 - (payload.length % 4)
-    if (padding !== 4) {
+    if (padding !== 4 && !payload.endsWith("=".repeat(padding))) {
       payload += "=".repeat(padding)
     }
 

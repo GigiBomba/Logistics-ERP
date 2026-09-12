@@ -15,54 +15,55 @@ vi.mock("motion/react", () => ({
 describe("HomePage", () => {
   it("renders hero section with heading and CTA buttons", () => {
     render(<HomePage />)
-    expect(screen.getByText("Enterprise Logistics, Simplified")).toBeInTheDocument()
-    const getStartedLinks = screen.getAllByRole("link", { name: /get started/i })
-    expect(getStartedLinks.length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByRole("link", { name: /view demo/i })).toBeInTheDocument()
+    expect(screen.getByText("The Complete Logistics Operating System, Powered by AI")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /see the ai in action/i })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /watch the workflow demo/i })).toBeInTheDocument()
   })
 
   it("renders statistics section", () => {
     render(<HomePage />)
-    expect(screen.getByText("Core Modules")).toBeInTheDocument()
-    expect(screen.getByText("Native App")).toBeInTheDocument()
-    expect(screen.getByText("Online Portal")).toBeInTheDocument()
-    expect(screen.getByText("Development")).toBeInTheDocument()
+    expect(screen.getByText("Autonomous Workflows")).toBeInTheDocument()
+    expect(screen.getByText("Platform Apps")).toBeInTheDocument()
+    expect(screen.getByText("Web Portal")).toBeInTheDocument()
+    expect(screen.getByText("Operational")).toBeInTheDocument()
   })
 
   it("renders feature highlights", () => {
     render(<HomePage />)
-    expect(screen.getByText("Profit Calculator")).toBeInTheDocument()
-    // Route Planning appears both as a feature card and a screenshot label
-    const routePlanningElements = screen.getAllByText("Route Planning")
-    expect(routePlanningElements.length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText("Dispatch Management")).toBeInTheDocument()
-    expect(screen.getByText("Fleet Management")).toBeInTheDocument()
-    expect(screen.getByText("Document Management")).toBeInTheDocument()
-    expect(screen.getByText("Analytics & Reporting")).toBeInTheDocument()
+    expect(screen.getByText("Instant Profitability Analysis")).toBeInTheDocument()
+    // Route Optimization appears both as a feature card and a screenshot label
+    const routeOptimizationElements = screen.getAllByText("Autonomous Route Optimization")
+    expect(routeOptimizationElements.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("One-Instruction Dispatching")).toBeInTheDocument()
+    expect(screen.getByText("Proactive Fleet Operations")).toBeInTheDocument()
+    expect(screen.getByText("Automated Document Generation")).toBeInTheDocument()
+    expect(screen.getByText("AI-Driven Analytics")).toBeInTheDocument()
   })
 
-  it("renders 'See all features' link to /features", () => {
+  it("renders 'Explore all capabilities' link to /features", () => {
     render(<HomePage />)
-    const link = screen.getByRole("link", { name: /see all features/i })
+    const link = screen.getByRole("link", { name: /explore all capabilities/i })
     expect(link).toBeInTheDocument()
     expect(link).toHaveAttribute("href", "/features")
   })
 
   it("renders workflow section", () => {
     render(<HomePage />)
-    expect(screen.getByText("How It Works")).toBeInTheDocument()
-    expect(screen.getByText("Calculate")).toBeInTheDocument()
-    expect(screen.getByText("Plan")).toBeInTheDocument()
-    expect(screen.getByText("Dispatch")).toBeInTheDocument()
+    // "From Intent to Execution" appears both as the section heading and an AI step title
+    const howItWorksElements = screen.getAllByText("From Intent to Execution")
+    expect(howItWorksElements.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("State Your Objective")).toBeInTheDocument()
+    expect(screen.getByText("AI Executes the Workflow")).toBeInTheDocument()
+    expect(screen.getByText("Deliver the Result")).toBeInTheDocument()
   })
 
   it("renders benefits section", () => {
     render(<HomePage />)
-    expect(screen.getByText("Why Operion?")).toBeInTheDocument()
-    expect(screen.getByText("Reduce Costs")).toBeInTheDocument()
-    expect(screen.getByText("Increase Speed")).toBeInTheDocument()
-    expect(screen.getByText("Eliminate Paperwork")).toBeInTheDocument()
-    expect(screen.getByText("Scale Operations")).toBeInTheDocument()
+    expect(screen.getByText("Why Transport Companies Choose Operion")).toBeInTheDocument()
+    expect(screen.getByText("Fewer Empty Kilometers")).toBeInTheDocument()
+    expect(screen.getByText("Faster Dispatching")).toBeInTheDocument()
+    expect(screen.getByText("Zero Manual Data Entry")).toBeInTheDocument()
+    expect(screen.getByText("Scale Without Adding Headcount")).toBeInTheDocument()
   })
 
   it("renders screenshot category placeholders", () => {
@@ -76,9 +77,9 @@ describe("HomePage", () => {
 
   it("renders roadmap items", () => {
     render(<HomePage />)
-    expect(screen.getByText("Vehicle Maintenance Tracking")).toBeInTheDocument()
-    expect(screen.getByText("PostgreSQL Migration")).toBeInTheDocument()
     expect(screen.getByText("Mobile Companion App")).toBeInTheDocument()
+    expect(screen.getByText("Autonomous Dispatch Engine")).toBeInTheDocument()
+    expect(screen.getByText("Productization & Testing")).toBeInTheDocument()
   })
 
   it("renders FAQ section with questions", () => {
@@ -91,21 +92,20 @@ describe("HomePage", () => {
 
   it("renders CTA section at the bottom", () => {
     render(<HomePage />)
-    expect(screen.getByText("Ready to get started?")).toBeInTheDocument()
-    expect(screen.getByText("Operion is free during active development.")).toBeInTheDocument()
+    expect(screen.getByText("Ready to see autonomous logistics in action?")).toBeInTheDocument()
+    expect(screen.getByText(/Tell Operion what you need accomplished/i)).toBeInTheDocument()
   })
 
-  it("renders hero CTA link pointing to /register", () => {
+  it("renders hero CTA link pointing to /waitlist", () => {
     render(<HomePage />)
-    const getStartedLinks = screen.getAllByRole("link", { name: /get started/i })
-    const heroCta = getStartedLinks.find((l) => l.getAttribute("href") === "/register")
+    const heroCta = screen.getByRole("link", { name: /see the ai in action/i })
     expect(heroCta).toBeInTheDocument()
-    expect(heroCta).toHaveAttribute("href", "/register")
+    expect(heroCta).toHaveAttribute("href", "/waitlist")
   })
 
   it("renders secondary CTA link pointing to /features", () => {
     render(<HomePage />)
-    const secondary = screen.getByRole("link", { name: /view demo/i })
+    const secondary = screen.getByRole("link", { name: /watch the workflow demo/i })
     expect(secondary).toHaveAttribute("href", "/features")
   })
 

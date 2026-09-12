@@ -21,7 +21,9 @@ describe("AboutPage", () => {
   it("renders the page subtitle", () => {
     render(<AboutPage />)
     expect(
-      screen.getByText("Building logistics software that transport companies actually need.")
+      screen.getByText(
+        "We built an AI operating system for logistics — because transport companies should not need six tools to dispatch one truck."
+      )
     ).toBeInTheDocument()
   })
 
@@ -34,11 +36,11 @@ describe("AboutPage", () => {
     render(<AboutPage />)
     expect(
       screen.getByText(
-        /Operion started with a simple observation: transport companies were spending too much time/
+        /Operion started with a simple observation: a transport dispatcher spends more time/
       )
     ).toBeInTheDocument()
     expect(
-      screen.getByText(/A team in Romania set out to build a better way/)
+      screen.getByText(/A team in Romania set out to build a different kind of logistics platform/)
     ).toBeInTheDocument()
   })
 
@@ -61,9 +63,9 @@ describe("AboutPage", () => {
 
   it("renders all six core values", () => {
     render(<AboutPage />)
-    expect(screen.getByText("Built for Real Needs")).toBeInTheDocument()
-    expect(screen.getByText("Reliability First")).toBeInTheDocument()
-    expect(screen.getByText("Practical Innovation")).toBeInTheDocument()
+    expect(screen.getByText("Outcome Over Features")).toBeInTheDocument()
+    expect(screen.getByText("Autonomy Requires Reliability")).toBeInTheDocument()
+    expect(screen.getByText("Practical AI")).toBeInTheDocument()
     expect(screen.getByText("Open Development")).toBeInTheDocument()
     expect(screen.getByText("Local-First")).toBeInTheDocument()
     expect(screen.getByText("Simple by Design")).toBeInTheDocument()
@@ -123,10 +125,10 @@ describe("AboutPage", () => {
   it("renders the CTA section with register and contact links", () => {
     render(<AboutPage />)
     expect(
-      screen.getByText(/Want to help shape the future of logistics software/)
+      screen.getByText(/Operion is free. Tell it what outcome you want/)
     ).toBeInTheDocument()
-    const downloadLink = screen.getByRole("link", { name: /Download Operion/i })
-    expect(downloadLink).toHaveAttribute("href", "/register")
+    const registerLink = screen.getByRole("link", { name: /Try Autonomous Dispatching/i })
+    expect(registerLink).toHaveAttribute("href", "/register")
     const roadmapLink = screen.getByRole("link", { name: /View Roadmap/i })
     expect(roadmapLink).toHaveAttribute("href", "/contact")
   })
@@ -135,6 +137,6 @@ describe("AboutPage", () => {
     render(<AboutPage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/about")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/about")
   })
 })

@@ -74,6 +74,11 @@ export default function DocsCategoryPage() {
   const { category } = useParams<{ category?: string }>()
   const [searchQuery, setSearchQuery] = useState("")
 
+  const articleCountLabel = (count: number) =>
+    count === 1
+      ? t("docs.articleCountSingular").replace("{count}", "1")
+      : t("docs.articleCount").replace("{count}", String(count))
+
   // Filter categories based on search
   const filteredCategories = useMemo(() => {
     if (!category && searchQuery) {
@@ -137,7 +142,7 @@ export default function DocsCategoryPage() {
                     <h3 className="font-semibold">{cat.title}</h3>
                     <p className="mt-1 text-sm text-muted-foreground">{cat.description}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">{t("docs.articleCount").replace("{count}", String(cat.articles.length))}</Badge>
+                      <Badge variant="secondary" className="text-xs">{articleCountLabel(cat.articles.length)}</Badge>
                       <span className="flex items-center gap-1 text-xs text-foreground/80">
                         <Clock className="h-3 w-3" />
                         {t("docs.minTotal").replace("{minutes}", String(totalReadingTime(cat.articles)))}
@@ -191,7 +196,7 @@ export default function DocsCategoryPage() {
 
         {/* Category meta */}
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <Badge variant="secondary" className="text-xs">{t("docs.articleCount").replace("{count}", String(cat.articles.length))}</Badge>
+          <Badge variant="secondary" className="text-xs">{articleCountLabel(cat.articles.length)}</Badge>
           <span className="flex items-center gap-1 text-xs text-foreground/80">
             <Clock className="h-3 w-3" />
             {t("docs.minTotal").replace("{minutes}", String(totalReadingTime(cat.articles)))}

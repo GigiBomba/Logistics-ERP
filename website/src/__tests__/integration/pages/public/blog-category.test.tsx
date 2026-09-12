@@ -1,9 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent } from "@/test-utils"
+import { render, screen } from "@/test-utils"
 import BlogCategoryPage from "@/pages/public/blog-category"
+import { useBlogPosts } from "@/services/queries"
 
 vi.mock("@/services/queries", () => ({
-  useBlogPosts: vi.fn(() => ({ isLoading: false })),
+  useBlogPosts: vi.fn(),
+}))
+
+const fleetPosts = [
+  {
+    title: "Preventive Maintenance Scheduling for Small Truck Fleets",
+    slug: "preventive-maintenance-scheduling-small-truck-fleets",
+    excerpt: "Build a preventive maintenance schedule for small truck fleets.",
+    author_name: "Operion Team",
+    category: "Fleet Management",
+    tags: ["preventive-maintenance"],
+    reading_time_minutes: 6,
+    published_at: "2026-06-13T10:00:00Z",
+  },
+  {
+    title: "Tire Management and Its Impact on Operating Costs",
+    slug: "tire-management-operating-costs",
+    excerpt: "How proactive tire management lowers operating costs.",
+    author_name: "Operion Team",
+    category: "Fleet Management",
+    tags: ["tires"],
+    reading_time_minutes: 5,
+    published_at: "2026-05-20T10:00:00Z",
+  },
+]
+
+const financePosts = Array.from({ length: 9 }, (_, i) => ({
+  title: `Transport Finance Article ${i + 1}`,
+  slug: `transport-finance-article-${i + 1}`,
+  excerpt: `Insight number ${i + 1} on transport finance.`,
+  author_name: "Operion Team",
+  category: "Profitability & Transport Finance",
+  tags: ["finance"],
+  reading_time_minutes: 6,
+  published_at: "2026-04-01T10:00:00Z",
 }))
 
 vi.mock("motion/react", () => ({
@@ -32,6 +67,15 @@ describe("BlogCategoryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUseSearchParams.mockReturnValue([new URLSearchParams(), vi.fn()])
+    vi.mocked(useBlogPosts).mockImplementation((params?: any) => {
+      if (params?.category === "fleet-management") {
+        return { data: { items: fleetPosts, total: 2 }, isLoading: false } as any
+      }
+      if (params?.category === "profitability-&-transport-finance") {
+        return { data: { items: financePosts, total: 10 }, isLoading: false } as any
+      }
+      return { data: { items: [], total: 0 }, isLoading: false } as any
+    })
   })
 
   it("renders the category page title for fleet-management", () => {

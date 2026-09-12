@@ -118,6 +118,7 @@ describe("AppShell — DashboardLayout", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["devices"] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["subscription"] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["company"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["invoices"] })
   })
 
   it("marks all notifications as read from the notification center", () => {

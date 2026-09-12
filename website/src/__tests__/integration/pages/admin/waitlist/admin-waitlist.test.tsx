@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen } from "@/test-utils"
+import { render, screen, mockAxiosResponse } from "@/test-utils"
 import AdminWaitlistPage from "@/pages/admin/waitlist/admin-waitlist"
 import { useAuth } from "@/contexts/auth-provider"
 import { waitlistApi } from "@/api/endpoints"
+import type { WaitlistEntry } from "@/api/endpoints"
 import { createMockAuthContext } from "@/test-utils"
 
 vi.mock("motion/react", () => ({
@@ -12,6 +13,30 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
+// react-helmet-async's React 19 dispatcher renders <title> children that are
+// split across JSX expressions (e.g. `{t(...)} — suffix`) as an array, which
+// React 19 does not hoist into <head>. Replace Helmet with a thin double that
+// flattens the title child so `document.title` reflects what pages pass in.
+vi.mock("react-helmet-async", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-helmet-async")>()
+  const React = await import("react")
+  return {
+    ...actual,
+    Helmet: ({ children }: { children?: React.ReactNode }) => {
+      let title = ""
+      React.Children.forEach(children, (child) => {
+        if (React.isValidElement(child) && child.type === "title") {
+          const nested = (child.props as { children?: React.ReactNode }).children
+          title = React.Children.toArray(nested)
+            .map((c) => (typeof c === "string" || typeof c === "number" ? String(c) : ""))
+            .join("")
+        }
+      })
+      return React.createElement("title", null, title)
+    },
+  }
+})
+
 vi.mock("@/contexts/auth-provider", () => ({
   useAuth: vi.fn(),
 }))
@@ -19,6 +44,11 @@ vi.mock("@/contexts/auth-provider", () => ({
 vi.mock("@/api/endpoints", () => ({
   waitlistApi: {
     getStats: vi.fn(),
+    listEntries: vi.fn(),
+    deleteEntry: vi.fn(),
+    updateEntry: vi.fn(),
+    exportCsv: vi.fn(),
+    sendCampaign: vi.fn(),
   },
 }))
 
@@ -43,7 +73,27 @@ describe("AdminWaitlistPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(useAuth).mockReturnValue(mockAdmin)
-    vi.mocked(waitlistApi.getStats).mockResolvedValue({ data: mockStats })
+    vi.mocked(waitlistApi.getStats).mockResolvedValue(mockAxiosResponse(mockStats))
+    // Child tabs (Entries/Campaign) call these when they render
+    vi.mocked(waitlistApi.listEntries).mockResolvedValue(
+      mockAxiosResponse({
+        entries: [],
+        total: 0,
+        page: 1,
+        page_size: 25,
+        by_status: {},
+      })
+    )
+    vi.mocked(waitlistApi.deleteEntry).mockResolvedValue(mockAxiosResponse(undefined))
+    vi.mocked(waitlistApi.updateEntry).mockResolvedValue(
+      mockAxiosResponse({} as WaitlistEntry)
+    )
+    vi.mocked(waitlistApi.exportCsv).mockResolvedValue(
+      mockAxiosResponse(new Blob(["a,b,c"], { type: "text/csv" }))
+    )
+    vi.mocked(waitlistApi.sendCampaign).mockResolvedValue(
+      mockAxiosResponse({ status: "sent", count: 0, total_recipients: 0, errors: 0 })
+    )
   })
 
   describe("page header", () => {
@@ -55,7 +105,7 @@ describe("AdminWaitlistPage", () => {
     it("renders the subtitle with total signup count on successful load", async () => {
       render(<AdminWaitlistPage />)
       expect(
-        await screen.findByText(/342 total signups/)
+        await screen.findByText(/342 Total signups/)
       ).toBeInTheDocument()
     })
 
@@ -138,6 +188,16 @@ describe("AdminWaitlistPage", () => {
       ).toBeInTheDocument()
       expect(
         screen.getByText("Mass outreach to waitlist segments")
+      ).toBeInTheDocument()
+    })
+
+    it("renders entries tab content when clicked", async () => {
+      render(<AdminWaitlistPage />)
+      const entriesTab = await screen.findByRole("tab", { name: "Entries" })
+      entriesTab.click()
+      // EntriesTab mounts and calls listEntries with the mocked empty page
+      expect(
+        await screen.findByText("No entries found.")
       ).toBeInTheDocument()
     })
   })

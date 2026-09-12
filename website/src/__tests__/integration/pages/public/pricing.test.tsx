@@ -17,18 +17,16 @@ describe("PricingPage", () => {
     render(<PricingPage />)
     expect(screen.getByText("Simple, Transparent Pricing")).toBeInTheDocument()
     expect(
-      screen.getByText(/Coming Soon.*Operion is currently in active development/i)
+      screen.getByText(/Available Now.*autonomous dispatch engine is operational and free to use/i)
     ).toBeInTheDocument()
   })
 
   it("renders Coming Soon card", () => {
     render(<PricingPage />)
     expect(screen.getByText("Coming Soon")).toBeInTheDocument()
-    // This text appears in both the header description and the card body
-    const devMessages = screen.getAllByText(
-      /Operion is currently in active development and is free to use/i
-    )
-    expect(devMessages.length).toBeGreaterThanOrEqual(2)
+    expect(
+      screen.getByText(/autonomous dispatch engine is operational and free during the current phase/i)
+    ).toBeInTheDocument()
   })
 
   it("renders early access CTA button linking to /register", () => {
@@ -54,9 +52,9 @@ describe("PricingPage", () => {
 
   it("renders bottom CTA section", () => {
     render(<PricingPage />)
-    expect(screen.getByText("Get Early Access")).toBeInTheDocument()
+    expect(screen.getByText("Start Using Autonomous Dispatching")).toBeInTheDocument()
     expect(
-      screen.getByText(/Be the first to know when Operion launches/i)
+      screen.getByText(/Operion is free during the current phase/i)
     ).toBeInTheDocument()
   })
 
@@ -72,6 +70,6 @@ describe("PricingPage", () => {
     render(<PricingPage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/pricing")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/pricing")
   })
 })

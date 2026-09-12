@@ -58,7 +58,7 @@ describe("IndustryConstructionPage", () => {
   it("renders screenshot placeholder", () => {
     render(<IndustryConstructionPage />)
     expect(screen.getByText("See It in Action")).toBeInTheDocument()
-    expect(screen.getByText("Screenshot: Construction Logistics Board")).toBeInTheDocument()
+    expect(screen.getByText("Site Coordination Board")).toBeInTheDocument()
   })
 
   it("renders CTA banner with Start Free Trial link", () => {
@@ -73,6 +73,6 @@ describe("IndustryConstructionPage", () => {
     render(<IndustryConstructionPage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/industries/construction")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/industries/construction")
   })
 })

@@ -105,8 +105,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshUser()
   }, [refreshUser])
 
-  const login = useCallback(async (email: string, password: string, _rememberMe?: boolean, turnstileToken?: string) => {
-    const credentials: LoginRequest = { username: email, password }
+  const login = useCallback(async (email: string, password: string, rememberMe?: boolean, turnstileToken?: string) => {
+    const credentials: LoginRequest & { remember?: boolean } = { username: email, password }
+    if (rememberMe) {
+      credentials.remember = true
+    }
     if (turnstileToken) {
       credentials.turnstile_token = turnstileToken
     }

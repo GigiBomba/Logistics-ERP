@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@/test-utils"
+import { render, screen, waitFor, mockAxiosResponse } from "@/test-utils"
 import OverviewTab from "@/pages/admin/waitlist/overview-tab"
 import { waitlistApi } from "@/api/endpoints"
 import type { WaitlistStatsResponse } from "@/api/endpoints"
@@ -37,7 +37,7 @@ const mockStats: WaitlistStatsResponse = {
 describe("OverviewTab", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(waitlistApi.getStats).mockResolvedValue({ data: mockStats })
+    vi.mocked(waitlistApi.getStats).mockResolvedValue(mockAxiosResponse(mockStats))
   })
 
   describe("stats display", () => {

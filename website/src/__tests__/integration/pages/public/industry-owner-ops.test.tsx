@@ -58,7 +58,7 @@ describe("IndustryOwnerOpsPage", () => {
   it("renders screenshot placeholder", () => {
     render(<IndustryOwnerOpsPage />)
     expect(screen.getByText("See It in Action")).toBeInTheDocument()
-    expect(screen.getByText("Screenshot: Owner-Operator Mobile App")).toBeInTheDocument()
+    expect(screen.getByText("Next Load")).toBeInTheDocument()
   })
 
   it("renders CTA banner with Start Free Trial link", () => {
@@ -73,6 +73,6 @@ describe("IndustryOwnerOpsPage", () => {
     render(<IndustryOwnerOpsPage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/industries/owner-operators")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/industries/owner-operators")
   })
 })

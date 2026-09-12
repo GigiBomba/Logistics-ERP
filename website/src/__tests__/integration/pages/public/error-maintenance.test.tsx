@@ -6,7 +6,10 @@ vi.mock("motion/react", () => ({
   motion: new Proxy(
     {},
     {
-      get: () => (props: any) => props?.children ?? null,
+      get: (_target, tag) => {
+        const Tag = tag as any
+        return ({ children, ...props }: any) => <Tag {...props}>{children}</Tag>
+      },
     }
   ),
   AnimatePresence: ({ children }: any) => <>{children}</>,

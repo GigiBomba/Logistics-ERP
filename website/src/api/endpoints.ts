@@ -37,7 +37,7 @@ import type {
 } from "@/types"
 
 export const authApi = {
-  login: (data: LoginRequest) => {
+  login: (data: LoginRequest & { remember?: boolean }) => {
     const params = new URLSearchParams({
       username: data.username,
       password: data.password,
@@ -45,6 +45,9 @@ export const authApi = {
     })
     if (data.turnstile_token) {
       params.append("turnstile_token", data.turnstile_token)
+    }
+    if (data.remember !== undefined) {
+      params.append("remember", String(data.remember))
     }
     return apiClient.post<AuthResponse>(
       "/api/v1/auth/token",
@@ -197,10 +200,40 @@ export const companyApi = {
   update: (data: CompanyUpdateRequest) => apiClient.patch<Company>("/api/v1/company", data),
 }
 
+// ─── Payment Methods ────────────────────────────────────────
+export interface PaymentMethod {
+  id: string
+  type: string
+  card: {
+    brand: string
+    last4: string
+    exp_month: number
+    exp_year: number
+  }
+  billing_details: Record<string, unknown>
+  created: string
+  is_default: boolean
+}
+
+export interface SetupIntentResponse {
+  client_secret: string
+  setup_intent_id: string
+}
+
+export const paymentMethodsApi = {
+  list: () =>
+    apiClient.get<{ payment_methods: PaymentMethod[] }>("/api/v1/payment-methods"),
+  createSetupIntent: () =>
+    apiClient.post<SetupIntentResponse>("/api/v1/payment-methods/setup-intent"),
+  remove: (id: string) =>
+    apiClient.delete(`/api/v1/payment-methods/${id}`),
+}
+
 export interface CreateTicketRequest {
   subject: string
   description: string
   priority?: "low" | "medium" | "high" | "urgent"
+  category?: string
 }
 
 export const supportApi = {
@@ -465,6 +498,34 @@ export const licensesApi = {
 export const devicesApi = {
   getDevices: () => apiClient.get<DeviceInfo[]>("/api/v1/mobile/devices"),
   deactivateDevice: (deviceId: string) => apiClient.delete(`/api/v1/mobile/devices/${deviceId}`),
+  bulkDeactivate: (deviceIds: string[]) =>
+    apiClient.post<BulkDeactivateResponse>("/api/v1/mobile/devices/bulk-deactivate", { device_ids: deviceIds }),
+}
+
+// ─── Mobile Device Pairing ──────────────────────────────────
+export interface DevicePairingToken {
+  pairing_token: string
+  expires_at: string
+  qr_data: string
+}
+
+export interface PairingValidation {
+  valid: boolean
+  user_id: string
+  company_id: string
+  expires_in: number
+}
+
+export interface BulkDeactivateResponse {
+  deactivated: string[]
+  not_found: string[]
+}
+
+export const pairingApi = {
+  requestToken: () =>
+    apiClient.post<DevicePairingToken>("/api/v1/mobile/pairing-token"),
+  validate: (token: string) =>
+    apiClient.get<PairingValidation>(`/api/v1/mobile/pairing-token/validate?token=${token}`),
 }
 
 // ─── Auth Sessions (desktop app login tracking) ─────────────

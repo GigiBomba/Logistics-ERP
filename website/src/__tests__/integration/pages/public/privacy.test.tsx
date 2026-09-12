@@ -30,20 +30,21 @@ describe("PrivacyPage", () => {
 
   it("renders all 7 privacy policy sections", () => {
     render(<PrivacyPage />)
-    expect(screen.getByText("1. Information We Collect")).toBeInTheDocument()
-    expect(screen.getByText("2. How We Use Information")).toBeInTheDocument()
-    expect(screen.getByText("3. Data Storage & Security")).toBeInTheDocument()
-    expect(screen.getByText("4. Data Sharing")).toBeInTheDocument()
-    expect(screen.getByText("5. Your Rights")).toBeInTheDocument()
-    expect(screen.getByText("6. Cookies")).toBeInTheDocument()
-    expect(screen.getByText("7. Contact Us")).toBeInTheDocument()
+    // Each title appears twice: once in the table of contents and once as the section heading
+    expect(screen.getAllByText("1. Information We Collect")).toHaveLength(2)
+    expect(screen.getAllByText("2. How We Use Information")).toHaveLength(2)
+    expect(screen.getAllByText("3. Data Storage & Security")).toHaveLength(2)
+    expect(screen.getAllByText("4. Data Sharing")).toHaveLength(2)
+    expect(screen.getAllByText("5. Your Rights")).toHaveLength(2)
+    expect(screen.getAllByText("6. Cookies")).toHaveLength(2)
+    expect(screen.getAllByText("7. Contact Us")).toHaveLength(2)
   })
 
   it("renders policy content text", () => {
     render(<PrivacyPage />)
     expect(screen.getByText(/AES-256 encryption at rest/i)).toBeInTheDocument()
     expect(screen.getByText(/TLS 1.3 for data in transit/i)).toBeInTheDocument()
-    expect(screen.getByText(/privacy@operion.com/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/privacy@operionerp.xyz/i).length).toBeGreaterThanOrEqual(1)
   })
 
   it("renders table of contents links with correct hrefs", () => {

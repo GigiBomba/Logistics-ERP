@@ -84,8 +84,8 @@ describe("organizationSchema", () => {
   it("includes required Organization fields", () => {
     const schema = organizationSchema()
     expect(schema.name).toBe("Operion")
-    expect(schema.url).toBe("https://operion.com")
-    expect(schema.logo).toBe("https://operion.com/favicon.svg")
+    expect(schema.url).toBe("https://operionerp.xyz")
+    expect(schema.logo).toBe("https://operionerp.xyz/logo3.png")
     expect(schema.description).toContain("logistics management")
     expect(schema.email).toBe("operion.contact@gmail.com")
   })
@@ -121,7 +121,7 @@ describe("websiteSchema", () => {
   it("includes required WebSite fields", () => {
     const schema = websiteSchema()
     expect(schema.name).toBe("Operion")
-    expect(schema.url).toBe("https://operion.com")
+    expect(schema.url).toBe("https://operionerp.xyz")
     expect(schema.description).toContain("logistics management")
   })
 
@@ -131,7 +131,7 @@ describe("websiteSchema", () => {
     expect(schema.potentialAction).toHaveProperty("@type", "SearchAction")
     expect(schema.potentialAction).toHaveProperty(
       "target",
-      "https://operion.com/search?q={search_term_string}"
+      "https://operionerp.xyz/search?q={search_term_string}"
     )
     expect(schema.potentialAction).toHaveProperty(
       "query-input",
@@ -263,7 +263,7 @@ describe("contactPageSchema", () => {
   it("includes name and url", () => {
     const schema = contactPageSchema()
     expect(schema.name).toBe("Contact Operion")
-    expect(schema.url).toBe("https://operion.com/contact")
+    expect(schema.url).toBe("https://operionerp.xyz/contact")
   })
 
   it("includes mainEntity Organization", () => {

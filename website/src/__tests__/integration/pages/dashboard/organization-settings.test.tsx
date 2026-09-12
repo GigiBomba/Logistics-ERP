@@ -3,19 +3,78 @@ import { render, screen } from "@/test-utils"
 import { fireEvent } from "@testing-library/react"
 import { useParams } from "react-router"
 import OrganizationSettingsPage from "@/pages/dashboard/organization-settings"
+import { useOrganization, useOrganizationMembers, useOrganizationInvitations } from "@/services/queries"
 
 vi.mock("react-router", async () => {
   const actual = await vi.importActual("react-router")
   return { ...(actual as object), useParams: vi.fn(() => ({ slug: "translogistica" })) }
 })
 
+vi.mock("@/services/queries", () => ({
+  useOrganization: vi.fn(),
+  useOrganizationMembers: vi.fn(),
+  useOrganizationInvitations: vi.fn(),
+  useUpdateOrganization: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useInviteMember: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useRemoveMember: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}))
+
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
 }))
 
+const TRANSLOGISTICA_ORG = {
+  id: "org-1",
+  name: "TransLogistica SRL",
+  slug: "translogistica",
+  industry: "Logistics & Transportation",
+  subscription_tier: "professional",
+  user_role: "owner",
+  size: "51-200",
+  address: "Str. Logistica nr. 42, Sector 1",
+  city: "Bucharest",
+  country: "Romania",
+  postal_code: "012345",
+  phone: "+40 123 456 789",
+  website: "www.translogistica.ro",
+  created_at: "2023-01-01T00:00:00Z",
+  updated_at: "2026-07-01T12:00:00Z",
+}
+
+const MOCK_MEMBERS = [
+  { id: 1, name: "Alexandru Marin", email: "alexandru@translogistica.ro", role: "owner", joined_at: "2023-01-01T00:00:00Z" },
+  { id: 2, name: "Maria Dumitrescu", email: "maria@translogistica.ro", role: "admin", joined_at: "2023-02-01T00:00:00Z" },
+  { id: 3, name: "Ion Popescu", email: "ion@translogistica.ro", role: "admin", joined_at: "2024-05-01T00:00:00Z" },
+  { id: 4, name: "Elena Radu", email: "elena@translogistica.ro", role: "member", joined_at: "2025-03-01T00:00:00Z" },
+  { id: 5, name: "Andrei Stancu", email: "andrei@translogistica.ro", role: "member", joined_at: "2026-01-10T00:00:00Z" },
+]
+
+const MOCK_INVITATIONS = [
+  { id: 1, email: "new.dispatcher@translogistica.ro", role: "member", status: "pending", invited_by_name: "Alexandru Marin", created_at: "2026-08-20T10:00:00Z" },
+]
+
+function mockOrgQueries() {
+  vi.mocked(useOrganization).mockImplementation((slug: string) => ({
+    data: slug === "translogistica" ? TRANSLOGISTICA_ORG : undefined,
+    isLoading: false,
+    isError: false,
+  } as any))
+  vi.mocked(useOrganizationMembers).mockReturnValue({
+    data: MOCK_MEMBERS,
+    isLoading: false,
+    isError: false,
+  } as any)
+  vi.mocked(useOrganizationInvitations).mockReturnValue({
+    data: MOCK_INVITATIONS,
+    isLoading: false,
+    isError: false,
+  } as any)
+}
+
 describe("OrganizationSettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockOrgQueries()
   })
 
   it("shows back link to organizations", () => {
@@ -75,10 +134,11 @@ describe("OrganizationSettingsPage", () => {
     expect(screen.getByText("org-1")).toBeInTheDocument()
   })
 
-  it("shows Save Changes button with coming soon note", () => {
+  it("shows Save Changes button when editing is started", () => {
     render(<OrganizationSettingsPage />)
+    expect(screen.getByText("Edit Organization")).toBeInTheDocument()
+    fireEvent.click(screen.getByText("Edit Organization"))
     expect(screen.getByText("Save Changes")).toBeInTheDocument()
-    expect(screen.getByText(/Organization editing is coming soon/i)).toBeInTheDocument()
   })
 
   it("shows Members tab with member list and roles", () => {
@@ -121,12 +181,12 @@ describe("OrganizationSettingsPage", () => {
     expect(screen.getByText("Pending")).toBeInTheDocument()
   })
 
-  it("shows Billing tab with Coming Soon callout", () => {
+  it("shows Billing tab with under-development note", () => {
     render(<OrganizationSettingsPage />)
     fireEvent.click(screen.getByRole("tab", { name: /billing/i }))
     // "Billing" appears as tab name and card title
     expect(screen.getAllByText("Billing").length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument()
+    expect(screen.getByText(/Detailed billing management is under development/i)).toBeInTheDocument()
     expect(screen.getByText("Current Plan")).toBeInTheDocument()
     expect(screen.getByText("Active")).toBeInTheDocument()
   })
@@ -152,6 +212,7 @@ describe("OrganizationSettingsPage", () => {
 describe("OrganizationSettingsPage - Not Found", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockOrgQueries()
   })
 
   it("shows not found state when slug does not match", () => {

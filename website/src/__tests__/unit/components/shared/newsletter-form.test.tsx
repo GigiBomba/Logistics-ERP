@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@/test-utils"
+import { render, screen, fireEvent, waitFor, mockAxiosResponse } from "@/test-utils"
 import { NewsletterForm } from "@/components/shared/newsletter-form"
+import { newsletterApi } from "@/api/endpoints"
 
 vi.mock("motion/react", () => {
   const MotionComponent = (props: any) => {
@@ -19,7 +20,7 @@ vi.mock("motion/react", () => {
 })
 
 vi.mock("@/i18n/locale-context", async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof import("@/i18n/locale-context")>()
   return {
     ...actual,
     useLocale: () => ({
@@ -27,6 +28,14 @@ vi.mock("@/i18n/locale-context", async (importOriginal) => {
     }),
   }
 })
+
+vi.mock("@/api/endpoints", () => ({
+  newsletterApi: { subscribe: vi.fn(), unsubscribe: vi.fn() },
+}))
+
+vi.mock("@/components/shared/turnstile-widget", () => ({
+  default: () => null,
+}))
 
 // Track whether toast.success was called
 const mockToastSuccess = vi.fn()
@@ -37,6 +46,9 @@ vi.mock("sonner", () => ({
 describe("NewsletterForm", () => {
   beforeEach(() => {
     mockToastSuccess.mockReset()
+    vi.mocked(newsletterApi.subscribe).mockResolvedValue(
+      mockAxiosResponse({ status: "ok", message: "subscribed" })
+    )
   })
 
   describe("card variant (default)", () => {
@@ -128,7 +140,7 @@ describe("NewsletterForm", () => {
       const button = screen.getByRole("button", { name: "newsletter.subscribe" })
       fireEvent.click(button)
       await waitFor(() => {
-        expect(screen.getByText("newsletter.error")).toBeInTheDocument()
+        expect(screen.getByText("Network error")).toBeInTheDocument()
       })
     })
 

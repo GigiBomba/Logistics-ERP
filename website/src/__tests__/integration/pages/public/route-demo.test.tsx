@@ -33,7 +33,7 @@ describe("RouteDemoPage", () => {
     render(<RouteDemoPage />)
     expect(screen.getByText("Plan a Route")).toBeInTheDocument()
     expect(
-      screen.getByText("Enter your origin and destination to get a live route comparison.")
+      screen.getByText("Enter your origin and destination to get a live route estimate.")
     ).toBeInTheDocument()
   })
 
@@ -96,10 +96,14 @@ describe("RouteDemoPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /calculate route/i }))
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith("/api/v1/route-demo/calculate", {
-        origin: "Berlin",
-        destination: "Munich",
-      })
+      expect(mockPost).toHaveBeenCalledWith(
+        "/api/v1/route-demo/calculate",
+        {
+          origin: "Berlin",
+          destination: "Munich",
+        },
+        { timeout: 30000 }
+      )
     })
   })
 

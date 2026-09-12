@@ -45,7 +45,7 @@ describe("TestimonialCard", () => {
     expect(screen.getByText("A")).toBeInTheDocument()
   })
 
-  it("renders three-character initials from three-part names", () => {
+  it("renders two-character initials from multi-part names", () => {
     render(
       <TestimonialCard
         quote="Ok"
@@ -54,7 +54,7 @@ describe("TestimonialCard", () => {
         company="Inc"
       />
     )
-    expect(screen.getByText("JMD")).toBeInTheDocument()
+    expect(screen.getByText("JM")).toBeInTheDocument()
   })
 
   it("handles missing role and company as empty strings", () => {

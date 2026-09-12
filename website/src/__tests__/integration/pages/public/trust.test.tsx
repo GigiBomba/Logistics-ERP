@@ -35,4 +35,14 @@ describe("TrustPage", () => {
     render(<TrustPage />)
     expect(screen.getByText("Have questions?")).toBeInTheDocument()
   })
+
+  it("renders DPA download link with honest fallback when the PDF is absent", () => {
+    render(<TrustPage />)
+    const link = screen.getByRole("link", { name: "Download DPA template" })
+    expect(link).toBeInTheDocument()
+    // website/public/dpa/operion-dpa.pdf is not shipped yet, so the approved
+    // fallback anchors to the #dpa section and must NOT offer a download.
+    expect(link).toHaveAttribute("href", "/trust#dpa")
+    expect(link).not.toHaveAttribute("download")
+  })
 })

@@ -18,30 +18,34 @@ describe("ApiPlaygroundPage", () => {
     expect(screen.getByText("API Playground")).toBeInTheDocument()
   })
 
-  it("shows coming soon message", () => {
+  it("shows the sandbox notice", () => {
     render(<ApiPlaygroundPage />)
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument()
-  })
-
-  it("describes the upcoming interactive playground", () => {
-    render(<ApiPlaygroundPage />)
+    expect(screen.getByText("Sandbox — demo data only")).toBeInTheDocument()
     expect(
-      screen.getByText(
-        /we are actively developing our public api/i
-      )
+      screen.getByText(/This playground never makes live API requests/i)
     ).toBeInTheDocument()
   })
 
-  it("renders browse documentation link", () => {
+  it("renders the request builder controls", () => {
     render(<ApiPlaygroundPage />)
-    const docsLink = screen.getByText("Browse Documentation").closest("a")
-    expect(docsLink).toHaveAttribute("href", "/docs")
+    expect(screen.getByText("Endpoint")).toBeInTheDocument()
+    expect(screen.getByText("Method")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /send request/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /reset/i })).toBeInTheDocument()
   })
 
-  it("renders the documentation button", () => {
+  it("renders the response viewer placeholder", () => {
+    render(<ApiPlaygroundPage />)
+    expect(screen.getByText("Response")).toBeInTheDocument()
+    expect(
+      screen.getByText(/Send a request to see a simulated response here/i)
+    ).toBeInTheDocument()
+  })
+
+  it("renders the rate limit note", () => {
     render(<ApiPlaygroundPage />)
     expect(
-      screen.getByRole("link", { name: /browse documentation/i })
+      screen.getByText(/Demo rate limit: 5 requests per 30 seconds/i)
     ).toBeInTheDocument()
   })
 })

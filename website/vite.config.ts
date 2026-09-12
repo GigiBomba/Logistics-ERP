@@ -28,6 +28,48 @@ export default defineConfig({
   preview: {
     port: 3000,
   },
+  build: {
+    // Production bundles ship without sourcemaps (explicit; matches the
+    // default and keeps the shipped payload lean).
+    sourcemap: false,
+    // Vite 8 / Rolldown: split stable third-party vendors into dedicated
+    // chunks so they can be cached independently and don't bloat the shared
+    // app chunk.
+    //
+    // NOTE: Vite 8 silently discards `build.rollupOptions.output.manualChunks`
+    // return values (vitejs/vite#23153), so we use the Rolldown-native
+    // `codeSplitting.groups` mechanism, which is what Vite 8's migration guide
+    // (and Vike's build plugin) reads. `[\\/]` matches the path separator on
+    // both POSIX and Windows (module ids arrive with forward slashes).
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: 'vendor-query',
+              test: /node_modules[\\/]@tanstack[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-motion',
+              test: /node_modules[\\/]motion[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-axios',
+              test: /node_modules[\\/]axios[\\/]/,
+              priority: 20,
+            },
+          ],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

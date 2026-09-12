@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@/test-utils"
 import OnboardingPage from "@/pages/dashboard/onboarding"
+import { useOnboardingChecklist, useTutorials, useChangelog } from "@/services/queries"
+
+vi.mock("@/services/queries", () => ({
+  useOnboardingChecklist: vi.fn(),
+  useTutorials: vi.fn(),
+  useChangelog: vi.fn(),
+  useCompleteOnboardingStep: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}))
 
 vi.mock("motion/react", () => ({
   motion: {
@@ -9,9 +17,48 @@ vi.mock("motion/react", () => ({
   },
 }))
 
+const MOCK_STEPS = [
+  { id: "verify-email", title: "Verify your email", description: "Confirm your email address.", completed: true, required: true },
+  { id: "company-profile", title: "Set up company profile", description: "Add your company details.", completed: false, required: true },
+  { id: "choose-plan", title: "Choose your plan", description: "Pick a subscription plan.", completed: false, required: true },
+  { id: "download-desktop", title: "Download Operion Desktop", description: "Install the desktop app.", completed: false, required: false },
+  { id: "first-route", title: "Create your first route", description: "Plan your first trip.", completed: false, required: false },
+  { id: "add-members", title: "Add team members", description: "Invite your team.", completed: false, required: false },
+  { id: "notifications", title: "Set up notifications", description: "Configure alerts.", completed: false, required: false },
+  { id: "explore-docs", title: "Explore documentation", description: "Browse the docs.", completed: false, required: false },
+]
+
+const MOCK_TUTORIALS = [
+  { id: 1, title: "Route Optimization 101", category: "beginner", reading_time_minutes: 5, excerpt: "Learn route planning basics." },
+  { id: 2, title: "Dispatch Console Basics", category: "intermediate", reading_time_minutes: 15, excerpt: "Dispatch workflow overview." },
+  { id: 3, title: "Fleet Analytics Overview", category: "advanced", reading_time_minutes: 10, excerpt: "Understand fleet metrics." },
+  { id: 4, title: "API Integration Guide", category: "developer", reading_time_minutes: 20, excerpt: "Integrate with the Operion API." },
+]
+
+const MOCK_RELEASES = [
+  { version: "1.2.0", release_date: "2026-08-01T00:00:00Z", sections: [{ type: "added", items: ["Fleet Analytics Dashboard", "Route performance insights"] }] },
+  { version: "1.1.0", release_date: "2026-06-01T00:00:00Z", sections: [{ type: "added", items: ["Multi-warehouse Support", "Cross-dock improvements"] }] },
+  { version: "1.0.0", release_date: "2026-04-01T00:00:00Z", sections: [{ type: "added", items: ["Operion GA Release", "Launch build"] }] },
+]
+
 describe("OnboardingPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useOnboardingChecklist).mockReturnValue({
+      data: { steps: MOCK_STEPS, completed_count: 1, total_count: 8 },
+      isLoading: false,
+      isError: false,
+    } as any)
+    vi.mocked(useTutorials).mockReturnValue({
+      data: MOCK_TUTORIALS,
+      isLoading: false,
+      isError: false,
+    } as any)
+    vi.mocked(useChangelog).mockReturnValue({
+      data: MOCK_RELEASES,
+      isLoading: false,
+      isError: false,
+    } as any)
   })
 
   it('renders "Getting Started" heading and description', () => {
@@ -107,11 +154,10 @@ describe("OnboardingPage", () => {
     expect(screen.getByText("v1.0.0")).toBeInTheDocument()
   })
 
-  it("shows Best Practices section with 5 items", () => {
+  it("shows Best Practices section placeholder", () => {
     render(<OnboardingPage />)
     expect(screen.getByText("Best Practices")).toBeInTheDocument()
-    expect(screen.getByText(/Start with a small pilot fleet/i)).toBeInTheDocument()
-    expect(screen.getByText(/Keep driver mobile apps updated/i)).toBeInTheDocument()
+    expect(screen.getByText("Coming soon")).toBeInTheDocument()
   })
 
   it("shows Need help? callout with Contact Support link", () => {

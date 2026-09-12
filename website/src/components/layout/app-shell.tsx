@@ -218,6 +218,7 @@ function DashboardLayout() {
     queryClient.invalidateQueries({ queryKey: ["subscription"] })
     queryClient.invalidateQueries({ queryKey: ["company"] })
     queryClient.invalidateQueries({ queryKey: ["notifications"] })
+    queryClient.invalidateQueries({ queryKey: ["invoices"] })
   }
 
   const isActiveRoute = (href: string) => {

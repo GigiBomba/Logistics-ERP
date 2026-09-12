@@ -169,7 +169,7 @@ describe("PageSEO", () => {
       const meta = document.querySelector('meta[property="og:image"]')
       expect(meta).toHaveAttribute(
         "content",
-        "https://operion.com/custom-og.png"
+        "https://operionerp.xyz/custom-og.png"
       )
     })
 
@@ -191,13 +191,13 @@ describe("PageSEO", () => {
       render(
         <PageSEO
           {...baseProps}
-          canonicalUrl="https://operion.com/features"
+          canonicalUrl="https://operionerp.xyz/features"
         />
       )
       const meta = document.querySelector('meta[property="og:url"]')
       expect(meta).toHaveAttribute(
         "content",
-        "https://operion.com/features"
+        "https://operionerp.xyz/features"
       )
     })
 
@@ -207,7 +207,7 @@ describe("PageSEO", () => {
       // Derived from lowercase, dash-separated title
       expect(meta).toHaveAttribute(
         "content",
-        "https://operion.com/features"
+        "https://operionerp.xyz/features"
       )
     })
 
@@ -276,11 +276,11 @@ describe("PageSEO", () => {
       render(
         <PageSEO
           {...baseProps}
-          canonicalUrl="https://operion.com/features"
+          canonicalUrl="https://operionerp.xyz/features"
         />
       )
       const link = document.querySelector('link[rel="canonical"]')
-      expect(link).toHaveAttribute("href", "https://operion.com/features")
+      expect(link).toHaveAttribute("href", "https://operionerp.xyz/features")
     })
 
     it("generates canonical URL from title when canonicalUrl not provided", () => {
@@ -288,7 +288,7 @@ describe("PageSEO", () => {
       const link = document.querySelector('link[rel="canonical"]')
       expect(link).toHaveAttribute(
         "href",
-        "https://operion.com/blog-post-title"
+        "https://operionerp.xyz/blog-post-title"
       )
     })
 
@@ -302,7 +302,7 @@ describe("PageSEO", () => {
       const link = document.querySelector('link[rel="canonical"]')
       expect(link).toHaveAttribute(
         "href",
-        "https://operion.com/route-planning-guide"
+        "https://operionerp.xyz/route-planning-guide"
       )
     })
   })
@@ -325,7 +325,7 @@ describe("PageSEO", () => {
       const canonical = document.querySelector('link[rel="canonical"]')
       expect(canonical).toHaveAttribute(
         "href",
-        "https://operion.com/enterprise"
+        "https://operionerp.xyz/enterprise"
       )
     })
 

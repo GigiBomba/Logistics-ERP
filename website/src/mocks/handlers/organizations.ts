@@ -102,7 +102,10 @@ export const organizationsHandlers = [
   }),
 
   http.get("*/api/v1/organizations/:id", ({ params }) => {
-    const org = mockOrganizations.find((o) => o.id === Number(params.id))
+    // Match by slug (e.g. organization-settings page) OR numeric id.
+    const org = mockOrganizations.find(
+      (o) => o.slug === String(params.id) || o.id === Number(params.id)
+    )
     if (!org) {
       return HttpResponse.json({ detail: "Organization not found" }, { status: 404 })
     }
@@ -110,7 +113,9 @@ export const organizationsHandlers = [
   }),
 
   http.patch("*/api/v1/organizations/:id", async ({ params, request }) => {
-    const org = mockOrganizations.find((o) => o.id === Number(params.id))
+    const org = mockOrganizations.find(
+      (o) => o.slug === String(params.id) || o.id === Number(params.id)
+    )
     if (!org) {
       return HttpResponse.json({ detail: "Organization not found" }, { status: 404 })
     }

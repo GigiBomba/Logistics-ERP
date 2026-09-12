@@ -20,16 +20,12 @@ vi.mock("motion/react", () => {
 
 const mockNavigate = vi.fn()
 
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal()
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  }
-})
+vi.mock("@/hooks/useAppNavigate", () => ({
+  useAppNavigate: () => mockNavigate,
+}))
 
 vi.mock("@/i18n/locale-context", async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof import("@/i18n/locale-context")>()
   return {
     ...actual,
     useLocale: () => ({
@@ -170,6 +166,6 @@ describe("GlobalSearch", () => {
     const dialog = screen.getByRole("dialog")
     expect(dialog).toBeInTheDocument()
     expect(dialog.getAttribute("aria-modal")).toBe("true")
-    expect(dialog.getAttribute("aria-label")).toBe("common.aria.search")
+    expect(dialog.getAttribute("aria-label")).toBe("common.search")
   })
 })

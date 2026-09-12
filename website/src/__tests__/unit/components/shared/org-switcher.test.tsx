@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { OrgSwitcher } from "@/components/shared/org-switcher"
 
@@ -19,11 +19,19 @@ vi.mock("motion/react", () => {
 })
 
 vi.mock("@/i18n/locale-context", async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof import("@/i18n/locale-context")>()
   return {
     ...actual,
     useLocale: () => ({
-      t: (key: string) => key,
+      t: (key: string) => {
+        const en: Record<string, string> = {
+          "common.organizations": "Organizations",
+          "common.manageOrganizations": "Manage organizations",
+          "common.createOrganization": "Create organization",
+          "common.soon": "Soon",
+        }
+        return en[key] ?? key
+      },
     }),
   }
 })

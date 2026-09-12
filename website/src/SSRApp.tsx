@@ -1,23 +1,16 @@
 import { StrictMode } from "react"
 import { StaticRouter } from "react-router"
 import { HelmetProvider } from "react-helmet-async"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "sonner"
 import { ErrorBoundary } from "react-error-boundary"
 import { ThemeProvider } from "@/contexts/theme-provider"
 import { LocaleProvider } from "@/i18n/locale-context"
 import { AuthProvider } from "@/contexts/auth-provider"
 import { AppRoutes } from "@/routes"
+import { createQueryClient } from "@/services/queries"
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
+const queryClient = createQueryClient()
 
 function ErrorFallback({ error, resetErrorBoundary }: { error: unknown; resetErrorBoundary: () => void }) {
   return (
@@ -53,7 +46,7 @@ export default function SSRApp({ url }: { url: string }) {
                   <StaticRouter location={url}>
                     <AppRoutes />
                   </StaticRouter>
-                  <Toaster position="bottom-right" richColors closeButton />
+                  <Toaster position="bottom-right" richColors closeButton visibleToasts={4} />
                 </AuthProvider>
               </LocaleProvider>
             </ThemeProvider>

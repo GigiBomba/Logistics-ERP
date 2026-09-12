@@ -6,7 +6,10 @@ vi.mock("motion/react", () => ({
   motion: new Proxy(
     {},
     {
-      get: () => (props: any) => props?.children ?? null,
+      get: (_target, tag) => {
+        const Tag = tag as any
+        return ({ children, ...props }: any) => <Tag {...props}>{children}</Tag>
+      },
     }
   ),
   AnimatePresence: ({ children }: any) => <>{children}</>,
@@ -38,13 +41,14 @@ describe("NotFoundPage", () => {
 
   it("renders contact support link pointing to /contact", () => {
     render(<NotFoundPage />)
-    const contactLink = screen.getByText("Contact Support").closest("a")
+    const contactLink = screen.getByText("Contact").closest("a")
     expect(contactLink).toHaveAttribute("href", "/contact")
   })
 
-  it("renders both action buttons", () => {
+  it("renders all helpful action links", () => {
     render(<NotFoundPage />)
+    // 4 helpful links (Home, Features, Pricing, Contact) + 1 Go Home button link
     const buttons = screen.getAllByRole("link")
-    expect(buttons).toHaveLength(2)
+    expect(buttons).toHaveLength(5)
   })
 })

@@ -16,16 +16,19 @@ describe("MissionPage", () => {
   it("renders page header", () => {
     render(<MissionPage />)
     expect(screen.getByText("Our Mission")).toBeInTheDocument()
-    expect(screen.getByText("mission.subtitle")).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "Building an AI operating system that executes logistics workflows — so transport companies can focus on decisions, not data entry."
+      )
+    ).toBeInTheDocument()
   })
 
   it("renders mission statement with quote", () => {
     render(<MissionPage />)
-    // The quote key falls back to the key itself since it's not in en.json.
-    // The blockquote wraps it with smart quotes as separate text nodes,
+    // The blockquote wraps the quote with smart quotes as separate text nodes,
     // so we use a text match function that checks for inclusion.
     expect(
-      screen.getByText((content) => content.includes("mission.quote"))
+      screen.getByText((content) => content.includes("We're building the logistics platform we wish existed"))
     ).toBeInTheDocument()
   })
 
@@ -37,14 +40,13 @@ describe("MissionPage", () => {
   it("renders What We Believe section with belief cards", () => {
     render(<MissionPage />)
     expect(screen.getByText("What We Believe")).toBeInTheDocument()
-    expect(screen.getByText("Technology Should Empower")).toBeInTheDocument()
+    expect(screen.getByText("Technology Should Do the Work")).toBeInTheDocument()
     expect(screen.getByText("Efficiency Drives Sustainability")).toBeInTheDocument()
   })
 
   it("renders Core Values section", () => {
     render(<MissionPage />)
-    // Key falls back since not all values keys exist in en.json
-    const valuesHeading = screen.getByText("mission.values")
+    const valuesHeading = screen.getByText("Our Values")
     expect(valuesHeading).toBeInTheDocument()
   })
 
@@ -56,15 +58,17 @@ describe("MissionPage", () => {
   it("renders stats section", () => {
     render(<MissionPage />)
     expect(screen.getByText("Open Development")).toBeInTheDocument()
-    expect(screen.getByText("Windows + Web")).toBeInTheDocument()
+    // The platforms label and value are identical ("Desktop + Mobile + Web")
+    const platformsStats = screen.getAllByText("Desktop + Mobile + Web")
+    expect(platformsStats.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("Active Community")).toBeInTheDocument()
     expect(screen.getByText("Made in Romania")).toBeInTheDocument()
   })
 
   it("renders CTA section at the bottom", () => {
     render(<MissionPage />)
-    expect(screen.getByText("mission.cta.title")).toBeInTheDocument()
-    expect(screen.getByText("mission.cta.primary")).toBeInTheDocument()
+    expect(screen.getByText("Join us in building autonomous logistics")).toBeInTheDocument()
+    expect(screen.getByText("Try Autonomous Dispatching")).toBeInTheDocument()
   })
 
   it("renders CTA link pointing to /register", () => {
@@ -79,6 +83,6 @@ describe("MissionPage", () => {
     render(<MissionPage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/mission")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/mission")
   })
 })

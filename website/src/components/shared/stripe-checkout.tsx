@@ -2,6 +2,7 @@ import { useState, useCallback } from "react"
 import { toast } from "sonner"
 import { subscriptionApi } from "@/api/endpoints"
 import { extractApiError } from "@/api/client"
+import { cn } from "@/lib/utils"
 
 interface StripeCheckoutProps {
   children: React.ReactNode
@@ -38,20 +39,17 @@ export function StripeCheckout({
   }, [isLoading, onCheckoutStart, onCheckoutComplete, onError])
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className={isLoading ? "pointer-events-none opacity-60" : "cursor-pointer"}
+    <button
+      type="button"
       onClick={handleCheckout}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          handleCheckout()
-        }
-      }}
+      disabled={isLoading}
       aria-busy={isLoading}
+      className={cn(
+        "w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left",
+        isLoading && "pointer-events-none opacity-60"
+      )}
     >
       {children}
-    </div>
+    </button>
   )
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen } from "@/test-utils"
+import { render, screen, fireEvent, waitFor, mockAxiosResponse } from "@/test-utils"
 import CampaignTab from "@/pages/admin/waitlist/campaign-tab"
+import { waitlistApi } from "@/api/endpoints"
 
 vi.mock("motion/react", () => ({
   motion: {
@@ -9,9 +10,18 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
+vi.mock("@/api/endpoints", () => ({
+  waitlistApi: {
+    sendCampaign: vi.fn(),
+  },
+}))
+
 describe("CampaignTab", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(waitlistApi.sendCampaign).mockResolvedValue(
+      mockAxiosResponse({ status: "sent", count: 5, total_recipients: 5, errors: 0 })
+    )
   })
 
   describe("campaign display", () => {
@@ -26,40 +36,122 @@ describe("CampaignTab", () => {
         screen.getByText("Mass outreach to waitlist segments")
       ).toBeInTheDocument()
     })
+  })
 
-    it("renders coming soon message", () => {
+  describe("campaign form", () => {
+    it("renders subject input with label and placeholder", () => {
       render(<CampaignTab />)
+      expect(screen.getByLabelText("Subject")).toBeInTheDocument()
       expect(
-        screen.getByText(
-          "Campaign sending will be available in the next release."
+        screen.getByPlaceholderText("Enter email subject...")
+      ).toBeInTheDocument()
+    })
+
+    it("renders message textarea with label and placeholder", () => {
+      render(<CampaignTab />)
+      expect(screen.getByLabelText("Email body")).toBeInTheDocument()
+      expect(
+        screen.getByPlaceholderText(
+          "Write your email content here... Supports plain text."
         )
       ).toBeInTheDocument()
     })
 
-    it("renders coming soon description with details", () => {
+    it("renders segment select with all status options", () => {
       render(<CampaignTab />)
-      expect(
-        screen.getByText(
-          "This feature will allow you to send targeted email campaigns to specific waitlist segments — for example, inviting a batch of users, re-engaging churned entries, or announcing product updates to activated accounts."
-        )
-      ).toBeInTheDocument()
+      const select = screen.getByRole("combobox")
+      expect(select).toBeInTheDocument()
+      const options = screen.getAllByRole("option")
+      expect(options.map((o) => o.textContent)).toEqual([
+        "All statuses",
+        "Joined",
+        "Invited",
+        "Activated",
+        "Converted",
+        "Churned",
+        "Unsubscribed",
+      ])
+    })
+
+    it("disables the Send button until subject and body are filled", () => {
+      render(<CampaignTab />)
+      const sendButton = screen.getByRole("button", { name: /Send Campaign/i })
+      expect(sendButton).toBeDisabled()
+
+      fireEvent.change(screen.getByLabelText("Subject"), {
+        target: { value: "Big update" },
+      })
+      expect(sendButton).toBeDisabled()
+
+      fireEvent.change(screen.getByLabelText("Email body"), {
+        target: { value: "Hello everyone," },
+      })
+      expect(sendButton).toBeEnabled()
     })
   })
 
-  describe("layout", () => {
-    it("renders within a card with max-width constraint", () => {
-      const { container } = render(<CampaignTab />)
-      // Find the outer card element
-      const card = container.querySelector(".max-w-2xl")
-      expect(card).toBeInTheDocument()
+  describe("sending", () => {
+    it("sends the campaign with subject, body and segment on success", async () => {
+      render(<CampaignTab />)
+      fireEvent.change(screen.getByLabelText("Subject"), {
+        target: { value: "Big update" },
+      })
+      fireEvent.change(screen.getByLabelText("Email body"), {
+        target: { value: "Hello everyone," },
+      })
+      fireEvent.change(screen.getByRole("combobox"), {
+        target: { value: "joined" },
+      })
+
+      fireEvent.click(screen.getByRole("button", { name: /Send Campaign/i }))
+
+      await waitFor(() => {
+        expect(waitlistApi.sendCampaign).toHaveBeenCalledWith({
+          subject: "Big update",
+          body: "Hello everyone,",
+          segment: "joined",
+        })
+      })
+      expect(await screen.findByText("Campaign sent")).toBeInTheDocument()
+      expect(
+        screen.getByText(/Sent to 5 of 5 recipients/)
+      ).toBeInTheDocument()
     })
 
-    it("does not render any interactive controls", () => {
+    it("shows error feedback when sending fails", async () => {
+      vi.mocked(waitlistApi.sendCampaign).mockRejectedValue(
+        new Error("Network error")
+      )
       render(<CampaignTab />)
-      // Currently a static placeholder — no buttons, inputs, links
-      expect(screen.queryByRole("button")).not.toBeInTheDocument()
-      expect(screen.queryByRole("link")).not.toBeInTheDocument()
-      expect(screen.queryByRole("textbox")).not.toBeInTheDocument()
+      fireEvent.change(screen.getByLabelText("Subject"), {
+        target: { value: "Big update" },
+      })
+      fireEvent.change(screen.getByLabelText("Email body"), {
+        target: { value: "Hello everyone," },
+      })
+      fireEvent.click(screen.getByRole("button", { name: /Send Campaign/i }))
+
+      expect(await screen.findByText("Send failed")).toBeInTheDocument()
+      expect(screen.getByText("Network error")).toBeInTheDocument()
+    })
+
+    it("shows no-recipients feedback when the segment is empty", async () => {
+      vi.mocked(waitlistApi.sendCampaign).mockResolvedValue(
+        mockAxiosResponse({ status: "no_recipients", count: 0, total_recipients: 0, errors: 0 })
+      )
+      render(<CampaignTab />)
+      fireEvent.change(screen.getByLabelText("Subject"), {
+        target: { value: "Big update" },
+      })
+      fireEvent.change(screen.getByLabelText("Email body"), {
+        target: { value: "Hello everyone," },
+      })
+      fireEvent.click(screen.getByRole("button", { name: /Send Campaign/i }))
+
+      expect(await screen.findByText("No recipients")).toBeInTheDocument()
+      expect(
+        screen.getByText("No waitlist entries match the selected segment.")
+      ).toBeInTheDocument()
     })
   })
 })

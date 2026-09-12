@@ -23,7 +23,9 @@ describe("IndustryAgriculturePage", () => {
     expect(screen.getByText("Industry Challenges")).toBeInTheDocument()
     expect(screen.getByText("Seasonal Peaks")).toBeInTheDocument()
     expect(screen.getByText("Perishable Goods")).toBeInTheDocument()
-    expect(screen.getByText("Rural Routes")).toBeInTheDocument()
+    // "Rural Routes" appears as a challenge title and in the seasonal calendar visual
+    const ruralRoutes = screen.getAllByText("Rural Routes")
+    expect(ruralRoutes.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("Equipment Tracking")).toBeInTheDocument()
   })
 
@@ -42,7 +44,9 @@ describe("IndustryAgriculturePage", () => {
     expect(screen.getByText("Harvest Schedule")).toBeInTheDocument()
     expect(screen.getByText("Route Plan")).toBeInTheDocument()
     expect(screen.getByText("Monitor Temp")).toBeInTheDocument()
-    expect(screen.getByText("Delivery")).toBeInTheDocument()
+    // "Delivery" appears as a workflow step and in the seasonal calendar visual
+    const deliverySteps = screen.getAllByText("Delivery")
+    expect(deliverySteps.length).toBeGreaterThanOrEqual(1)
     const traceabilityWorkflow = screen.getAllByText("Traceability")
     expect(traceabilityWorkflow.length).toBeGreaterThanOrEqual(1)
   })
@@ -60,7 +64,7 @@ describe("IndustryAgriculturePage", () => {
   it("renders screenshot placeholder", () => {
     render(<IndustryAgriculturePage />)
     expect(screen.getByText("See It in Action")).toBeInTheDocument()
-    expect(screen.getByText("Screenshot: Agriculture Logistics Dashboard")).toBeInTheDocument()
+    expect(screen.getByText("Seasonal Logistics Calendar")).toBeInTheDocument()
   })
 
   it("renders CTA banner with Start Free Trial link", () => {
@@ -75,6 +79,6 @@ describe("IndustryAgriculturePage", () => {
     render(<IndustryAgriculturePage />)
     const canonical = document.querySelector('link[rel="canonical"]')
     expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/industries/agriculture")
+    expect(canonical).toHaveAttribute("href", "https://operionerp.xyz/industries/agriculture")
   })
 })

@@ -295,7 +295,7 @@ describe("AuthProvider", () => {
   })
 
   describe("login turnstile token", () => {
-    it("login forwards the turnstile token to the API", async () => {
+    it("login forwards the turnstile token and remember flag to the API", async () => {
       vi.mocked(authApi.login).mockResolvedValueOnce({ data: { access_token: "tok", token_type: "bearer" } } as any)
       vi.mocked(authApi.getMe).mockResolvedValueOnce(mockAxiosResponse({ user: mockUser }))
 
@@ -307,6 +307,7 @@ describe("AuthProvider", () => {
       expect(authApi.login).toHaveBeenCalledWith({
         username: "test@c.com",
         password: "password",
+        remember: true,
         turnstile_token: "turnstile-abc",
       })
       expect(result.current.isAuthenticated).toBe(true)
@@ -323,6 +324,52 @@ describe("AuthProvider", () => {
 
       expect(authApi.login).toHaveBeenCalledWith({ username: "test@c.com", password: "password" })
       expect(vi.mocked(authApi.login).mock.calls[0][0]).not.toHaveProperty("turnstile_token")
+      expect(vi.mocked(authApi.login).mock.calls[0][0]).not.toHaveProperty("remember")
+    })
+  })
+
+  describe("login remember me", () => {
+    it("forwards remember: true when rememberMe is passed", async () => {
+      vi.mocked(authApi.login).mockResolvedValueOnce({ data: { access_token: "tok", token_type: "bearer" } } as any)
+      vi.mocked(authApi.getMe).mockResolvedValueOnce(mockAxiosResponse({ user: mockUser }))
+
+      const { result } = renderAuthHook()
+      await act(async () => {
+        await result.current.login("test@c.com", "password", true)
+      })
+
+      expect(authApi.login).toHaveBeenCalledWith({
+        username: "test@c.com",
+        password: "password",
+        remember: true,
+      })
+      expect(result.current.isAuthenticated).toBe(true)
+    })
+
+    it("omits remember when rememberMe is false", async () => {
+      vi.mocked(authApi.login).mockResolvedValueOnce({ data: { access_token: "tok", token_type: "bearer" } } as any)
+      vi.mocked(authApi.getMe).mockResolvedValueOnce(mockAxiosResponse({ user: mockUser }))
+
+      const { result } = renderAuthHook()
+      await act(async () => {
+        await result.current.login("test@c.com", "password", false)
+      })
+
+      expect(authApi.login).toHaveBeenCalledWith({ username: "test@c.com", password: "password" })
+      expect(vi.mocked(authApi.login).mock.calls[0][0]).not.toHaveProperty("remember")
+    })
+
+    it("omits remember when rememberMe is not provided", async () => {
+      vi.mocked(authApi.login).mockResolvedValueOnce({ data: { access_token: "tok", token_type: "bearer" } } as any)
+      vi.mocked(authApi.getMe).mockResolvedValueOnce(mockAxiosResponse({ user: mockUser }))
+
+      const { result } = renderAuthHook()
+      await act(async () => {
+        await result.current.login("test@c.com", "password")
+      })
+
+      expect(authApi.login).toHaveBeenCalledWith({ username: "test@c.com", password: "password" })
+      expect(vi.mocked(authApi.login).mock.calls[0][0]).not.toHaveProperty("remember")
     })
   })
 

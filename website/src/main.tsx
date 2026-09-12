@@ -1,29 +1,22 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { HelmetProvider } from "react-helmet-async"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "sonner"
 import { ErrorBoundary } from "react-error-boundary"
 import { ThemeProvider } from "@/contexts/theme-provider"
 import { LocaleProvider, useLocale } from "@/i18n/locale-context"
 import { AuthProvider } from "@/contexts/auth-provider"
 import { Button } from "@/components/ui/button"
-import { trackError } from "@/services/analytics"
+import { reportFatalError } from "@/services/error-reporting"
+import { createQueryClient } from "@/services/queries"
 import { registerServiceWorker } from "@/lib/sw-register"
 import App from "@/App"
 import "@/styles/globals.css"
 
 registerServiceWorker()
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
+const queryClient = createQueryClient()
 
 // Fatal error digest captured by onError and surfaced via the "Report this issue" action.
 let lastErrorDigest = ""
@@ -67,10 +60,8 @@ createRoot(document.getElementById("root")!).render(
         FallbackComponent={ErrorFallback}
         onError={(error, info) => {
           lastErrorDigest = buildReportDigest(error, info.componentStack ?? "")
-          trackError(error instanceof Error ? error : new Error(String(error)), {
-            componentStack: info.componentStack ?? "",
-            fatal: "true",
-          })
+          // Always feeds analytics; files a support ticket when authenticated.
+          reportFatalError(error, info.componentStack ?? "")
         }}
       >
         <HelmetProvider>
@@ -78,7 +69,7 @@ createRoot(document.getElementById("root")!).render(
             <ThemeProvider>
               <AuthProvider>
                 <App />
-                <Toaster position="bottom-right" richColors closeButton />
+                <Toaster position="bottom-right" richColors closeButton visibleToasts={4} />
               </AuthProvider>
             </ThemeProvider>
           </QueryClientProvider>

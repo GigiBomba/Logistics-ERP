@@ -8,6 +8,10 @@ function renderThemeHook() {
   })
 }
 
+function getColorSchemeMeta() {
+  return document.head.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')
+}
+
 describe("ThemeProvider", () => {
   const originalMatchMedia = window.matchMedia
 
@@ -15,6 +19,7 @@ describe("ThemeProvider", () => {
     vi.clearAllMocks()
     localStorage.clear()
     document.documentElement.classList.remove("light", "dark")
+    getColorSchemeMeta()?.remove()
   })
 
   afterAll(() => {
@@ -49,6 +54,12 @@ describe("ThemeProvider", () => {
     const { result } = renderThemeHook()
     expect(result.current.theme).toBe("dark")
     expect(result.current.resolvedTheme).toBe("dark")
+  })
+
+  it("creates a color-scheme meta equal to the resolved theme after mount", () => {
+    localStorage.setItem("operion-theme", "dark")
+    renderThemeHook()
+    expect(getColorSchemeMeta()?.content).toBe("dark")
   })
 
   it("setTheme updates theme and persists", () => {
@@ -135,6 +146,7 @@ describe("ThemeProvider — system theme", () => {
     vi.clearAllMocks()
     localStorage.clear()
     document.documentElement.classList.remove("light", "dark")
+    getColorSchemeMeta()?.remove()
   })
 
   afterAll(() => {
@@ -149,6 +161,7 @@ describe("ThemeProvider — system theme", () => {
     expect(result.current.theme).toBe("system")
     expect(result.current.resolvedTheme).toBe("dark")
     expect(document.documentElement.classList.contains("dark")).toBe(true)
+    expect(getColorSchemeMeta()?.content).toBe("dark")
   })
 
   it("listens for system preference changes and updates the class", () => {
@@ -157,15 +170,18 @@ describe("ThemeProvider — system theme", () => {
 
     const { result } = renderThemeHook()
     expect(result.current.resolvedTheme).toBe("dark")
+    expect(getColorSchemeMeta()?.content).toBe("dark")
 
     act(() => mm.emit(false))
     expect(result.current.resolvedTheme).toBe("light")
     expect(document.documentElement.classList.contains("light")).toBe(true)
     expect(document.documentElement.classList.contains("dark")).toBe(false)
+    expect(getColorSchemeMeta()?.content).toBe("light")
 
     act(() => mm.emit(true))
     expect(result.current.resolvedTheme).toBe("dark")
     expect(document.documentElement.classList.contains("dark")).toBe(true)
+    expect(getColorSchemeMeta()?.content).toBe("dark")
   })
 
   it("does not register a change listener when the theme is explicit", () => {

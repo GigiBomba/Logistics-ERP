@@ -4,21 +4,26 @@ import { Smartphone, Monitor, Server, Tablet } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useLocale } from "@/i18n/locale-context"
+import type { LocaleCode } from "@/i18n/types"
 import type { DeviceInfo } from "@/types"
 
 // ─── Helpers ────────────────────────────────────────────────
 
-export function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString("en-US", {
+export function formatDate(dateString: string, locale: LocaleCode | "en-US" = "en-US") {
+  return new Intl.DateTimeFormat(locale, {
     year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  })
+  }).format(new Date(dateString))
 }
 
-export function formatRelativeTime(dateString: string, t?: (key: string) => string) {
+export function formatRelativeTime(
+  dateString: string,
+  t?: (key: string) => string,
+  locale: LocaleCode | "en-US" = "en-US"
+) {
   const now = Date.now()
   const then = new Date(dateString).getTime()
   const diffMs = now - then
@@ -31,7 +36,7 @@ export function formatRelativeTime(dateString: string, t?: (key: string) => stri
   if (diffMinutes < 60) return tr("devices.minutesAgo", `${diffMinutes}m ago`).replace("{minutes}", String(diffMinutes))
   if (diffHours < 24) return tr("devices.hoursAgo", `${diffHours}h ago`).replace("{hours}", String(diffHours))
   if (diffDays < 7) return tr("devices.daysAgo", `${diffDays}d ago`).replace("{days}", String(diffDays))
-  return formatDate(dateString)
+  return formatDate(dateString, locale)
 }
 
 export function getPlatformIcon(platform: string) {
@@ -64,6 +69,39 @@ export interface DeviceListProps {
   variant?: "card" | "table"
   isLoading?: boolean
   emptyMessage?: string
+  /** Enables a leading selection checkbox column (table) / checkbox (card). */
+  selectable?: boolean
+  /** Currently selected device ids. Only used when `selectable` is true. */
+  selectedIds?: Set<string>
+  /** Called with the next selection whenever a checkbox is toggled. */
+  onSelectionChange?: (ids: Set<string>) => void
+}
+
+// ─── Selection Checkbox ──────────────────────────────────────
+
+function SelectionCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  label,
+}: {
+  checked: boolean
+  indeterminate?: boolean
+  onChange: () => void
+  label: string
+}) {
+  return (
+    <input
+      type="checkbox"
+      className="h-4 w-4 cursor-pointer rounded border-input accent-primary align-middle"
+      checked={checked}
+      ref={(el) => {
+        if (el) el.indeterminate = !!indeterminate && !checked
+      }}
+      onChange={onChange}
+      aria-label={label}
+    />
+  )
 }
 
 // ─── Card Variant ────────────────────────────────────────────
@@ -72,12 +110,18 @@ function DeviceCard({
   device,
   onDeactivate,
   renderActions,
+  selectable,
+  selected,
+  onToggle,
 }: {
   device: DeviceInfo
   onDeactivate?: (deviceId: string) => void
   renderActions?: (device: DeviceInfo) => ReactNode
+  selectable?: boolean
+  selected?: boolean
+  onToggle?: (deviceId: string) => void
 }) {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -96,9 +140,18 @@ function DeviceCard({
                 <p className="text-xs text-muted-foreground">{getPlatformLabel(device.platform)}</p>
               </div>
             </div>
-            <Badge variant={device.is_active ? "success" : "secondary"}>
-              {device.is_active ? t("devices.activeTab") : t("devices.inactiveTab")}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {selectable && (
+                <SelectionCheckbox
+                  checked={!!selected}
+                  onChange={() => onToggle?.(device.device_id)}
+                  label={`${t("devices.selectDevice")}: ${device.device_name}`}
+                />
+              )}
+              <Badge variant={device.is_active ? "success" : "secondary"}>
+                {device.is_active ? t("devices.activeTab") : t("devices.inactiveTab")}
+              </Badge>
+            </div>
           </div>
 
           <div className="mt-4 space-y-2 border-t pt-4">
@@ -110,11 +163,11 @@ function DeviceCard({
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{t("devices.lastSeen")}</span>
-              <span className="font-medium">{formatRelativeTime(device.last_seen, t)}</span>
+              <span className="font-medium">{formatRelativeTime(device.last_seen, t, locale)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{t("devices.registered")}</span>
-              <span className="font-medium">{formatDate(device.created_at)}</span>
+              <span className="font-medium">{formatDate(device.created_at, locale)}</span>
             </div>
           </div>
 
@@ -146,15 +199,30 @@ function DeviceTableRow({
   device,
   onDeactivate,
   renderActions,
+  selectable,
+  selected,
+  onToggle,
 }: {
   device: DeviceInfo
   onDeactivate?: (deviceId: string) => void
   renderActions?: (device: DeviceInfo) => ReactNode
+  selectable?: boolean
+  selected?: boolean
+  onToggle?: (deviceId: string) => void
 }) {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
   return (
     <tr className="border-b border-border transition-colors hover:bg-muted/50">
-      <td className="py-3 pl-4">
+      {selectable && (
+        <td className="py-3 pl-4 pr-2">
+          <SelectionCheckbox
+            checked={!!selected}
+            onChange={() => onToggle?.(device.device_id)}
+            label={`${t("devices.selectDevice")}: ${device.device_name}`}
+          />
+        </td>
+      )}
+      <td className={selectable ? "py-3" : "py-3 pl-4"}>
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
             {getPlatformIcon(device.platform)}
@@ -169,7 +237,7 @@ function DeviceTableRow({
         {device.user_name}
       </td>
       <td className="py-3 text-sm text-muted-foreground">
-        <span title={formatDate(device.last_seen)}>{formatRelativeTime(device.last_seen, t)}</span>
+        <span title={formatDate(device.last_seen, locale)}>{formatRelativeTime(device.last_seen, t, locale)}</span>
       </td>
       <td className="py-3">
         <Badge variant={device.is_active ? "success" : "secondary"}>
@@ -202,9 +270,36 @@ export function DeviceList({
   variant = "card",
   isLoading,
   emptyMessage,
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
 }: DeviceListProps) {
   const { t } = useLocale()
   const resolvedEmptyMessage = emptyMessage ?? t("devices.noDevicesFound")
+
+  const allSelected =
+    selectable && devices.length > 0 && devices.every((d) => selectedIds?.has(d.device_id))
+  const someSelected = selectable && devices.some((d) => selectedIds?.has(d.device_id))
+
+  function toggleAll() {
+    if (!onSelectionChange) return
+    const next = new Set(selectedIds)
+    if (allSelected) {
+      for (const d of devices) next.delete(d.device_id)
+    } else {
+      for (const d of devices) next.add(d.device_id)
+    }
+    onSelectionChange(next)
+  }
+
+  function toggleOne(deviceId: string) {
+    if (!onSelectionChange) return
+    const next = new Set(selectedIds)
+    if (next.has(deviceId)) next.delete(deviceId)
+    else next.add(deviceId)
+    onSelectionChange(next)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -229,7 +324,17 @@ export function DeviceList({
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase text-muted-foreground">
-              <th className="py-3 pl-4">{t("devices.device")}</th>
+              {selectable && (
+                <th className="w-10 py-3 pl-4 pr-2">
+                  <SelectionCheckbox
+                    checked={allSelected}
+                    indeterminate={someSelected}
+                    onChange={toggleAll}
+                    label={t("devices.selectAll")}
+                  />
+                </th>
+              )}
+              <th className={selectable ? "py-3" : "py-3 pl-4"}>{t("devices.device")}</th>
               <th className="py-3">{t("devices.user")}</th>
               <th className="py-3">{t("devices.lastSeenTitle")}</th>
               <th className="py-3">{t("devices.status")}</th>
@@ -243,6 +348,9 @@ export function DeviceList({
                 device={device}
                 onDeactivate={onDeactivate}
                 renderActions={renderActions}
+                selectable={selectable}
+                selected={selectedIds?.has(device.device_id)}
+                onToggle={toggleOne}
               />
             ))}
           </tbody>
@@ -259,6 +367,9 @@ export function DeviceList({
           device={device}
           onDeactivate={onDeactivate}
           renderActions={renderActions}
+          selectable={selectable}
+          selected={selectedIds?.has(device.device_id)}
+          onToggle={toggleOne}
         />
       ))}
     </div>

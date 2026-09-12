@@ -1,3 +1,4 @@
+import { useState, type FormEvent } from "react"
 import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
 import {
@@ -12,10 +13,19 @@ import {
   XCircle,
   Receipt,
   Building2,
+  Plus,
+  Trash2,
+  Loader2,
+  X,
+  Pencil,
 } from "lucide-react"
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
+import { loadStripe } from "@stripe/stripe-js"
+import { toast } from "sonner"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { CopyButton } from "@/components/ui/copy-button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
@@ -23,8 +33,17 @@ import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { useLocale } from "@/i18n/locale-context"
-import { useInvoices } from "@/services/queries"
+import { envConfig } from "@/config/env"
+import {
+  useInvoices,
+  usePaymentMethods,
+  useSetupIntent,
+  useRemovePaymentMethod,
+  useCompany,
+  useUpdateCompany,
+} from "@/services/queries"
 import { formatDate, formatCurrency } from "@/lib/utils"
+import type { PaymentMethod } from "@/api/endpoints"
 import type { InvoiceStatus } from "@/types"
 
 const STATUS_BADGE: Record<InvoiceStatus, "success" | "default" | "secondary" | "outline"> = {
@@ -41,9 +60,182 @@ const STATUS_ICONS: Record<InvoiceStatus, typeof CheckCircle2> = {
   draft: FileText,
 }
 
+/** Stripe.js loader — null when no publishable key is configured. */
+const stripePromise = envConfig.stripePublishableKey
+  ? loadStripe(envConfig.stripePublishableKey)
+  : null
+
+/* ─── Inline lightweight modal (no Dialog component in UI kit) ─── */
+function InlineModal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean
+  onClose: () => void
+  title: string
+  children: React.ReactNode
+}) {
+  const { t } = useLocale()
+  if (!open) return null
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="billing-modal-title"
+    >
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.15 }}
+        className="relative w-full max-w-md rounded-xl border bg-card p-6 shadow-xl"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 id="billing-modal-title" className="text-lg font-semibold">
+            {title}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 hover:bg-muted"
+            aria-label={t("common.close")}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {children}
+      </motion.div>
+    </div>
+  )
+}
+
+/* ─── Stripe PaymentElement form ─── */
+function AddCardForm({
+  onSuccess,
+  onCancel,
+}: {
+  onSuccess: () => void
+  onCancel: () => void
+}) {
+  const { t } = useLocale()
+  const stripe = useStripe()
+  const elements = useElements()
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!stripe || !elements) return
+    setSubmitting(true)
+    setError(null)
+    const { error: stripeError } = await stripe.confirmSetup({
+      elements,
+      redirect: "if_required",
+    })
+    setSubmitting(false)
+    if (stripeError) {
+      setError(stripeError.message ?? t("billing.addCardFailed"))
+      return
+    }
+    onSuccess()
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="flex justify-end gap-3">
+        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+          {t("common.cancel")}
+        </Button>
+        <Button type="submit" size="sm" isLoading={submitting} disabled={!stripe || !elements}>
+          {t("billing.addCard")}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
 export default function BillingPage() {
   const { t } = useLocale()
   const { data: invoices, isLoading, isError, error, refetch } = useInvoices()
+  const {
+    data: paymentMethods,
+    isLoading: paymentMethodsLoading,
+    refetch: refetchPaymentMethods,
+  } = usePaymentMethods()
+  const setupIntent = useSetupIntent()
+  const removePaymentMethod = useRemovePaymentMethod()
+  const { data: company } = useCompany()
+  const updateCompany = useUpdateCompany()
+
+  const [addCardOpen, setAddCardOpen] = useState(false)
+  const [clientSecret, setClientSecret] = useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<PaymentMethod | null>(null)
+  const [editingVat, setEditingVat] = useState(false)
+  const [vatInput, setVatInput] = useState("")
+
+  const paymentMethodList = paymentMethods?.payment_methods ?? []
+  const hasPaymentMethods = paymentMethodList.length > 0
+
+  const closeAddCard = () => {
+    setAddCardOpen(false)
+    setClientSecret(null)
+  }
+
+  const handleOpenAddCard = () => {
+    if (!stripePromise) {
+      toast.error(t("billing.stripeNotConfigured"))
+      return
+    }
+    setClientSecret(null)
+    setAddCardOpen(true)
+    setupIntent.mutate(undefined, {
+      onSuccess: (secret) => setClientSecret(secret),
+      onError: () => {
+        closeAddCard()
+        toast.error(t("billing.setupIntentFailed"))
+      },
+    })
+  }
+
+  const handleCardAdded = () => {
+    closeAddCard()
+    toast.success(t("billing.cardAdded"))
+    refetchPaymentMethods()
+  }
+
+  const handleRemoveCard = () => {
+    if (!removeTarget) return
+    removePaymentMethod.mutate(removeTarget.id, {
+      onSuccess: () => {
+        toast.success(t("billing.cardRemoved"))
+        setRemoveTarget(null)
+      },
+      onError: () => toast.error(t("billing.removeCardFailed")),
+    })
+  }
+
+  const startEditVat = () => {
+    setVatInput(company?.vat_number ?? "")
+    setEditingVat(true)
+  }
+
+  const handleSaveVat = () => {
+    updateCompany.mutate(
+      { vat_number: vatInput },
+      {
+        onSuccess: () => {
+          toast.success(t("billing.vatSaved"))
+          setEditingVat(false)
+        },
+        onError: () => toast.error(t("billing.vatSaveFailed")),
+      }
+    )
+  }
 
   return (
     <>
@@ -216,25 +408,81 @@ export default function BillingPage() {
               </Card>
             )}
 
-            {/* ── Payment Methods (placeholder) ── */}
-            {!isLoading && !isError && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <CreditCard className="h-5 w-5" />
-                    {t("billing.paymentMethods")}
-                  </CardTitle>
-                  <CardDescription>{t("billing.paymentMethodsDesc")}</CardDescription>
-                </CardHeader>
-                <CardContent>
+            {/* ── Payment Methods ── */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <CreditCard className="h-5 w-5" />
+                      {t("billing.paymentMethods")}
+                    </CardTitle>
+                    <CardDescription>{t("billing.paymentMethodsDesc")}</CardDescription>
+                  </div>
+                  {hasPaymentMethods && (
+                    <Button size="sm" onClick={handleOpenAddCard}>
+                      <Plus className="mr-1 h-4 w-4" />
+                      {t("billing.addCard")}
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {paymentMethodsLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-16 w-full rounded-lg" />
+                    <Skeleton className="h-16 w-full rounded-lg" />
+                  </div>
+                ) : hasPaymentMethods ? (
+                  <div className="space-y-3">
+                    {paymentMethodList.map((pm) => (
+                      <div
+                        key={pm.id}
+                        className="flex items-center justify-between rounded-lg border p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <CreditCard className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm font-medium capitalize">
+                              {pm.card.brand} •••• {pm.card.last4}
+                              {pm.is_default && (
+                                <Badge variant="secondary" className="ml-2">
+                                  {t("billing.default")}
+                                </Badge>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {t("billing.expires")} {String(pm.card.exp_month).padStart(2, "0")}/
+                              {pm.card.exp_year}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`${t("billing.removeCard")} ${pm.card.brand} ${pm.card.last4}`}
+                          onClick={() => setRemoveTarget(pm)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                   <EmptyState
                     title={t("billing.noPaymentMethods")}
-                    description={t("billing.noPaymentMethodsDesc")}
+                    description={t("billing.noPaymentMethodsHint")}
                     icon={<CreditCard className="h-12 w-12" />}
+                    action={
+                      <Button onClick={handleOpenAddCard}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        {t("billing.addCard")}
+                      </Button>
+                    }
                   />
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </CardContent>
+            </Card>
           </motion.div>
 
           {/* ── Sidebar ── */}
@@ -281,7 +529,7 @@ export default function BillingPage() {
               </CardContent>
             </Card>
 
-            {/* Tax info placeholder */}
+            {/* Tax info */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">{t("billing.taxInfo")}</CardTitle>
@@ -289,16 +537,57 @@ export default function BillingPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">{t("billing.vatId")}</label>
-                  <p className="text-sm text-muted-foreground italic">—</p>
+                  <label htmlFor="billing-vat" className="text-xs text-muted-foreground">
+                    {t("billing.vatId")}
+                  </label>
+                  {editingVat ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="billing-vat"
+                        value={vatInput}
+                        onChange={(e) => setVatInput(e.target.value)}
+                        placeholder={t("billing.vatPlaceholder")}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveVat}
+                        isLoading={updateCompany.isPending}
+                      >
+                        {t("common.save")}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingVat(false)}
+                        disabled={updateCompany.isPending}
+                      >
+                        {t("common.cancel")}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={company?.vat_number ? "text-sm font-medium" : "text-sm text-muted-foreground italic"}>
+                        {company?.vat_number || "—"}
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("billing.editVat")}
+                        onClick={startEditVat}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">{t("billing.billingAddress")}</label>
-                  <p className="text-sm text-muted-foreground italic">—</p>
+                  <p className="text-sm text-muted-foreground">
+                    {[company?.address, company?.city, company?.country]
+                      .filter(Boolean)
+                      .join(", ") || "—"}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Tax configuration will be available in a future update.
-                </p>
               </CardContent>
             </Card>
 
@@ -316,6 +605,47 @@ export default function BillingPage() {
           </motion.div>
         </div>
       </SectionWrapper>
+
+      {/* ── Add card modal ── */}
+      <InlineModal open={addCardOpen} onClose={closeAddCard} title={t("billing.addCardTitle")}>
+        {!clientSecret ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : stripePromise ? (
+          <Elements stripe={stripePromise} options={{ clientSecret }}>
+            <AddCardForm onSuccess={handleCardAdded} onCancel={closeAddCard} />
+          </Elements>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("billing.stripeNotConfigured")}</p>
+        )}
+      </InlineModal>
+
+      {/* ── Remove card confirmation modal ── */}
+      <InlineModal
+        open={!!removeTarget}
+        onClose={() => setRemoveTarget(null)}
+        title={t("billing.confirmRemoveCard")}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t("billing.confirmRemoveCardDesc")}
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" size="sm" onClick={() => setRemoveTarget(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleRemoveCard}
+              isLoading={removePaymentMethod.isPending}
+            >
+              {t("billing.removeCard")}
+            </Button>
+          </div>
+        </div>
+      </InlineModal>
     </>
   )
 }

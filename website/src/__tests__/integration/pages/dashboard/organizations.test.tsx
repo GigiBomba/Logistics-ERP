@@ -1,15 +1,82 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@/test-utils"
-import { fireEvent } from "@testing-library/react"
 import OrganizationsPage from "@/pages/dashboard/organizations"
+import { useOrganizations } from "@/services/queries"
+
+vi.mock("@/services/queries", () => ({
+  useOrganizations: vi.fn(),
+  useCreateOrganization: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}))
 
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
 }))
 
+const MOCK_ORGS = [
+  {
+    id: "org-1",
+    name: "TransLogistica SRL",
+    slug: "translogistica",
+    industry: "Logistics & Transportation",
+    subscription_tier: "Professional",
+    user_role: "owner",
+    member_count: 20,
+    size: "51-200",
+    address: "Str. Logistica nr. 42, Sector 1",
+    city: "Bucharest",
+    country: "Romania",
+    postal_code: "012345",
+    phone: "+40 123 456 789",
+    website: "www.translogistica.ro",
+    created_at: "2023-01-01T00:00:00Z",
+    updated_at: "2026-07-01T12:00:00Z",
+  },
+  {
+    id: "org-2",
+    name: "FastRoute GmbH",
+    slug: "fastroute",
+    industry: "Courier & Delivery",
+    subscription_tier: "Enterprise",
+    user_role: "admin",
+    member_count: 64,
+    size: "201-500",
+    address: "Hauptstrasse 12",
+    city: "Berlin",
+    country: "Germany",
+    postal_code: "10115",
+    phone: "+49 30 123 456 78",
+    website: "www.fastroute.de",
+    created_at: "2022-06-15T00:00:00Z",
+    updated_at: "2026-06-01T08:00:00Z",
+  },
+  {
+    id: "org-3",
+    name: "GreenFleet Logistics",
+    slug: "greenfleet",
+    industry: "Sustainable Transport",
+    subscription_tier: "Starter",
+    user_role: "member",
+    member_count: 7,
+    size: "11-50",
+    address: "Green Way 5",
+    city: "Amsterdam",
+    country: "Netherlands",
+    postal_code: "1012 WX",
+    phone: "+31 20 123 4567",
+    website: "www.greenfleet.nl",
+    created_at: "2025-03-01T00:00:00Z",
+    updated_at: "2026-05-01T09:00:00Z",
+  },
+]
+
 describe("OrganizationsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useOrganizations).mockReturnValue({
+      data: MOCK_ORGS,
+      isLoading: false,
+      isError: false,
+    } as any)
   })
 
   it('renders "Organizations" heading and description', () => {
@@ -107,12 +174,14 @@ describe("OrganizationsPage", () => {
     // "Create Organization" appears as heading and button text
     const createTexts = screen.getAllByText("Create Organization")
     expect(createTexts.length).toBe(2)
-    expect(screen.getByText(/Add a new organization to your account/i)).toBeInTheDocument()
+    // The description renders both above and below the create card
+    const createDescMatches = screen.getAllByText(/Add a new organization to your account/i)
+    expect(createDescMatches.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/Start a new organization/i)).toBeInTheDocument()
   })
 
-  it("shows coming soon note for organization creation", () => {
+  it("shows helper text for organization creation", () => {
     render(<OrganizationsPage />)
-    expect(screen.getByText(/Organization creation is coming soon/i)).toBeInTheDocument()
+    expect(screen.getByText(/Multi-organization support lets you manage separate teams, billing, and settings/i)).toBeInTheDocument()
   })
 })

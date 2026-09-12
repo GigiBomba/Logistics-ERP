@@ -53,7 +53,7 @@ describe("DocumentationPage", () => {
     render(<DocumentationPage />)
     expect(screen.getByText("Video Tutorials")).toBeInTheDocument()
     expect(screen.getByText(/Step-by-step video guides/i)).toBeInTheDocument()
-    expect(screen.getAllByText("Coming Soon").length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText("Coming soon").length).toBeGreaterThanOrEqual(1)
   })
 
   it("wraps category cards in links to docs sections", () => {

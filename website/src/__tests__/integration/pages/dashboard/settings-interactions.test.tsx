@@ -149,7 +149,7 @@ describe("SettingsPage — interactions", () => {
       vi.mocked(useMfaEnroll).mockReturnValue(
         makeMutation({
           mutate: enrollMutate,
-          data: { secret: "SECRETKEY", otpauth_uri: "otpauth://totp/Test", backup_codes: ["111111", "222222"] },
+          data: { secret: "SECRETKEY", otpauth_uri: "otpauth://totp/Test", qr_payload: "https://api.qrserver.com/v1/create-qr-code/?data=otpauth://totp/Test", backup_codes: ["111111", "222222"] },
         }) as any
       )
       vi.mocked(useMfaConfirm).mockReturnValue(
@@ -170,10 +170,15 @@ describe("SettingsPage — interactions", () => {
         "Scan the QR code or enter the key manually, then type the 6-digit code."
       )
 
-      // confirming phase shows QR, secret and otpauth URI
+      // confirming phase shows the real QR image, secret and otpauth URI
       expect(screen.getByText("Set up your authenticator app")).toBeInTheDocument()
       expect(screen.getByText("SECRETKEY")).toBeInTheDocument()
       expect(screen.getByText("otpauth://totp/Test")).toBeInTheDocument()
+
+      // the QR image comes from the enroll qr_payload and has a non-empty alt
+      const qrImg = screen.getByAltText("QR code for authenticator setup")
+      expect(qrImg).toBeInTheDocument()
+      expect(qrImg).toHaveAttribute("src", "https://api.qrserver.com/v1/create-qr-code/?data=otpauth://totp/Test")
 
       // copy the secret key
       fireEvent.click(screen.getByRole("button", { name: /copy setup key/i }))
@@ -211,6 +216,9 @@ describe("SettingsPage — interactions", () => {
       render(<SettingsPage />)
       fireEvent.click(screen.getByRole("tab", { name: /security/i }))
       fireEvent.click(screen.getByRole("button", { name: /enable 2fa/i }))
+
+      // no qr_payload → fallback icon renders, no QR <img>
+      expect(screen.queryByAltText("QR code for authenticator setup")).not.toBeInTheDocument()
 
       const verify = screen.getByRole("button", { name: /enable two-factor authentication/i })
       fireEvent.change(screen.getByLabelText(/6-digit verification code/i), { target: { value: "123" } })

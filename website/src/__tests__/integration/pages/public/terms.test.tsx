@@ -30,16 +30,17 @@ describe("TermsPage", () => {
 
   it("renders all 10 terms sections", () => {
     render(<TermsPage />)
-    expect(screen.getByText("1. Acceptance of Terms")).toBeInTheDocument()
-    expect(screen.getByText("2. Account Registration & Security")).toBeInTheDocument()
-    expect(screen.getByText("3. Subscription & Payment Terms")).toBeInTheDocument()
-    expect(screen.getByText("4. License Grant & Restrictions")).toBeInTheDocument()
-    expect(screen.getByText("5. Acceptable Use Policy")).toBeInTheDocument()
-    expect(screen.getByText("6. Intellectual Property")).toBeInTheDocument()
-    expect(screen.getByText("7. Limitation of Liability")).toBeInTheDocument()
-    expect(screen.getByText("8. Termination")).toBeInTheDocument()
-    expect(screen.getByText("9. Governing Law")).toBeInTheDocument()
-    expect(screen.getByText("10. Changes to Terms")).toBeInTheDocument()
+    // Each title appears twice: once in the table of contents and once as the section heading
+    expect(screen.getAllByText("1. Acceptance of Terms")).toHaveLength(2)
+    expect(screen.getAllByText("2. Account Registration & Security")).toHaveLength(2)
+    expect(screen.getAllByText("3. Subscription & Payment Terms")).toHaveLength(2)
+    expect(screen.getAllByText("4. License Grant & Restrictions")).toHaveLength(2)
+    expect(screen.getAllByText("5. Acceptable Use Policy")).toHaveLength(2)
+    expect(screen.getAllByText("6. Intellectual Property")).toHaveLength(2)
+    expect(screen.getAllByText("7. Limitation of Liability")).toHaveLength(2)
+    expect(screen.getAllByText("8. Termination")).toHaveLength(2)
+    expect(screen.getAllByText("9. Governing Law")).toHaveLength(2)
+    expect(screen.getAllByText("10. Changes to Terms")).toHaveLength(2)
   })
 
   it("renders key content from the terms", () => {

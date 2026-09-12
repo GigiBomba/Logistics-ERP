@@ -1,12 +1,52 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import apiClient from "@/api/client"
+import { useQuery, useMutation, useQueryClient, QueryClient, QueryCache, MutationCache } from "@tanstack/react-query"
+import { AxiosError } from "axios"
+import { toast } from "sonner"
+import apiClient, { extractApiError } from "@/api/client"
 import { authApi, companyApi, devicesApi, sessionsApi, supportApi, blogApi, adminBlogApi, organizationsApi, licensesApi,
   changelogApi, roadmapApi, statusApi, tutorialsApi, developersApi, securityApi, announcementsApi,
   customerStoriesApi, careersApi, pressApi, partnersApi, newsletterApi, searchApi, notificationsApi,
   integrationsApi, onboardingApi, opsApi, referralApi, waitlistApi, auditLogApi, adminApi,
-  subscriptionApi, downloadApi, invoicesApi, analyticsApi, mfaApi, avatarApi } from "@/api/endpoints"
+  subscriptionApi, downloadApi, invoicesApi, analyticsApi, mfaApi, avatarApi, paymentMethodsApi, pairingApi } from "@/api/endpoints"
 import type { CompanyUpdateRequest, NotificationPreference, PortalNotification } from "@/types"
 import type { CreateTicketRequest, CreateBlogPostRequest, UpdateBlogPostRequest, CreateOrganizationRequest, UpdateOrganizationRequest, InviteMemberRequest, SupportMessageRequest, AppNotification } from "@/api/endpoints"
+
+// ─── Query Client Factory ────────────────────────────────────
+
+/** Suppress the global error toast for auth redirects (401) and request cancellations. */
+function skipGlobalErrorToast(error: unknown): boolean {
+  if (error instanceof AxiosError) {
+    return error.response?.status === 401 || error.code === "ERR_CANCELED"
+  }
+  if (error && typeof error === "object") {
+    const e = error as { response?: { status?: number }; code?: string }
+    return e.response?.status === 401 || e.code === "ERR_CANCELED"
+  }
+  return false
+}
+
+export function createQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 5 * 60 * 1000,
+        retry: 1,
+        refetchOnWindowFocus: false,
+      },
+    },
+    queryCache: new QueryCache({
+      onError: (error, _query) => {
+        if (skipGlobalErrorToast(error)) return
+        toast.error(extractApiError(error))
+      },
+    }),
+    mutationCache: new MutationCache({
+      onError: (error, _variables, _context, _mutation) => {
+        if (skipGlobalErrorToast(error)) return
+        toast.error(extractApiError(error))
+      },
+    }),
+  })
+}
 
 // ─── Auth ────────────────────────────────────────────────────
 
@@ -388,6 +428,30 @@ export function useInvoices() {
   })
 }
 
+// ─── Payment Methods ───────────────────────────────────────
+
+export function usePaymentMethods() {
+  return useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: () => paymentMethodsApi.list().then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useSetupIntent() {
+  return useMutation({
+    mutationFn: () => paymentMethodsApi.createSetupIntent().then((r) => r.data.client_secret),
+  })
+}
+
+export function useRemovePaymentMethod() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => paymentMethodsApi.remove(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["payment-methods"] }),
+  })
+}
+
 // ─── Downloads ─────────────────────────────────────────────
 
 export function useLatestDownload() {
@@ -552,7 +616,7 @@ export function useDevices() {
   return useQuery({
     queryKey: ['devices'],
     queryFn: () => devicesApi.getDevices().then(res => res.data),
-    staleTime: 30 * 1000,
+    staleTime: 60 * 1000, // §5.2
   })
 }
 
@@ -561,6 +625,30 @@ export function useDeactivateDevice() {
   return useMutation({
     mutationFn: (deviceId: string) => devicesApi.deactivateDevice(deviceId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
+  })
+}
+
+export function useDeactivateDevices() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (deviceIds: string[]) => devicesApi.bulkDeactivate(deviceIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
+  })
+}
+
+export function useRequestPairingToken() {
+  return useMutation({
+    mutationFn: () => pairingApi.requestToken(),
+  })
+}
+
+export function usePairingStatus(token: string) {
+  return useQuery({
+    queryKey: ['pairing-status', token],
+    queryFn: () => pairingApi.validate(token).then((r) => r.data),
+    enabled: !!token,
+    // Poll every 2s while pairing is pending; stop once the token validates (paired).
+    refetchInterval: (query) => (query.state.data?.valid ? false : 2000),
   })
 }
 

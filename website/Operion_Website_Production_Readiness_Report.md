@@ -159,3 +159,61 @@ Genuinely well-built, with evidence:
 | Accessibility | ⚠️ Needs Work — labels/headings ✅; brand-color contrast fails AA |
 | Positioning/UX | ❌ Not Ready — split positioning live in 5 locales |
 | Testing & deployment | ❌ Not Ready — zero billing tests; no CI/staging; prod unreachable |
+
+---
+
+## Stage E Implementation Close-Out (2026-09-09)
+
+Stage E closed the SGrade blueprint's P0/P1 items plus the approved cheap P2s in 12 units (all uncommitted in the working tree at this date — the changes below are tree-verified, not merge-verified). Known-red gates are recorded honestly in §4 below; nothing in this section implies those gates are green.
+
+### 1. CLOSED items — evidence pointers
+
+| # | Item | Evidence |
+|---|------|----------|
+| U1 | CI gate for the website S-Grade pipeline (lint → typecheck → unit → i18n audit → test-manifest → build → critical E2E), coverage informational (D5), visual soft-gate on Windows (D6) | `.github/workflows/ci-website.yml` |
+| U2 | Lightweight fatal-error reporter wired into the ErrorBoundary (`main.tsx`) — always feeds analytics, files a support ticket when authenticated, Sentry-swappable seam | `website/src/services/error-reporting.ts` (new), `website/src/main.tsx` |
+| U3 | Centralized QueryClient factory (staleTime/retry/refetch policy moved out of `main.tsx`/`SSRApp.tsx`; both entry points now use `createQueryClient()`) | `website/src/services/queries.ts` (`createQueryClient` export) |
+| U4 | Theme resolution writes a `meta[name="color-scheme"]` tag so native UI follows the resolved theme | `website/src/contexts/theme-provider.tsx` (lines 27–30) |
+| U5 | Locale-aware date formatting in the two dashboard shared components (Intl, not hardcoded `en-US`) | `website/src/components/shared/device-list.tsx` (line 13), `website/src/components/shared/notification-center.tsx` (line 50) |
+| U6 | MFA enrollment QR rendered from the server's `qr_payload` | `website/src/pages/dashboard/settings.tsx` (line 265) |
+| U7 | Checkout trigger is a native `<button>` (not a clickable div), `aria-busy` + disabled while loading | `website/src/components/shared/stripe-checkout.tsx` (lines 42–53) |
+| U8 | DPA download link ships with an honest fallback to the `/trust#dpa` section until the counsel PDF lands (test-covered) | `website/src/pages/public/trust.tsx` (lines 41, 277), `website/src/pages/public/enterprise.tsx` (lines 15, 83), `website/src/__tests__/integration/pages/public/trust.test.tsx` |
+| U9 | Org-scoped query invalidation on organization switch (devices, licenses, subscription, company, notifications, invoices) | `website/src/components/layout/app-shell.tsx` (lines 213–222) |
+| U10 | Visual-regression suite extended with the login route (3 viewports) + authenticated dashboard (1440×900) | `website/e2e/visual-regression.spec.ts` (lines 24, 182–205) |
+| U11 | The 4 new baseline screenshots exist and are committed to the snapshots dir | `website/e2e/visual-regression.spec.ts-snapshots/login-{375x812,768x1024,1440x900}-chromium-win32.png`, `.../dashboard-1440x900-chromium-win32.png` |
+| U12 | Toaster max-visible-toasts cap (`visibleToasts={4}`, blueprint §2.2) | **IN FLIGHT / LANDING** — implemented in the uncommitted working tree (`website/src/main.tsx` line 72, `website/src/SSRApp.tsx` line 49) but not yet merged; not claimed as closed |
+
+### 2. Verify-and-close (satisfied pre-stage, verified against the tree)
+
+- **Notification bell wiring** — `app-shell.tsx` pulls `usePortalNotifications()` and feeds `NotificationCenter` (`lines 187, 372–376`).
+- **Vike prerender config + `_redirects`** — `website/pages/+config.ts` (`prerender: true`); `website/public/_redirects` present (SPA fallback replicated for e2e in `e2e/serve-preview.mjs`).
+- **`.browserslistrc`** — present at `website/.browserslistrc`.
+- **Org-switcher invalidation** — `handleSwitchOrg` (`app-shell.tsx:213–222`) invalidates all six org-scoped query keys.
+- **10 critical E2E specs** — the §16.4 inventory of 10 files is present under `website/e2e/critical/` and is the CI gate (`npx playwright test e2e/critical`); two additional baseline specs (`public-navigation`, `accessibility-basics`) also live in that folder.
+- **16 UI primitive tests + manifest** — 16 test files under `website/src/__tests__/components/ui/` (avatar, badge, breadcrumbs, button, callout, card, copy-button, input, loading-spinner, pagination, progress, separator, skeleton, tabs, tag, tooltip) + `website/scripts/verify-ui-test-manifest.ts`, wired as `npm run test:manifest`.
+- **Coverage thresholds set (red by design)** — `vite.config.ts:79–95` (80/75/80/80 + per-layer overrides) with an explicit comment that the repo sits at ~56% statements / ~41% branches so the job is expected to fail; CI runs it informational-only with `continue-on-error` + `|| true` (`ci-website.yml` coverage-report job, D5).
+- **Security headers** — `website/public/_headers` now carries CSP (script-src self + GTM + Cloudflare challenges), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, HSTS (preload, 2y), Referrer-Policy, Permissions-Policy, COOP, CORP.
+- **Print stylesheet** — `@media print` block in `website/src/styles/globals.css` (line 182).
+- **Favicon/manifest** — apple-touch-icon + PWA links in `website/index.html`; `website/public/site.webmanifest` present.
+
+### 3. Documented deferrals (blueprint section + rationale)
+
+| Blueprint section | Deferred item | Rationale |
+|---|---|---|
+| §4.5 | Stripe Elements payment methods + EU-VIES-validated VAT/tax-info field (`billing.tsx` rebuild row) | Requires Stripe SetupIntent/Elements + a `PATCH /company/tax-info` contract on the backend; the per-truck billing rebuild (§4.1–4.4) shipped first. Approved P2, sequenced post-launch. |
+| §9.3 | `rememberMe` backend flag (refresh-token `Max-Age` control on `/auth/token`) | Needs a backend contract addition; the UI-side session-scoped storage already works. P2, sequenced with the auth refactor. |
+| §16.7 | k6 load scenarios (login ramp, dashboard parallel-load, waitlist spike incl. duplicate-email race check, notification polling) | Load profiles are only meaningful against a deployed backend; `website/stress/k6-dashboard-load.js` remains a single spot-check. Rehearse the waitlist-spike scenario before any launch-day marketing push. |
+| §5.3 | Bulk device operations (row checkboxes + batched mutation + summary toast) | No batch-deactivate endpoint on the backend; single-device deactivation shipped. P2. |
+| §5.3 | QR pairing for mobile (pairing-token → QR → redeem) | Depends on backend `POST /mobile/pairing-token` + redeem; reduces support-ticket volume but is explicitly a P2/P3 sequencing candidate. |
+| §4.6 | AI payment leniency | **Requires accountant/legal sign-off before building** — automated credit-extension mechanics, e-Factura invoice timing, and revenue-recognition implications. Blueprint itself sequences this P2/P3; nothing shipped. |
+| §16.1 | Mutation-testing CI (Stryker ≥70% nightly, score committed to `mutation-score.json`, PR-bot delta) | No Stryker install/nightly job exists; unit + integration coverage thresholds are the enforced gate today. Deferred to a nightly cadence item. |
+| §7 | Hardcoded-string lint rule (flag bare string literals in JSX not wrapped in `t()`) | Tooling-only; the i18n completeness audit shipped without the lint rule. Add as an oxlint/ESLint rule post-launch. |
+| §16.5 | Full 36-shot visual matrix (6 pages × 3 viewports × 2 themes incl. dark-theme shots) | 4 light-theme shots shipped (login ×3, dashboard ×1); dark-theme shots + remaining pages deferred as a baseline-expansion task once the design tokens stop moving. |
+| §17 | Sentry (or equivalent) for anonymous/always-on production alerting | **Lightweight substitute shipped instead**: `src/services/error-reporting.ts` feeds `trackError` always and files a support ticket for authenticated users; it is explicitly a Sentry-swappable seam (one call site in `main.tsx`). Full Sentry DSN adoption deferred. |
+| §18a.4 | DPA PDF content (downloadable signed/template document) | **Wiring shipped with an honest fallback**: Enterprise/Trust pages link `/trust#dpa` until counsel delivers `website/public/dpa/operion-dpa.pdf` (the `download` attribute activates automatically on that switch — guarded by the `DPA_HREF !== "/trust#dpa"` check). Document content is a business/counsel deliverable, pending. |
+
+### 4. Known-red status
+
+- **`npm run build` (`tsc -b`) — RED.** ~25 pre-existing TypeScript errors remain (waitlist test mock shapes, unused imports). The CI fast-gate runs the build step; policy is **fix-forward** (the errors predate Stage E and are tracked as a dedicated cleanup, not papered over).
+- **`npm run test:coverage` — RED by design.** Thresholds 80/75/80/80 vs the repo's current ~56% statements / ~41% branches. Per D5 this is an informational job (`continue-on-error: true`, `|| true`), explicitly commented in `vite.config.ts` as target gates that must not be loosened to make CI green.
+- **Visual regression — SOFT gate.** Runs on `windows-latest` with `continue-on-error: true` (D6) because baseline drift across OS/font rendering must not fail the pipeline; baseline update is an intentional process, never silent auto-accept.

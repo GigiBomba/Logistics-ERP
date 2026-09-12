@@ -1,7 +1,12 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
+import { useState } from "react"
 import { render, screen, fireEvent } from "@/test-utils"
-import { DeviceList } from "@/components/shared/device-list"
+import { DeviceList, formatDate } from "@/components/shared/device-list"
 import type { DeviceInfo } from "@/types"
+
+afterEach(() => {
+  localStorage.removeItem("operion-locale")
+})
 
 function makeDevice(overrides: Partial<DeviceInfo> = {}): DeviceInfo {
   return {
@@ -83,5 +88,99 @@ describe("DeviceList", () => {
       />
     )
     expect(screen.getByRole("button", { name: /custom action/i })).toBeInTheDocument()
+  })
+
+  it("renders dates localized to the active locale (ro)", () => {
+    const device = makeDevice()
+    const enUS = formatDate(device.created_at, "en-US")
+    const ro = formatDate(device.created_at, "ro")
+    expect(ro).not.toBe(enUS)
+
+    localStorage.setItem("operion-locale", "ro")
+    render(<DeviceList devices={[device]} variant="card" />)
+
+    expect(screen.getByText(ro)).toBeInTheDocument()
+    expect(screen.queryByText(enUS)).not.toBeInTheDocument()
+  })
+
+  it("renders a per-row checkbox when selectable (table variant)", () => {
+    render(
+      <DeviceList
+        devices={[makeDevice()]}
+        variant="table"
+        selectable
+        selectedIds={new Set(["dev-1"])}
+        onSelectionChange={vi.fn()}
+      />
+    )
+
+    const rowCheckbox = screen.getByLabelText("Select device: Driver Phone")
+    expect(rowCheckbox).toBeInTheDocument()
+    expect(rowCheckbox).toBeChecked()
+    expect(screen.getByLabelText("Select all")).toBeInTheDocument()
+  })
+
+  it("does not render checkboxes when selectable is not set", () => {
+    render(<DeviceList devices={[makeDevice()]} variant="table" />)
+    expect(screen.queryByLabelText("Select all")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Select device/i)).not.toBeInTheDocument()
+  })
+
+  it("renders a checkbox on the card variant when selectable", () => {
+    render(
+      <DeviceList
+        devices={[makeDevice()]}
+        variant="card"
+        selectable
+        selectedIds={new Set(["dev-1"])}
+        onSelectionChange={vi.fn()}
+      />
+    )
+    const checkbox = screen.getByLabelText("Select device: Driver Phone")
+    expect(checkbox).toBeInTheDocument()
+    expect(checkbox).toBeChecked()
+  })
+
+  it("calls onSelectionChange when a row checkbox is toggled", () => {
+    const onSelectionChange = vi.fn()
+    render(
+      <DeviceList
+        devices={[makeDevice()]}
+        variant="table"
+        selectable
+        selectedIds={new Set()}
+        onSelectionChange={onSelectionChange}
+      />
+    )
+
+    fireEvent.click(screen.getByLabelText("Select device: Driver Phone"))
+    expect(onSelectionChange).toHaveBeenCalledWith(new Set(["dev-1"]))
+  })
+
+  it("select-all toggles every device in the list", () => {
+    const onSelectionChange = vi.fn()
+    function SelectableList() {
+      const [ids, setIds] = useState<Set<string>>(new Set())
+      return (
+        <DeviceList
+          devices={[makeDevice(), makeDevice({ id: 2, device_id: "dev-2", device_name: "Tablet" })]}
+          variant="table"
+          selectable
+          selectedIds={ids}
+          onSelectionChange={(next) => {
+            setIds(next)
+            onSelectionChange(next)
+          }}
+        />
+      )
+    }
+    render(<SelectableList />)
+
+    fireEvent.click(screen.getByLabelText("Select all"))
+    expect(onSelectionChange).toHaveBeenCalledWith(new Set(["dev-1", "dev-2"]))
+
+    // Second click deselects everything.
+    fireEvent.click(screen.getByLabelText("Select all"))
+    expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
   })
 })

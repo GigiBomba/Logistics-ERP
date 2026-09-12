@@ -18,6 +18,7 @@ import { useAuth } from "@/contexts/auth-provider"
 import { useSessions, useCreateTicket, useUpdateNotificationPreferences, useMfaStatus, useMfaEnroll, useMfaConfirm, useMfaDisable } from "@/services/queries"
 import { toast } from "sonner"
 import type { NotificationPreference } from "@/types"
+import type { MfaEnrollResponse, MfaConfirmResponse } from "@/api/endpoints"
 
 const timezones = [
   "UTC",
@@ -58,6 +59,10 @@ const defaultNotifications: NotificationPreference = {
 }
 
 /* ─── MFA Card (inline in this file to avoid new-file overhead) ─── */
+
+/** Enroll response plus optional backup codes (legacy backends may include them). */
+type EnrollResponse = MfaEnrollResponse & { backup_codes?: string[] }
+
 function MfaCard() {
   const { t } = useLocale()
   const { data: mfaStatus, isLoading: mfaStatusLoading } = useMfaStatus()
@@ -125,7 +130,10 @@ function MfaCard() {
   }
 
   const downloadBackupCodes = () => {
-    const codes = (enrollMutation.data as any)?.backup_codes || (confirmMutation.data as any)?.backup_codes || []
+    const codes =
+      (enrollMutation.data as EnrollResponse | undefined)?.backup_codes ||
+      (confirmMutation.data as MfaConfirmResponse | undefined)?.backup_codes ||
+      []
     if (!codes.length) return
     const blob = new Blob([codes.join("\n")], { type: "text/plain" })
     const url = URL.createObjectURL(blob)
@@ -136,11 +144,15 @@ function MfaCard() {
     URL.revokeObjectURL(url)
   }
 
-  const enrollData = enrollMutation.data as any
+  const enrollData = enrollMutation.data as EnrollResponse | undefined
   const secret = enrollData?.secret || ""
   const otpauthUri = enrollData?.otpauth_uri || ""
+  const qrPayload = enrollData?.qr_payload || ""
 
-  const backupCodes = enrollData?.backup_codes || (confirmMutation.data as any)?.backup_codes || []
+  const backupCodes =
+    enrollData?.backup_codes ||
+    (confirmMutation.data as MfaConfirmResponse | undefined)?.backup_codes ||
+    []
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -249,7 +261,11 @@ function MfaCard() {
                 {/* QR placeholder + manual key */}
                 <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
                   <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-lg bg-white p-2">
-                    <QrCode className="h-24 w-24 text-foreground" />
+                    {qrPayload ? (
+                      <img src={qrPayload} alt={t("mfa.enroll.qrAlt")} className="h-36 w-36" />
+                    ) : (
+                      <QrCode className="h-24 w-24 text-foreground" />
+                    )}
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">{t("mfa.enroll.manualKeyLabel")}</p>

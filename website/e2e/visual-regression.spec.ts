@@ -1,13 +1,20 @@
 import { test, expect } from "@playwright/test"
+import { mockAuthAs, createUser, stabilizeHydration } from "./helpers"
 
 // Visual regression tests using Playwright's built-in screenshot comparison
-// These test 6 key pages across 3 viewports and 1 theme = 18 baseline snapshots
+// These test the key public pages across 3 viewports and 1 theme, plus the
+// authenticated dashboard at desktop size.
 
 const VIEWPORTS = [
   { width: 375, height: 812 },   // Mobile
   { width: 768, height: 1024 },  // Tablet
   { width: 1440, height: 900 },  // Desktop
 ]
+
+// Both themes are rendered for every page. Light snapshot file names keep the
+// existing baselines (`-chromium-win32.png`); dark appends `-dark` so the new
+// baselines land in their own files without touching the light ones.
+const THEMES = ["light", "dark"]
 
 const PAGES = [
   { path: "/", name: "home" },
@@ -16,6 +23,10 @@ const PAGES = [
   { path: "/features", name: "features" },
   { path: "/blog", name: "blog" },
   { path: "/faq", name: "faq" },
+  // /login is public and self-contained: the form renders from local state and
+  // TurnstileWidget is a no-op without VITE_TURNSTILE_SITE_KEY, so no API
+  // mocks are needed.
+  { path: "/login", name: "login" },
 ]
 
 // /blog is data-driven. Without mocks the article fetch races between the
@@ -113,52 +124,97 @@ async function freezeAnimations(page: import("@playwright/test").Page) {
 test.describe("Visual Regression", () => {
   for (const page of PAGES) {
     for (const viewport of VIEWPORTS) {
-      test(`${page.name} at ${viewport.width}x${viewport.height}`, async ({ browser }) => {
-        const context = await browser.newContext({
-          viewport,
-          colorScheme: "light",
+      for (const theme of THEMES) {
+        test(`${page.name} at ${viewport.width}x${viewport.height} (${theme})`, async ({ browser }) => {
+          const context = await browser.newContext({
+            viewport,
+            colorScheme: theme,
+          })
+          // The Node SSR environment (Node ≥21) exposes a global `navigator`
+          // whose `onLine` is `false`, so OfflineDetector server-renders the
+          // offline banner. The real browser reports `onLine: true`, which makes
+          // every page hydration-mismatch and regenerate the tree (flicker in
+          // screenshots). Pin the client to `onLine: false` so the rendered
+          // trees match and screenshots are deterministic.
+          await context.addInitScript(() => {
+            Object.defineProperty(navigator, "onLine", { get: () => false, configurable: true })
+          })
+          const pageObj = await context.newPage()
+          // /blog is data-driven — mock the API (see mockBlogApi above) so the
+          // screenshot shows the article cards deterministically instead of
+          // racing between the loading skeleton and the error state.
+          if (page.path === "/blog") {
+            await mockBlogApi(pageObj)
+          }
+          await pageObj.goto(page.path, { waitUntil: "networkidle" })
+
+          // Wait for the mocked articles to render BEFORE freezing fonts: the
+          // cards are async, so fonts.ready would otherwise resolve before Inter
+          // is used and the webfont swap would reflow the layout mid-screenshot.
+          if (page.path === "/blog") {
+            await expect(pageObj.getByRole("heading", { name: MOCK_BLOG_POSTS[0].title })).toBeVisible()
+          }
+
+          // /waitlist has a JS rAF-driven AnimatedCounter (setInterval ~16ms over
+          // 1500ms) that CSS cannot stop. Scroll it into view and give it a fixed
+          // 1800ms to settle at its target. MUST run before freezeAnimations:
+          // the scroll triggers whileInView entrance animations, which freeze
+          // then finishes — otherwise they drift mid-screenshot.
+          if (page.path === "/waitlist") {
+            const counter = pageObj.locator("span.font-semibold.text-white.tabular-nums").first()
+            await counter.scrollIntoViewIfNeeded()
+            await pageObj.waitForTimeout(1800)
+          }
+
+          // /login is client-rendered (not prerendered — see playwright.config.ts).
+          // Wait for the form so the screenshot never catches the empty SPA shell
+          // and freezeAnimations can settle the form's motion entrance.
+          if (page.path === "/login") {
+            await expect(pageObj.locator("#email")).toBeVisible()
+          }
+
+          await freezeAnimations(pageObj)
+
+          const themeSuffix = theme === "dark" ? "-dark" : ""
+          await expect(pageObj).toHaveScreenshot(`${page.name}-${viewport.width}x${viewport.height}${themeSuffix}.png`)
+          await context.close()
         })
-        // The Node SSR environment (Node ≥21) exposes a global `navigator`
-        // whose `onLine` is `false`, so OfflineDetector server-renders the
-        // offline banner. The real browser reports `onLine: true`, which makes
-        // every page hydration-mismatch and regenerate the tree (flicker in
-        // screenshots). Pin the client to `onLine: false` so the rendered
-        // trees match and screenshots are deterministic.
-        await context.addInitScript(() => {
-          Object.defineProperty(navigator, "onLine", { get: () => false, configurable: true })
-        })
-        const pageObj = await context.newPage()
-        // /blog is data-driven — mock the API (see mockBlogApi above) so the
-        // screenshot shows the article cards deterministically instead of
-        // racing between the loading skeleton and the error state.
-        if (page.path === "/blog") {
-          await mockBlogApi(pageObj)
-        }
-        await pageObj.goto(page.path, { waitUntil: "networkidle" })
-
-        // Wait for the mocked articles to render BEFORE freezing fonts: the
-        // cards are async, so fonts.ready would otherwise resolve before Inter
-        // is used and the webfont swap would reflow the layout mid-screenshot.
-        if (page.path === "/blog") {
-          await expect(pageObj.getByRole("heading", { name: MOCK_BLOG_POSTS[0].title })).toBeVisible()
-        }
-
-        // /waitlist has a JS rAF-driven AnimatedCounter (setInterval ~16ms over
-        // 1500ms) that CSS cannot stop. Scroll it into view and give it a fixed
-        // 1800ms to settle at its target. MUST run before freezeAnimations:
-        // the scroll triggers whileInView entrance animations, which freeze
-        // then finishes — otherwise they drift mid-screenshot.
-        if (page.path === "/waitlist") {
-          const counter = pageObj.locator("span.font-semibold.text-white.tabular-nums").first()
-          await counter.scrollIntoViewIfNeeded()
-          await pageObj.waitForTimeout(1800)
-        }
-
-        await freezeAnimations(pageObj)
-
-        await expect(pageObj).toHaveScreenshot(`${page.name}-${viewport.width}x${viewport.height}.png`)
-        await context.close()
-      })
+      }
     }
+  }
+})
+
+test.describe("Dashboard visual regression", () => {
+  for (const theme of THEMES) {
+    test.describe(`dashboard theme ${theme}`, () => {
+      test.use({ viewport: { width: 1440, height: 900 }, colorScheme: theme })
+
+      test(`dashboard at 1440x900 (${theme})`, async ({ page }) => {
+        stabilizeHydration(page)
+
+        // Broad data-endpoint stub — exact pattern from
+        // critical/public-navigation.spec.ts. Auth endpoints fall through to
+        // mockAuthAs (registered AFTER this route, so it matches first) and every
+        // other /api/v1/** call returns [].
+        await page.route("**/api/v1/**", async (route) => {
+          const url = route.request().url()
+          if (url.includes("/api/v1/auth/refresh") || url.includes("/api/v1/auth/me")) {
+            await route.continue()
+            return
+          }
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) })
+        })
+        await mockAuthAs(page, createUser("owner"))
+
+        await page.goto("/dashboard", { waitUntil: "networkidle" })
+        await expect(page).toHaveURL(/\/dashboard$/, { timeout: 15000 })
+        await expect(page.getByRole("heading", { name: /welcome back/i }).first()).toBeVisible()
+
+        await freezeAnimations(page)
+
+        const themeSuffix = theme === "dark" ? "-dark" : ""
+        await expect(page).toHaveScreenshot(`dashboard-1440x900${themeSuffix}.png`)
+      })
+    })
   }
 })

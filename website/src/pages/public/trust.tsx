@@ -32,6 +32,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CtaBanner } from "@/components/shared/cta-banner"
 
+// DPA content dependency (business/counsel deliverable; deferred): the signed
+// Operion DPA PDF is not yet available. Per approved D4 the download wiring
+// ships regardless with an honest fallback to the #dpa section below. When
+// counsel delivers website/public/dpa/operion-dpa.pdf, change DPA_HREF to
+// "/dpa/operion-dpa.pdf" — the `download` attribute then activates
+// automatically (it is guarded by the DPA_HREF !== "/trust#dpa" check).
+const DPA_HREF = "/trust#dpa"
+
 const securityOverview = [
   {
     icon: Lock,
@@ -265,6 +273,11 @@ export default function TrustPage() {
                   <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
                     {t("trust.dpaContent")}
                   </p>
+                  <Button variant="outline" asChild className="mt-4">
+                    <a href={DPA_HREF} download={DPA_HREF !== "/trust#dpa"}>
+                      {t("trust.dpaDownload")}
+                    </a>
+                  </Button>
                 </div>
               </div>
             </CardContent>

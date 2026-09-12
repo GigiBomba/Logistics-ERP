@@ -51,7 +51,7 @@ describe("SeoHead", () => {
     it("sets og:image with default when not provided", () => {
       render(<SeoHead {...baseProps} />)
       const meta = document.querySelector('meta[property="og:image"]')
-      expect(meta).toHaveAttribute("content", "https://operion.com/og-image.png")
+      expect(meta).toHaveAttribute("content", "https://operionerp.xyz/logo3.png")
     })
 
     it("sets og:image with custom ogImage prop", () => {
@@ -119,7 +119,7 @@ describe("SeoHead", () => {
     it("sets twitter:image", () => {
       render(<SeoHead {...baseProps} />)
       const meta = document.querySelector('meta[name="twitter:image"]')
-      expect(meta).toHaveAttribute("content", "https://operion.com/og-image.png")
+      expect(meta).toHaveAttribute("content", "https://operionerp.xyz/logo3.png")
     })
   })
 
@@ -200,7 +200,7 @@ describe("SeoHead", () => {
     it("uses default ogImage when not provided", () => {
       render(<SeoHead title="No OG Image" description="Desc" />)
       const ogImage = document.querySelector('meta[property="og:image"]')
-      expect(ogImage).toHaveAttribute("content", "https://operion.com/og-image.png")
+      expect(ogImage).toHaveAttribute("content", "https://operionerp.xyz/logo3.png")
     })
 
     it("uses default ogType when not provided", () => {

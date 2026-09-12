@@ -1,6 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { NotificationCenter, MOCK_NOTIFICATIONS } from "@/components/shared/notification-center"
+
+afterEach(() => {
+  localStorage.removeItem("operion-locale")
+})
 
 vi.mock("motion/react", () => {
   const MotionComponent = (props: any) => {
@@ -264,6 +268,27 @@ describe("NotificationCenter", () => {
     // Notifications have relative time labels like "15m ago", "2h ago", etc.
     // n1 is 15min ago → "15m ago"
     expect(screen.getByText("15m ago")).toBeInTheDocument()
+  })
+
+  it("formats the fallback date for stale notifications in the active locale (ro)", () => {
+    const staleDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString() // 10 days ago
+    const notifications = [
+      { ...MOCK_NOTIFICATIONS[0], read: true, created_at: staleDate },
+    ]
+    const expectedEn = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(staleDate))
+    const expectedRo = new Intl.DateTimeFormat("ro", { month: "short", day: "numeric" }).format(new Date(staleDate))
+    expect(expectedRo).not.toBe(expectedEn)
+
+    localStorage.setItem("operion-locale", "ro")
+    render(
+      <NotificationCenter
+        {...getDefaultProps({ notifications, unreadCount: 0 })}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }))
+
+    expect(screen.getByText(expectedRo)).toBeInTheDocument()
+    expect(screen.queryByText(expectedEn)).not.toBeInTheDocument()
   })
 
   it("renders a type icon (svg) for each notification", () => {

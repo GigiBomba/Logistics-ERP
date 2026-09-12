@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@/test-utils"
+import { render, screen, waitFor, mockAxiosResponse } from "@/test-utils"
 import EntriesTab from "@/pages/admin/waitlist/entries-tab"
 import { waitlistApi } from "@/api/endpoints"
 import type { WaitlistPageResponse, WaitlistEntry } from "@/api/endpoints"
@@ -91,14 +91,18 @@ const mockEntries = [
 describe("EntriesTab", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(waitlistApi.listEntries).mockResolvedValue({
-      data: makePageResponse(mockEntries, { total: 3 }),
-    })
-    vi.mocked(waitlistApi.deleteEntry).mockResolvedValue({})
-    vi.mocked(waitlistApi.updateEntry).mockResolvedValue({ data: makeEntry() })
-    vi.mocked(waitlistApi.exportCsv).mockResolvedValue({
-      data: new Blob(["a,b,c"], { type: "text/csv" }),
-    })
+    vi.mocked(waitlistApi.listEntries).mockResolvedValue(
+      mockAxiosResponse(makePageResponse(mockEntries, { total: 3 }))
+    )
+    vi.mocked(waitlistApi.deleteEntry).mockResolvedValue(
+      mockAxiosResponse(undefined)
+    )
+    vi.mocked(waitlistApi.updateEntry).mockResolvedValue(
+      mockAxiosResponse(makeEntry())
+    )
+    vi.mocked(waitlistApi.exportCsv).mockResolvedValue(
+      mockAxiosResponse(new Blob(["a,b,c"], { type: "text/csv" }))
+    )
     // Mock window.URL.createObjectURL and revokeObjectURL
     vi.spyOn(window.URL, "createObjectURL").mockReturnValue("blob:test")
     vi.spyOn(window.URL, "revokeObjectURL").mockImplementation(() => {})
@@ -162,9 +166,9 @@ describe("EntriesTab", () => {
   describe("pagination", () => {
     it("renders pagination info showing entry counts", async () => {
       render(<EntriesTab />)
-      // t() does not interpolate, so the literal translation string is shown
+      // The component interpolates {count} and {total} via .replace()
       expect(
-        await screen.findByText("Showing {count} of {total} entries")
+        await screen.findByText(/Showing 3 of 3 entries/)
       ).toBeInTheDocument()
     })
 
@@ -176,9 +180,9 @@ describe("EntriesTab", () => {
           email: `c${i + 1}@test.com`,
         })
       )
-      vi.mocked(waitlistApi.listEntries).mockResolvedValue({
-        data: makePageResponse(manyEntries, { total: 30 }),
-      })
+      vi.mocked(waitlistApi.listEntries).mockResolvedValue(
+        mockAxiosResponse(makePageResponse(manyEntries, { total: 30 }))
+      )
       render(<EntriesTab />)
       await screen.findByText("Company 1")
       // Should show pagination — look for page 2 button
@@ -214,7 +218,6 @@ describe("EntriesTab", () => {
       searchInput.focus()
       // The clear button only appears when hasFilters is true
       // We need to set a filter first
-      const statusSelect = screen.getByDisplayValue("All statuses")
       // Change status to trigger filter
       // We'll check that clear button isn't present initially
       expect(screen.queryByText("Clear")).not.toBeInTheDocument()
@@ -253,10 +256,6 @@ describe("EntriesTab", () => {
     it("opens dropdown actions menu when more button is clicked", async () => {
       render(<EntriesTab />)
       await screen.findByText("Alpha Transport")
-      // Find the MoreHorizontal button in the first data row (not in nav/pagination)
-      const moreButton = document.querySelector<HTMLButtonElement>(
-        'tr button[aria-label=""], tr button:has(svg.lucide-more-horizontal)'
-      )
       // Fallback: find the button within the table body that has an SVG child
       const rows = document.querySelectorAll("tbody tr")
       expect(rows.length).toBeGreaterThan(0)
@@ -286,10 +285,10 @@ describe("EntriesTab", () => {
       expect(
         await screen.findByText("Delete Entry")
       ).toBeInTheDocument()
-      // t() does not interpolate, so literal template text is shown
+      // The component interpolates {name} with the clicked entry's company name
       expect(
         screen.getByText(
-          'Are you sure you want to delete the entry for "{name}"? This action cannot be undone.'
+          /Are you sure you want to delete the entry for "Alpha Transport"\? This action cannot be undone\./
         )
       ).toBeInTheDocument()
     })
@@ -297,9 +296,9 @@ describe("EntriesTab", () => {
 
   describe("empty state", () => {
     it("shows no entries message when list is empty", async () => {
-      vi.mocked(waitlistApi.listEntries).mockResolvedValue({
-        data: makePageResponse([], { total: 0 }),
-      })
+      vi.mocked(waitlistApi.listEntries).mockResolvedValue(
+        mockAxiosResponse(makePageResponse([], { total: 0 }))
+      )
       render(<EntriesTab />)
       expect(
         await screen.findByText("No entries found.")
