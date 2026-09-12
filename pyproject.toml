@@ -122,6 +122,19 @@ markers = [
     "postgresql: tests that require a running PostgreSQL instance",
     "visual: visual regression / screenshot comparison tests",
     "visual_slow: visual tests that take >2 seconds",
+    # Workflow Integrity suite markers (registered here so --strict-markers
+    # passes; mirrored in tests/workflow_integrity/pytest.ini, which is inert
+    # under the root config — run with `-c` to activate it).
+    "workflow_integrity: Workflow integrity test",
+    "golden_flow: Golden-path workflow test",
+    "friction: Friction rule violation test",
+    "financial_invariant: Financial invariant assertion test",
+    "state_machine: State machine transition test",
+    "parity: Cross-platform parity test",
+    "argo: ARGO autonomy workflow test",
+    "chaos_workflow: Chaos / resilience workflow test",
+    "telemetry: Telemetry assertion test",
+    "historical: Historical data immutability test",
 ]
 
 # ──────────────────────────────────────────────────────────────
