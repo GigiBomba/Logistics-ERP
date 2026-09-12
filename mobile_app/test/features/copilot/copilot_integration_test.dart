@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/copilot_endpoints.dart';
+import 'package:operion_mobile/core/network/websocket_client.dart';
 import 'package:operion_mobile/features/copilot/models/copilot_models.dart';
 
 /// Creates an [ApiClient] that resolves every request with a canned response.
@@ -499,6 +500,39 @@ void main() {
       );
 
       expect(stream, isA<Stream>());
+    });
+
+    test('watchPlanTimeline builds /api/v1/copilot/ws/{conversationId}', () {
+      final client = ApiClient.create(
+        baseUrl: 'https://test.com',
+        getAccessToken: () async => null,
+      );
+      final endpoints = CopilotEndpoints(client);
+
+      Uri? capturedUri;
+      final wsClient = WebSocketClient(
+        channelFactory: (uri) {
+          capturedUri = uri;
+          throw Exception('connection refused (test)');
+        },
+      );
+
+      endpoints.watchPlanTimeline(
+        baseUrl: 'https://test.com',
+        conversationId: 'conv-1',
+        token: 'test-token',
+        wsClient: wsClient,
+      );
+
+      // The endpoint must target the real backend route
+      // `@router.websocket("/ws/{conversation_id}")` under `/copilot`.
+      expect(capturedUri, isNotNull);
+      expect(capturedUri!.scheme, 'wss');
+      expect(capturedUri!.path, contains('/api/v1/copilot/ws/conv-1'));
+      // The token is appended by WebSocketClient.connect, not the endpoint.
+      expect(capturedUri!.queryParameters['token'], 'test-token');
+
+      wsClient.dispose();
     });
   });
 }

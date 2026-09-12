@@ -32,6 +32,12 @@ abstract final class CopilotEventKeys {
   /// breaker (mapped from HTTP 503 in `CopilotStateNotifier`).
   static const String circuitOpenMessageKey = 'copilot.error.circuit_open';
 
+  /// Local `message_key` surfaced when the user tries to confirm a Level 2+
+  /// plan while offline (§32.3) — the request is never fired and the user is
+  /// told to reconnect to confirm.
+  static const String offlineConfirmMessageKey =
+      'copilot.confirm.offline_required';
+
   /// Local `summary_key` convention for a chat turn that completes an insight.
   static const String insightReadySummaryKey = 'copilot.summary.insight_ready';
 }

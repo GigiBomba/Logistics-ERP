@@ -224,6 +224,8 @@ class AppLocalizations {
   String get copilot_level3_hint => _get('copilot_level3_hint');
   String copilot_level3_phrase(String phrase) =>
       _get('copilot_level3_phrase').replaceAll('{phrase}', phrase);
+  String get copilot_confirm_offline_required =>
+      _get('copilot.confirm.offline_required');
 
   // ── Profile screen ──────────────────────────────────────────────
   String get profile_personalInfo => _get('profile_personalInfo');
@@ -419,6 +421,7 @@ class AppLocalizations {
       'copilot_level3_warning': 'Această acțiune este IREVERSIBILĂ. Tastează fraza de confirmare pentru a continua.',
       'copilot_level3_hint': 'Tastează fraza de confirmare...',
       'copilot_level3_phrase': 'Tastează: "{phrase}"',
+      'copilot.confirm.offline_required': 'Ești offline. Reconectează-te pentru a confirma această acțiune.',
       'profile_personalInfo': 'Informații personale',
       'profile_driverInfo': 'Informații șofer',
       'profile_quickLinks': 'Linkuri rapide',
@@ -596,6 +599,7 @@ class AppLocalizations {
       'copilot_level3_warning': 'This action is IRREVERSIBLE. Type the confirmation phrase to continue.',
       'copilot_level3_hint': 'Type the confirmation phrase...',
       'copilot_level3_phrase': 'Type: "{phrase}"',
+      'copilot.confirm.offline_required': 'You are offline. Reconnect to confirm this action.',
       'profile_personalInfo': 'Personal Information',
       'profile_driverInfo': 'Driver Information',
       'profile_quickLinks': 'Quick Links',

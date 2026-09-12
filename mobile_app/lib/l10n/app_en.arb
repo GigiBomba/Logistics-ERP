@@ -161,6 +161,7 @@
   "copilot_level3_hint": "Type the confirmation phrase...",
   "copilot_level3_phrase": "Type: \"{phrase}\"",
   "copilot_level3_warning": "This action is IRREVERSIBLE. Type the confirmation phrase to continue.",
+  "copilot.confirm.offline_required": "You are offline. Reconnect to confirm this action.",
 
   "general_cancel": "Cancel",
   "general_confirm": "Confirm",

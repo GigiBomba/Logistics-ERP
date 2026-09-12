@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_providers.dart';
 import '../../../core/network/endpoints/copilot_endpoints.dart';
 import '../../../core/sync/action_queue.dart';
+import '../../../core/sync/connectivity_monitor.dart';
 import '../models/copilot_models.dart';
 import '../network/copilot_retry_policy.dart';
 import '../notifications/copilot_notification_service.dart';
@@ -87,9 +91,23 @@ class CopilotError extends CopilotMobileState {
 /// 3. Timeline updates rebuild only the changed step widget, not the whole screen
 class CopilotStateNotifier extends StateNotifier<CopilotMobileState> {
   final CopilotEndpoints _endpoints;
+
+  /// Synchronous connectivity probe (§32.3) — returns `true` when the device
+  /// is online. `null` disables the pre-flight gate (used by tests that build
+  /// the notifier without a connectivity source).
+  final bool Function()? _isOnline;
+
   String? _conversationId;
 
-  CopilotStateNotifier(this._endpoints) : super(const CopilotIdle());
+  /// Active subscription to the plan-execution timeline WebSocket (§12.1).
+  ///
+  /// `null` when no timeline stream is being observed. Cancelled before a new
+  /// [watchTimeline] subscription is established and in [reset] / [dispose].
+  StreamSubscription<Map<String, dynamic>>? _timelineSubscription;
+
+  CopilotStateNotifier(this._endpoints, {bool Function()? isOnline})
+      : _isOnline = isOnline,
+        super(const CopilotIdle());
 
   String? get conversationId => _conversationId;
 
@@ -126,10 +144,23 @@ class CopilotStateNotifier extends StateNotifier<CopilotMobileState> {
 
   /// Confirm a plan that's awaiting confirmation.
   ///
+  /// §32.3: confirming a Level 2+ plan while offline is blocked *before* any
+  /// request is fired — the user is told to reconnect first.
+  ///
   /// For Level 3 confirmation, pass the typed [confirmationPhrase].
   Future<void> confirmPlan({String? confirmationPhrase}) async {
     final current = state;
     if (current is! CopilotAwaitingConfirmation) return;
+
+    // Pre-flight offline gate — when we already know the device has no
+    // connectivity, never fire the request.
+    if (_isOnline != null && !_isOnline!()) {
+      state = const CopilotError(
+        messageKey: CopilotEventKeys.offlineConfirmMessageKey,
+      );
+      return;
+    }
+
     state = CopilotExecuting(timeline: current.plan.steps);
     try {
       await _endpoints.confirmPlan(
@@ -138,6 +169,14 @@ class CopilotStateNotifier extends StateNotifier<CopilotMobileState> {
         confirmationPhrase: confirmationPhrase,
       );
       state = const CopilotCompleted(summaryKey: 'copilot.summary.confirmed');
+    } on DioException catch (e) {
+      // Race: connectivity looked online but the request never reached the
+      // server — surface the reconnect message instead of the generic error.
+      state = CopilotError(
+        messageKey: e.type == DioExceptionType.connectionError
+            ? CopilotEventKeys.offlineConfirmMessageKey
+            : 'copilot.error.unexpected',
+      );
     } catch (e) {
       state = const CopilotError(messageKey: 'copilot.error.unexpected');
     }
@@ -153,6 +192,79 @@ class CopilotStateNotifier extends StateNotifier<CopilotMobileState> {
     } catch (e) {
       state = const CopilotError(messageKey: 'copilot.error.unexpected');
     }
+  }
+
+  /// Observe real-time plan-execution updates for [conversationId] (§12.1).
+  ///
+  /// Call contract: the notifier holds no auth token or API base URL of its
+  /// own — the screen/provider layer that owns the user session must supply
+  /// them:
+  ///
+  /// ```dart
+  /// notifier.watchTimeline(
+  ///   conversationId: conversationId,
+  ///   token: authToken,
+  ///   baseUrl: apiBaseUrl,
+  /// );
+  /// ```
+  ///
+  /// The notifier does not start this itself (e.g. from [confirmPlan]) because
+  /// it cannot derive `token` / `baseUrl`; callers are expected to invoke it
+  /// once a plan enters execution and stop it via [reset].
+  ///
+  /// Each backend `step_update` message (shape `{step_id, status, tool_name,
+  /// timestamp}`) is merged into the current [CopilotExecuting.timeline] by
+  /// step id. The stream is supplementary to the REST snapshot: transport
+  /// errors and stream completion are logged and ignored — they never
+  /// transition the notifier to [CopilotError]. Replaces any previously
+  /// active subscription.
+  void watchTimeline({
+    required String conversationId,
+    required String token,
+    required String baseUrl,
+  }) {
+    _timelineSubscription?.cancel();
+    _timelineSubscription = _endpoints
+        .watchPlanTimeline(
+          baseUrl: baseUrl,
+          conversationId: conversationId,
+          token: token,
+        )
+        .listen(
+          _handleTimelineEvent,
+          onError: (Object error) {
+            // Non-fatal: timeline is a progressive enhancement over the
+            // REST snapshot, never a source of terminal failure.
+            developer.log(
+              'CopilotStateNotifier: timeline stream error — $error',
+              name: 'CopilotStateNotifier',
+            );
+          },
+          onDone: () {
+            developer.log(
+              'CopilotStateNotifier: timeline stream closed',
+              name: 'CopilotStateNotifier',
+            );
+          },
+        );
+  }
+
+  /// Merges a backend `step_update` WS message into the current timeline.
+  void _handleTimelineEvent(Map<String, dynamic> event) {
+    final current = state;
+    if (current is! CopilotExecuting) return;
+    final stepId = event['step_id'];
+    if (stepId is! String) return;
+    final index = current.timeline.indexWhere((s) => s.stepId == stepId);
+    if (index == -1) return;
+    final timeline = [...current.timeline];
+    // Preserve the snapshot's step fields and overlay only what the WS
+    // message carries (status, tool_name, …).
+    timeline[index] = CopilotExecutionStep.fromJson({
+      ...timeline[index].toJson(),
+      ...event,
+    });
+    state = CopilotExecuting(timeline: timeline);
   }
 
   void _handleResponse(CopilotResponse response) {
@@ -174,15 +286,30 @@ class CopilotStateNotifier extends StateNotifier<CopilotMobileState> {
   }
 
   void reset() {
+    _timelineSubscription?.cancel();
+    _timelineSubscription = null;
     _conversationId = null;
     state = const CopilotIdle();
+  }
+
+  @override
+  void dispose() {
+    _timelineSubscription?.cancel();
+    _timelineSubscription = null;
+    super.dispose();
   }
 }
 
 final copilotStateProvider =
     StateNotifierProvider<CopilotStateNotifier, CopilotMobileState>((ref) {
   final endpoints = ref.watch(copilotEndpointsProvider);
-  return CopilotStateNotifier(endpoints);
+  return CopilotStateNotifier(
+    endpoints,
+    // §32.3 — reuse the app's connectivity source (same one the offline
+    // banner is driven by). Read lazily so the monitor is only touched when a
+    // confirmation is actually attempted.
+    isOnline: () => ref.read(connectivityProvider).isOnline,
+  );
 });
 
 // ── Offline conversation cache (§32.3) ────────────────────────────────────

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/copilot_endpoints.dart';
+import 'package:operion_mobile/core/network/websocket_client.dart';
 import 'package:operion_mobile/features/copilot/models/copilot_models.dart';
 import 'package:operion_mobile/features/copilot/providers/copilot_providers.dart';
 
@@ -18,6 +21,21 @@ class _FakeCopilotEndpoints extends CopilotEndpoints {
   CopilotResponse Function()? onChat;
   Map<String, dynamic> Function()? onConfirmPlan;
   Map<String, dynamic> Function()? onCancelPlan;
+
+  /// Broadcast controller backing [watchPlanTimeline] — mirrors the real
+  /// endpoint, which wraps a broadcast WebSocket message stream. Tests emit
+  /// backend `step_update` messages into this controller.
+  final timelineController = StreamController<Map<String, dynamic>>.broadcast();
+
+  @override
+  Stream<Map<String, dynamic>> watchPlanTimeline({
+    required String baseUrl,
+    required String conversationId,
+    required String token,
+    WebSocketClient? wsClient,
+  }) {
+    return timelineController.stream;
+  }
 
   @override
   Future<CopilotResponse> chat({
@@ -316,6 +334,104 @@ void main() {
         await notifier.cancelPlan();
 
         expect(notifier.state, isA<CopilotError>());
+      });
+    });
+
+    group('watchTimeline', () {
+      CopilotExecutionStep step(String id, String status) =>
+          CopilotExecutionStep(
+            stepId: id,
+            toolName: 'vehicle.search',
+            status: status,
+          );
+
+      void watch() {
+        notifier.watchTimeline(
+          conversationId: 'conv-1',
+          token: 'token',
+          baseUrl: 'https://test.com',
+        );
+      }
+
+      test('merges step_update events into the CopilotExecuting timeline',
+          () async {
+        notifier.state = CopilotExecuting(timeline: [step('s1', 'pending')]);
+        watch();
+
+        fakeEndpoints.timelineController.add(const {
+          'type': 'step_update',
+          'step_id': 's1',
+          'status': 'running',
+          'tool_name': 'vehicle.search',
+          'timestamp': '2026-01-01T00:00:00',
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        final state = notifier.state;
+        expect(state, isA<CopilotExecuting>());
+        final executing = state as CopilotExecuting;
+        expect(executing.timeline.single.status, 'running');
+        // Non-step fields from the snapshot are preserved.
+        expect(executing.timeline.single.toolName, 'vehicle.search');
+      });
+
+      test('ignores events when not in CopilotExecuting', () async {
+        watch();
+
+        fakeEndpoints.timelineController.add(const {
+          'type': 'step_update',
+          'step_id': 's1',
+          'status': 'running',
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        expect(notifier.state, isA<CopilotIdle>());
+      });
+
+      test('calling watchTimeline twice keeps only one active subscription',
+          () async {
+        notifier.state = CopilotExecuting(timeline: [step('s1', 'pending')]);
+        watch();
+        // A second call must replace (not stack) the first subscription.
+        watch();
+
+        var stateChanges = 0;
+        notifier.addListener(
+          (_) => stateChanges++,
+          fireImmediately: false,
+        );
+
+        fakeEndpoints.timelineController.add(const {
+          'type': 'step_update',
+          'step_id': 's1',
+          'status': 'running',
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        // A single event handled by exactly one subscription produces one
+        // state transition — a leaked first subscription would re-merge the
+        // event and fire the listener twice.
+        expect(stateChanges, 1);
+        expect((notifier.state as CopilotExecuting).timeline.single.status,
+            'running');
+      });
+
+      test('reset() cancels the timeline subscription', () async {
+        notifier.state = CopilotExecuting(timeline: [step('s1', 'pending')]);
+        watch();
+        expect(fakeEndpoints.timelineController.hasListener, isTrue);
+
+        notifier.reset();
+
+        expect(fakeEndpoints.timelineController.hasListener, isFalse);
+        // Emitting after reset must not re-enter any state.
+        fakeEndpoints.timelineController.add(const {
+          'type': 'step_update',
+          'step_id': 's1',
+          'status': 'running',
+        });
+        await Future<void>.delayed(Duration.zero);
+        expect(notifier.state, isA<CopilotIdle>());
       });
     });
 

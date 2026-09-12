@@ -161,6 +161,7 @@
   "copilot_level3_hint": "Tastează fraza de confirmare...",
   "copilot_level3_phrase": "Tastează: \"{phrase}\"",
   "copilot_level3_warning": "Această acțiune este IREVERSIBILĂ. Tastează fraza de confirmare pentru a continua.",
+  "copilot.confirm.offline_required": "Ești offline. Reconectează-te pentru a confirma această acțiune.",
 
   "general_cancel": "Anulează",
   "general_confirm": "Confirmă",

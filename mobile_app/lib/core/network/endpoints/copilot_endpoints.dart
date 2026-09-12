@@ -161,28 +161,32 @@ class CopilotEndpoints {
     required String baseUrl,
     required String conversationId,
     required String token,
+    WebSocketClient? wsClient,
   }) {
     final wsBase = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
-    final wsUrl = '$wsBase/api/v1/copilot/plans/$conversationId/timeline/ws';
-    final wsClient = WebSocketClient();
+    // Matches the backend route `@router.websocket("/ws/{conversation_id}")`
+    // under the `/copilot` prefix → /api/v1/copilot/ws/{conversation_id}.
+    // The auth token is appended as `?token=` by [WebSocketClient.connect].
+    final wsUrl = '$wsBase/api/v1/copilot/ws/$conversationId';
+    final client = wsClient ?? WebSocketClient();
     // Fire-and-forget connect — errors surface on the stream.
-    wsClient.connect(wsUrl, token);
+    client.connect(wsUrl, token);
 
     // Automatically dispose the WebSocket client when the stream subscription
     // is cancelled to prevent resource leaks.
-    final stream = wsClient.messages;
+    final stream = client.messages;
     final controller = StreamController<Map<String, dynamic>>.broadcast(
-      onCancel: () => wsClient.dispose(),
+      onCancel: () => client.dispose(),
     );
     stream.listen(
       (data) => controller.add(data),
       onError: (e) {
         controller.addError(e);
-        wsClient.dispose();
+        client.dispose();
       },
       onDone: () {
         controller.close();
-        wsClient.dispose();
+        client.dispose();
       },
     );
     return controller.stream;
