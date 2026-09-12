@@ -94,6 +94,13 @@ CREATE INDEX IF NOT EXISTS idx_trips_deleted ON trips(deleted_at);
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS month TEXT GENERATED ALWAYS AS (SUBSTRING(created_at, 1, 7)) STORED;
 CREATE INDEX IF NOT EXISTS idx_trips_month ON trips(month);
 
+-- Soft-delete scope (Database_Rework P0.7): the following 9 tables intentionally
+-- do NOT carry deleted_at — audit/operational/current-state semantics; parity with
+-- db_manager._run_column_migrations (SQLite side excludes the same tables):
+-- email_logs, invoice_reminders, tacho_imports, tacho_driver_activity,
+-- tacho_vehicle_data, driver_truck_assignments, trip_status_history,
+-- operation_events, alerts.
+
 -- ── Invoices ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS invoices (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -102,6 +109,16 @@ CREATE TABLE IF NOT EXISTS invoices (
     issue_date TEXT,
     due_date TEXT,
     total_amount NUMERIC(12,2),
+    -- Invoice financial breakdown columns.  Previously added only by
+    -- _apply_pg_extra_ddl AFTER Alembic ran (ordering defect); now they exist
+    -- at CREATE time so the n7f8a9b0c1d4 migration's ALTERs find them.
+    -- exchange_rate is NUMERIC(8,6) (not 12,6) by design.
+    subtotal_net NUMERIC(12,2) DEFAULT 0,
+    total_vat NUMERIC(12,2) DEFAULT 0,
+    total_gross NUMERIC(12,2) DEFAULT 0,
+    exchange_rate NUMERIC(8,6) DEFAULT 1.0,
+    amount_paid NUMERIC(12,2) DEFAULT 0,
+    amount_remaining NUMERIC(12,2) DEFAULT 0,
     status TEXT,
     updated_at TIMESTAMPTZ,
     company_id INTEGER,
@@ -141,6 +158,7 @@ CREATE TABLE IF NOT EXISTS proforma_invoices (
     logo_path TEXT DEFAULT '',
     signature_path TEXT DEFAULT '',
     stamp_path TEXT DEFAULT '',
+    pdf_path TEXT DEFAULT '',
     company_color TEXT DEFAULT '#6366f1',
     created_at TEXT,
     updated_at TIMESTAMPTZ,
@@ -469,6 +487,24 @@ CREATE TABLE IF NOT EXISTS drivers (
 CREATE INDEX IF NOT EXISTS idx_drivers_active ON drivers(is_active);
 CREATE INDEX IF NOT EXISTS idx_drivers_company ON drivers(company_id);
 CREATE INDEX IF NOT EXISTS idx_drivers_deleted ON drivers(deleted_at);
+
+-- Trips -> drivers/trucks FK constraints (Database_Rework P0.8).
+-- Created ONLY when absent so a validated state (convalidated=true) set by
+-- scripts/import_to_pg.py survives application reboots. Dropping and re-adding
+-- is an explicit repair path only (not part of normal boot).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                   WHERE constraint_name = 'fk_trips_driver' AND table_name = 'trips') THEN
+        ALTER TABLE trips ADD CONSTRAINT fk_trips_driver
+            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                   WHERE constraint_name = 'fk_trips_truck' AND table_name = 'trips') THEN
+        ALTER TABLE trips ADD CONSTRAINT fk_trips_truck
+            FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE SET NULL NOT VALID;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -900,7 +936,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     date TEXT,
     category TEXT,
     description TEXT,
-    amount DOUBLE PRECISION,
+    amount NUMERIC(12,2),
     company_id INTEGER,
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
@@ -1190,18 +1226,22 @@ CREATE TRIGGER trg_pipeline_runs_status_check_upd
 -- §TRIGGERS: updated_at stamping for the offline-first sync layer (Phase 0)
 -- Mirrors the SQLite triggers in database/schema.py.  Every syncable table
 -- gets a BEFORE UPDATE trigger that stamps the canonical UTC timestamp
--- (seconds precision + Z suffix) into updated_at, plus a BEFORE INSERT
--- trigger so ``updated_at`` is never NULL (LWW + delta-pull invariant).
+-- (seconds precision) into updated_at, plus a BEFORE INSERT trigger so
+-- ``updated_at`` is never NULL (LWW + delta-pull invariant).
 --
--- The shared function emits the canonical string ``YYYY-MM-DDTHH:MM:SSZ``
--- (to_char) so it works uniformly for both the legacy TEXT updated_at
--- columns and the new TIMESTAMPTZ ones.  clock_timestamp() is statement
--- time — semantic parity with SQLite's strftime('now').
+-- Canonical storage is TIMESTAMPTZ at seconds precision: every
+-- trigger-bearing table below declares ``updated_at TIMESTAMPTZ``.
+-- stamp_updated_at() assigns a native timestamptz via
+-- ``date_trunc('second', clock_timestamp())`` — an absolute instant that is
+-- session-TimeZone-independent, so a non-UTC session cannot corrupt it.
+-- Reading it back as ``updated_at AT TIME ZONE 'UTC'`` yields the canonical
+-- ``YYYY-MM-DDTHH:MM:SSZ`` (UTC, seconds) format.  clock_timestamp() is
+-- statement time — semantic parity with SQLite's strftime('now').
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION stamp_updated_at() RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at := to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+    NEW.updated_at := date_trunc('second', clock_timestamp());
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -1512,7 +1552,7 @@ CREATE TABLE IF NOT EXISTS freight_negotiations (
     provider_load_id TEXT NOT NULL,
     direction TEXT NOT NULL DEFAULT 'inbound',
     status TEXT NOT NULL DEFAULT 'offered',
-    amount_eur DOUBLE PRECISION,
+    amount_eur NUMERIC(12,2),
     currency TEXT NOT NULL DEFAULT 'EUR',
     counterparty_name TEXT DEFAULT '',
     counterparty_id TEXT DEFAULT '',

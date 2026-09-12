@@ -7,8 +7,11 @@ is the single source of truth for the canonical format:
     ``YYYY-MM-DDTHH:MM:SSZ``  (UTC, seconds precision, ``Z`` suffix)
 
 SQLite triggers use the equivalent SQL expression
-``strftime('%Y-%m-%dT%H:%M:%SZ','now')``; PostgreSQL triggers use
-``to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')``.
+``strftime('%Y-%m-%dT%H:%M:%SZ','now')``; PostgreSQL triggers stamp a native
+``TIMESTAMPTZ`` at seconds precision via
+``date_trunc('second', clock_timestamp())`` (session-TZ-independent; read
+back as ``updated_at AT TIME ZONE 'UTC'`` to get the canonical ``...Z``
+string).
 """
 
 from __future__ import annotations

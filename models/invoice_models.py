@@ -3,21 +3,22 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import date, datetime
+from decimal import Decimal
 from .common import ServiceResult, UndoToken
 
 
 class InvoiceLineItem(BaseModel):
     description: str
-    quantity: float = 1.0
+    quantity: Decimal = Decimal("1.0")
     unit_of_measure: str = "buc"  # buc, kg, km, l, ore, etc.
-    unit_price: float
-    discount_percent: float = 0.0
-    discount_amount: float = 0.0
-    taxable_amount: Optional[float] = None  # net after discount
-    vat_rate: float = 19.0  # percentage
-    total_net: Optional[float] = None  # net total for this line
-    vat_amount: Optional[float] = None
-    line_total: Optional[float] = None  # gross total for this line
+    unit_price: Decimal
+    discount_percent: Decimal = Decimal("0")
+    discount_amount: Decimal = Decimal("0")
+    taxable_amount: Optional[Decimal] = None  # net after discount
+    vat_rate: Decimal = Decimal("19.0")  # percentage
+    total_net: Optional[Decimal] = None  # net total for this line
+    vat_amount: Optional[Decimal] = None
+    line_total: Optional[Decimal] = None  # gross total for this line
 
 
 INVOICE_TYPES = [
@@ -53,7 +54,7 @@ class InvoiceCreate(BaseModel):
     invoice_date: date
     due_date: date
     currency: str = "EUR"
-    exchange_rate: float = 1.0
+    exchange_rate: Decimal = Decimal("1.0")
     invoice_type: str = "invoice"
     line_items: list[InvoiceLineItem] = []
     notes: str = ""
@@ -79,12 +80,12 @@ class InvoiceUpdate(BaseModel):
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
     currency: Optional[str] = None
-    exchange_rate: Optional[float] = None
+    exchange_rate: Optional[Decimal] = None
     invoice_type: Optional[str] = None
     line_items: Optional[list[InvoiceLineItem]] = None
     notes: Optional[str] = None
     status: Optional[str] = None
-    amount_paid: Optional[float] = None
+    amount_paid: Optional[Decimal] = None
 
 
 class InvoiceFinalizeRequest(BaseModel):
@@ -103,14 +104,14 @@ class InvoiceResult(BaseModel):
     invoice_date: date
     due_date: date
     currency: str
-    exchange_rate: float = 1.0
+    exchange_rate: Decimal = Decimal("1.0")
     invoice_type: str = "invoice"
     line_items: list[InvoiceLineItem] = []
-    subtotal_net: float
-    total_vat: float
-    total_gross: float
-    amount_paid: float = 0.0
-    amount_remaining: float = 0.0
+    subtotal_net: Decimal
+    total_vat: Decimal
+    total_gross: Decimal
+    amount_paid: Decimal = Decimal("0")
+    amount_remaining: Decimal = Decimal("0")
     status: str = "draft"
     notes: str
     pdf_path: Optional[str] = None

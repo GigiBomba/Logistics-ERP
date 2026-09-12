@@ -188,16 +188,40 @@ class RemoteDispatchService:
         return self.update_trip_status(trip_id, new_status)
 
     def bulk_update_status(self, trip_ids, status: str) -> dict:
-        """Bulk status change composed from the single-trip PATCH endpoint.
+        """Bulk status change via ``POST /dispatch/trips/bulk-status`` (B5).
 
-        No dedicated bulk endpoint exists, so each trip is transitioned via
-        ``PATCH /dispatch/trips/{id}/status`` (existing endpoint).
-
-        Returns ``{"updated": n, "failed": m}``.
+        A single bulk POST with ``{"trip_ids": [...], "status": ...}``
+        replaces N sequential per-trip PATCH calls.  The returned
+        ``{"updated": n, "failed": m}`` counts are built from the response's
+        ``updated``/``failed`` lists.  When the bulk endpoint is unavailable
+        (missing route, HTTP error, malformed response, exception) this falls
+        back to the existing per-trip ``PATCH`` loop so behavior is never
+        worse than before.
         """
+        ids = [int(i) for i in (trip_ids or [])]
+        try:
+            resp = self._api._post(
+                "/api/v1/dispatch/trips/bulk-status",
+                json_data={"trip_ids": ids, "status": status},
+            )
+            if isinstance(resp, dict) and (
+                "updated" in resp or "failed" in resp
+            ):
+                updated = len(resp.get("updated") or [])
+                failed = len(resp.get("failed") or [])
+                return {"updated": updated, "failed": failed}
+            logger.warning(
+                "dispatch: bulk_update_status unexpected response %r; "
+                "falling back to per-trip", resp,
+            )
+        except Exception:
+            logger.warning(
+                "dispatch: bulk_update_status bulk endpoint failed; "
+                "falling back to per-trip loop", exc_info=True,
+            )
         updated = 0
         failed = 0
-        for trip_id in trip_ids or []:
+        for trip_id in ids:
             result = self.update_trip_status(trip_id, status)
             if result.get("trip") is not None:
                 updated += 1

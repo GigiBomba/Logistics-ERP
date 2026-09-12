@@ -112,13 +112,21 @@ class RouteRepository(BaseRepository):
         )
         return row["stops_json"] if row else None
 
-    def get_by_trip_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
-        """Fetch the route associated with a trip via route_history_v2_id."""
+    def get_by_trip_id(self, trip_id: int, company_id=None) -> Optional[Dict[str, Any]]:
+        """Fetch the route associated with a trip via route_history_v2_id.
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        query explicitly; when omitted the repository falls back to the
+        tenant-context filter (desktop/local path).  The company filter is
+        applied to BOTH sides of the JOIN (``route_history_v2`` and
+        ``trips``) so a route can never be returned for a trip of another
+        company.
+        """
         return self._fetchone(
             f"""SELECT r.* FROM {self.TABLE} r
                 JOIN trips t ON t.route_history_v2_id = r.id
-                WHERE t.id = ? {self._company_filter('r')}""",
-            (trip_id,) + self._company_params(),
+                WHERE t.id = ? {self._company_filter_for(company_id, 'r')} {self._company_filter_for(company_id, 't')}""",
+            (trip_id,) + self._company_params_for(company_id) + self._company_params_for(company_id),
         )
 
     def get_by_truck(self, truck_id: str) -> List[Dict[str, Any]]:

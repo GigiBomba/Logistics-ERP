@@ -8,9 +8,10 @@ other's tenant filters.
 Auto-commit is OFF by default (``commit=False``).  Services own transaction
 boundaries via the ``transaction()`` context manager.
 
-``Decimal`` parameter values are converted to ``float`` for SQLite (which
-does not support Decimal binding) and passed through unchanged for PostgreSQL
-(where ``NUMERIC`` columns accept Decimal natively).
+``Decimal`` parameter values are converted to ``float`` for BOTH SQLite and
+PostgreSQL bindings.  This is safe because the schema's monetary columns are
+bounded (``NUMERIC(12,2)`` / ``NUMERIC(8,6)``, <= 12 significant digits) where
+``float`` round-trips exactly.
 """
 from __future__ import annotations
 
@@ -29,11 +30,12 @@ logger = logging.getLogger("repositories")
 
 
 def _convert_params(params: tuple) -> tuple:
-    """Convert Decimal params to float for SQLite compatibility.
+    """Convert Decimal params to float for all bindings.
 
-    SQLite's ``sqlite3`` driver does not support ``Decimal`` binding.
-    PostgreSQL's ``psycopg2`` handles Decimal natively on ``NUMERIC``
-    columns.
+    Decimal is converted to ``float`` for BOTH SQLite and PostgreSQL
+    bindings.  This is safe because schema monetary columns are bounded
+    (``NUMERIC(12,2)`` / ``NUMERIC(8,6)``, <= 12 significant digits) where
+    ``float`` round-trips exactly.
     """
     return tuple(
         float(p) if isinstance(p, Decimal) else p

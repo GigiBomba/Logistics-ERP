@@ -29,9 +29,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import zipfile
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
+
+from client.remote_services import _resolve_company_id
 
 logger = logging.getLogger("remote_document")
 
@@ -53,6 +56,10 @@ _IMAGE_MIME = {"image/png", "image/jpeg", "image/gif", "image/bmp", "image/tiff"
 
 _DEFAULT_PAGE_SIZE = 100
 
+# Shared scan TTL: expiry/facet consumers reuse one company-scoped full scan
+# for this window instead of each issuing its own multi-page scan (B6).
+_SCAN_TTL_SECONDS = 60
+
 
 class RemoteDocumentService:
     """API-backed substitute for ``services.document_service.DocumentService``.
@@ -65,7 +72,12 @@ class RemoteDocumentService:
 
     def __init__(self, api_client) -> None:
         self._api = api_client
-        self._facet_cache: Optional[Dict[str, Any]] = None
+        # Company-scoped facet cache: ``{f"facets:{company_id}": facets_dict}``
+        # so one tenant's facet lists never leak into another's (B8).
+        self._facet_cache: Dict[str, Dict[str, Any]] = {}
+        # Company-scoped short-TTL scan cache: ``{scan_key: (timestamp, docs)}``
+        # where ``scan_key`` embeds the resolved company id (B6).
+        self._scan_cache: Dict[str, tuple] = {}
 
     # ── Response normalisation ────────────────────────────────────────
     # The backend serialises ``tags`` as a JSON list and
@@ -119,44 +131,68 @@ class RemoteDocumentService:
             logger.debug("_scan_documents failed", exc_info=True)
         return docs
 
+    def _cached_scan(self, max_pages: int = 10,
+                     page_size: int = _DEFAULT_PAGE_SIZE) -> list[Dict[str, Any]]:
+        """Company-scoped, short-TTL wrapper around :meth:`_scan_documents`.
+
+        ``get_expiring``, ``get_overdue`` and ``_load_facets`` all consume the
+        same cached full scan so a view opening several of these paths issues
+        at most one paginated scan per (company, params) window.  The key
+        embeds the resolved company id — tenants never share scan results.
+        When no company id is resolvable the cache is bypassed (opt-in).
+        """
+        cid = _resolve_company_id(self._api)
+        if cid is None:
+            return self._scan_documents(max_pages=max_pages, page_size=page_size)
+        key = f"scan:{cid}:{max_pages}:{page_size}"
+        now = time.time()
+        entry = self._scan_cache.get(key)
+        if entry is not None and (now - entry[0]) < _SCAN_TTL_SECONDS:
+            return entry[1]
+        docs = self._scan_documents(max_pages=max_pages, page_size=page_size)
+        self._scan_cache[key] = (now, docs)
+        return docs
+
     # ── Facets ────────────────────────────────────────────────────────
 
     def _load_facets(self) -> Dict[str, Any]:
         """Best-effort facet scan: distinct entity/mime types + tags.
 
         The backend has no facet endpoints, so derive them by paging over
-        recent documents (bounded).  Falls back to static known lists.
+        recent documents (bounded, shared with the expiry scan cache — B6).
+        Facets are cached per company id (B8).  Falls back to static known
+        lists.
         """
-        if self._facet_cache is not None:
-            return self._facet_cache
+        cid = _resolve_company_id(self._api)
+        cache_key = None
+        if cid is not None:
+            cache_key = f"facets:{cid}"
+            cached = self._facet_cache.get(cache_key)
+            if cached is not None:
+                return cached
         entity_types: set = set()
         mime_types: set = set()
         tags: set = set()
         try:
-            for page in range(5):
-                resp = self._api.list_documents(page=page, page_size=_DEFAULT_PAGE_SIZE)
-                items = resp.get("items") or [] if isinstance(resp, dict) else []
-                if not items:
-                    break
-                for doc in items:
-                    et = doc.get("entity_type")
-                    if et:
-                        entity_types.add(et)
-                    mt = doc.get("mime_type")
-                    if mt:
-                        mime_types.add(mt)
-                    for tg in self._parse_tags(doc.get("tags")):
-                        tags.add(tg)
-                if len(items) < _DEFAULT_PAGE_SIZE:
-                    break
+            for doc in self._cached_scan():
+                et = doc.get("entity_type")
+                if et:
+                    entity_types.add(et)
+                mt = doc.get("mime_type")
+                if mt:
+                    mime_types.add(mt)
+                for tg in self._parse_tags(doc.get("tags")):
+                    tags.add(tg)
         except Exception:
             logger.debug("Facet scan failed; falling back to static lists", exc_info=True)
-        self._facet_cache = {
+        facets = {
             "entity_types": sorted(entity_types) or _KNOWN_ENTITY_TYPES,
             "mime_types": sorted(mime_types) or _KNOWN_MIME_TYPES,
             "tags": sorted(tags),
         }
-        return self._facet_cache
+        if cache_key is not None:
+            self._facet_cache[cache_key] = facets
+        return facets
 
     def get_entity_types(self) -> list[str]:
         return list(self._load_facets()["entity_types"])
@@ -417,21 +453,64 @@ class RemoteDocumentService:
     def get_expiring(self, days_ahead: int = 30) -> list[Dict[str, Any]]:
         """Docs whose expiry_date falls within ``days_ahead`` days.
 
-        The backend exposes no expiry endpoint, so this scans documents
-        client-side (bounded) and filters by ``expiry_date``.
+        Prefers the backend ``GET /documents/expiring?days=`` endpoint (B6);
+        when that endpoint is unavailable (missing route, error, exception,
+        malformed response) it falls back to a client-side filter over the
+        shared company-scoped scan cache.
         """
+        try:
+            resp = self._api._get(
+                "/api/v1/documents/expiring",
+                params=self._api._clean_params(days=days_ahead),
+            )
+            if isinstance(resp, dict) and isinstance(resp.get("items"), list):
+                return [
+                    self._normalise_document(d)
+                    for d in resp["items"] if isinstance(d, dict)
+                ]
+            logger.debug(
+                "get_expiring unexpected response shape; "
+                "falling back to client-side scan",
+            )
+        except Exception:
+            logger.debug(
+                "get_expiring endpoint unavailable; "
+                "falling back to client-side scan", exc_info=True,
+            )
         today = date.today()
         horizon = today + timedelta(days=days_ahead)
         result: list[Dict[str, Any]] = []
-        for doc in self._scan_documents():
+        for doc in self._cached_scan():
             exp = self._expiry_date(doc)
             if exp is not None and today <= exp <= horizon:
                 result.append(doc)
         return result
 
     def get_overdue(self) -> list[Dict[str, Any]]:
+        """Docs whose expiry_date is before today.
+
+        Prefers the backend ``GET /documents/overdue`` endpoint (B6); falls
+        back to a client-side filter over the shared company-scoped scan
+        cache when the endpoint is unavailable.
+        """
+        try:
+            resp = self._api._get("/api/v1/documents/overdue")
+            if isinstance(resp, dict) and isinstance(resp.get("items"), list):
+                return [
+                    self._normalise_document(d)
+                    for d in resp["items"] if isinstance(d, dict)
+                ]
+            logger.debug(
+                "get_overdue unexpected response shape; "
+                "falling back to client-side scan",
+            )
+        except Exception:
+            logger.debug(
+                "get_overdue endpoint unavailable; "
+                "falling back to client-side scan", exc_info=True,
+            )
         today = date.today()
-        return [d for d in self._scan_documents()
+        return [d for d in self._cached_scan()
                 if (exp := self._expiry_date(d)) is not None and exp < today]
 
     def evaluate_document_expiries(self, alert_mgr=None, db=None) -> int:

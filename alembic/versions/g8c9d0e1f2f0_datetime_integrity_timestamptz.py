@@ -3,6 +3,9 @@
 Revision ID: g8c9d0e1f2f0
 Revises: f7b8c9d0e1f8
 Create Date: 2026-07-21
+
+Downgrade contract: return every column to the schema_pg.sql canonical
+type; triggers are schema_pg.sql-owned and left untouched.
 """
 from __future__ import annotations
 
@@ -78,6 +81,24 @@ TIMESTAMP_COLUMNS: list[tuple[str, str]] = [
 ]
 
 
+# Tables whose ``updated_at`` column schema_pg.sql declares TIMESTAMPTZ
+# (see database/schema_pg.sql: invoices ~106, proforma_invoices ~120,
+# drivers ~456, clients ~555, documents ~619, contracts ~704,
+# receipts ~882).  Because CREATE TABLE IF NOT EXISTS never restores a
+# column type, downgrade must NOT revert these to TEXT or they would
+# permanently drift from schema_pg.sql.  ``companies.updated_at`` is TEXT
+# in schema_pg.sql (~964) and is intentionally absent, so it is reverted.
+_SCHEMA_PG_TIMESTAMPTZ_UPDATED_AT = {
+    "invoices",
+    "documents",
+    "drivers",
+    "proforma_invoices",
+    "clients",
+    "contracts",
+    "receipts",
+}
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -96,6 +117,34 @@ def _column_exists(table: str, column: str) -> bool:
         return column in columns
     except Exception:
         return False
+
+
+def _column_is_timestamptz(table: str, column: str) -> bool:
+    """Return True when *column* is already declared TIMESTAMPTZ.
+
+    On a fresh database ``schema_pg.sql`` runs BEFORE this migration and
+    already declares several of these columns ``TIMESTAMPTZ`` (e.g.
+    invoices, documents, drivers, proforma_invoices, clients, contracts and
+    receipts ``updated_at``).  Those schema-owned columns must be left
+    untouched — the migration only converts legacy TEXT columns.  Skipping
+    them also avoids the ``InvalidDatetimeFormat`` abort caused by the
+    ALTER's ``USING CASE WHEN "<col>" = '' ...`` comparing a TIMESTAMPTZ
+    column to the literal ``''``.
+    """
+    conn = op.get_bind()
+    try:
+        row = conn.execute(
+            sa.text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name = :t AND column_name = :c"
+            ),
+            {"t": table, "c": column},
+        ).first()
+    except Exception:
+        return False
+    if row is None:
+        return False
+    return str(row[0]).lower() == "timestamp with time zone"
 
 
 # ── Migration ────────────────────────────────────────────────────────────
@@ -163,18 +212,25 @@ def upgrade() -> None:
     if _column_exists("documents", "expiry_date"):
         op.execute(sa.text('ALTER TABLE "documents" ALTER COLUMN "expiry_date" DROP DEFAULT'))
 
-    # Convert each column
+    # Convert each column.  schema_pg.sql-owned TIMESTAMPTZ columns (e.g.
+    # the seven ``updated_at`` columns) must be left untouched — this
+    # migration only converts legacy TEXT columns.  Skipping an already-
+    # TIMESTAMPTZ column also avoids the InvalidDatetimeFormat abort from
+    # comparing a timestamptz column to the literal '' in the USING CASE.
     for table, column in TIMESTAMP_COLUMNS:
-        if _column_exists(table, column):
-            op.execute(f"""
-                ALTER TABLE "{table}"
-                ALTER COLUMN "{column}" TYPE TIMESTAMPTZ
-                USING CASE
-                    WHEN "{column}" = '' OR "{column}" IS NULL THEN NULL
-                    WHEN "{column}" ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$' THEN ("{column}" || 'T00:00:00Z')::TIMESTAMPTZ
-                    ELSE "{column}"::TIMESTAMPTZ
-                END
-            """)
+        if not _column_exists(table, column):
+            continue
+        if _column_is_timestamptz(table, column):
+            continue
+        op.execute(f"""
+            ALTER TABLE "{table}"
+            ALTER COLUMN "{column}" TYPE TIMESTAMPTZ
+            USING CASE
+                WHEN "{column}" = '' OR "{column}" IS NULL THEN NULL
+                WHEN "{column}" ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$' THEN ("{column}" || 'T00:00:00Z')::TIMESTAMPTZ
+                ELSE "{column}"::TIMESTAMPTZ
+            END
+        """)
 
     # NOTE: updated_at stamping triggers are NOT created here.  Trigger
     # ownership lives entirely in database/schema_pg.sql (stamp_updated_at()
@@ -190,7 +246,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Revert TIMESTAMPTZ columns back to TEXT.
+    """Revert TIMESTAMPTZ columns back to the schema_pg.sql canonical type.
+
+    Non-``updated_at`` columns and ``companies.updated_at`` (TEXT in
+    schema_pg.sql) go back to TEXT.  The seven schema-owned ``updated_at``
+    columns that schema_pg.sql declares TIMESTAMPTZ are left untouched.
+    Triggers are schema_pg.sql-owned and are NOT dropped here.
 
     WARNING: Timezone offsets and time-of-day precision are lost
     in the TEXT round-trip (ISO-8601 format preserved).
@@ -206,16 +267,16 @@ def downgrade() -> None:
 
     for table, column in TIMESTAMP_COLUMNS:
         if _column_exists(table, column):
+            # schema_pg.sql declares these updated_at columns TIMESTAMPTZ;
+            # CREATE TABLE IF NOT EXISTS never restores types, so reverting
+            # them to TEXT would permanently drift from schema_pg.sql.
+            if column == "updated_at" and table in _SCHEMA_PG_TIMESTAMPTZ_UPDATED_AT:
+                continue
             op.execute(f"""
                 ALTER TABLE "{table}"
                 ALTER COLUMN "{column}" TYPE TEXT
                 USING TO_CHAR("{column}" AT TIME ZONE 'UTC', 'YYYY-MM-DDTHH24:MI:SS"Z"')
             """)
-
-    # Drop triggers
-    for table, column in TIMESTAMP_COLUMNS:
-        if column == "updated_at" and _column_exists(table, column):
-            op.execute(f'DROP TRIGGER IF EXISTS trg_{table}_updated_at ON "{table}"')
 
     # Recreate ``trips.month`` with the original TEXT-based expression.
     if _column_exists("trips", "created_at"):
@@ -224,6 +285,3 @@ def downgrade() -> None:
     # Restore the schema_pg.sql ``DEFAULT ''`` on documents.expiry_date.
     if _column_exists("documents", "expiry_date"):
         op.execute(sa.text("ALTER TABLE documents ALTER COLUMN expiry_date SET DEFAULT ''"))
-
-    # Drop function
-    op.execute("DROP FUNCTION IF EXISTS update_updated_at_column()")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date, datetime
@@ -8,8 +9,8 @@ from .common import ServiceResult
 
 class ReceiptLineItem(BaseModel):
     description: str
-    amount: float
-    quantity: float = 1.0
+    amount: Decimal
+    quantity: Decimal = Decimal("1.0")
 
 
 class ReceiptCreate(BaseModel):
@@ -20,7 +21,7 @@ class ReceiptCreate(BaseModel):
     receipt_date: date
     currency: str = "EUR"
     items: list[ReceiptLineItem] = []
-    total_amount: Optional[float] = None
+    total_amount: Optional[Decimal] = None
     notes: str = ""
 
 
@@ -37,7 +38,7 @@ class ReceiptResult(BaseModel):
     currency: str
     payment_method: str = ""
     items: list[ReceiptLineItem]
-    total_amount: float
+    total_amount: Decimal
     notes: str = ""
     pdf_path: Optional[str] = None
     created_at: Optional[datetime] = None

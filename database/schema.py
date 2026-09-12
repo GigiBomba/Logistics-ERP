@@ -486,6 +486,15 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
 
 INDEX_DTA_DRIVER = "CREATE INDEX IF NOT EXISTS idx_dta_driver ON driver_truck_assignments(driver_id);"
 INDEX_DTA_TRUCK = "CREATE INDEX IF NOT EXISTS idx_dta_truck ON driver_truck_assignments(truck_id);"
+# company_id is added at runtime by db_manager (tenant column migration);
+# PostgreSQL receives idx_dta_company from schema_pg.sql/_pg_extra_ddl but the
+# SQLite tenant loop only creates idx_driver_truck_assignments_company (the
+# generic ``idx_<table>_company`` name), so this mirrors the Alembic
+# m6e7f8a9b0c3 index for fresh SQLite installs.
+INDEX_DTA_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_dta_company "
+    "ON driver_truck_assignments(company_id)"
+)
 
 # ── Column additions (migrations) ────────────────────────────────────────
 
@@ -494,6 +503,13 @@ ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID = "ALTER TABLE trucks ADD COLUMN tracking_de
 ALTER_TRIPS_ADD_DRIVER_ID = "ALTER TABLE trips ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"
 ALTER_TRIPS_ADD_TRUCK_ID = "ALTER TABLE trips ADD COLUMN truck_id INTEGER REFERENCES trucks(id)"
 INDEX_TRIPS_TRUCK_ID = "CREATE INDEX IF NOT EXISTS idx_trips_truck_id ON trips(truck_id)"
+# route_history_v2_id is added at runtime by db_manager (trips column
+# migration); this index supports the RouteRepository.get_by_trip_id JOIN
+# (repositories/route_repository.py:119).  Mirrors Alembic m6e7f8a9b0c3.
+INDEX_TRIPS_ROUTE_HISTORY_V2_ID = (
+    "CREATE INDEX IF NOT EXISTS idx_trips_route_history_v2_id "
+    "ON trips(route_history_v2_id)"
+)
 
 # ── Tachograph tables ────────────────────────────────────────────────────
 

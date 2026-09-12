@@ -67,8 +67,8 @@ class DriverTruckAssignmentRepository(BaseRepository):
         row = self._fetchone(
             f"SELECT t.plate_number FROM trucks t "
             f"JOIN {self.TABLE} dta ON dta.truck_id = t.id "
-            f"WHERE dta.driver_id = ? {self._company_filter('dta')}",
-            (driver_id,) + self._company_params(),
+            f"WHERE dta.driver_id = ? {self._company_filter('dta')} {self._company_filter('t')}",
+            (driver_id,) + self._company_params() + self._company_params(),
         )
         return row["plate_number"] if row and row.get("plate_number") else ""
 
@@ -86,8 +86,8 @@ class DriverTruckAssignmentRepository(BaseRepository):
                 FROM {self.TABLE} dta
                 JOIN trucks t ON dta.truck_id = t.id
                 WHERE dta.driver_id IN ({placeholders})
-                  {self._company_filter('dta')}""",
-            tuple(driver_ids) + self._company_params(),
+                  {self._company_filter('dta')} {self._company_filter('t')}""",
+            tuple(driver_ids) + self._company_params() + self._company_params(),
         )
         return {
             row["driver_id"]: row["plate_number"]
@@ -99,13 +99,18 @@ class DriverTruckAssignmentRepository(BaseRepository):
         row = self._fetchone(
             f"SELECT d.name FROM drivers d "
             f"JOIN {self.TABLE} dta ON dta.driver_id = d.id "
-            f"WHERE dta.truck_id = ? {self._company_filter('dta')}",
-            (truck_id,) + self._company_params(),
+            f"WHERE dta.truck_id = ? {self._company_filter('dta')} {self._company_filter('d')}",
+            (truck_id,) + self._company_params() + self._company_params(),
         )
         return row["name"] if row and row.get("name") else ""
 
-    def get_driver_names_for_trucks(self, truck_ids: list[int]) -> dict[int, str]:
-        """Return {truck_id: driver_name} mapping for a batch of trucks."""
+    def get_driver_names_for_trucks(self, truck_ids: list[int], company_id=None) -> dict[int, str]:
+        """Return {truck_id: driver_name} mapping for a batch of trucks.
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        query explicitly; when omitted the repository falls back to the
+        tenant-context filter (desktop/local path).
+        """
         if not truck_ids:
             return {}
         placeholders = ", ".join("?" for _ in truck_ids)
@@ -114,8 +119,9 @@ class DriverTruckAssignmentRepository(BaseRepository):
                 FROM driver_truck_assignments da
                 JOIN drivers d ON da.driver_id = d.id
                 WHERE da.truck_id IN ({placeholders})
-                  AND da.active = 1""",
-            tuple(truck_ids)
+                  AND da.active = 1
+                  {self._company_filter_for(company_id, "da")} {self._company_filter_for(company_id, "d")}""",
+            tuple(truck_ids) + self._company_params_for(company_id) + self._company_params_for(company_id),
         )
         return {row["truck_id"]: row["name"] for row in rows}
 

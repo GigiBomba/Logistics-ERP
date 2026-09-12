@@ -21,6 +21,11 @@ class TruckRouteAssignmentRepository(BaseRepository):
         started_at: Optional[str] = None,
         notes: str = "",
     ) -> int:
+        # Legacy "" defaults break TIMESTAMPTZ columns (Phase D migration);
+        # values are now normalized to UTC ISO.
+        if not assigned_at:
+            from database.time_utils import utc_now_iso
+            assigned_at = utc_now_iso()
         data = {"truck_id": str(truck_id), "route_id": int(route_id),
                 "status": status, "assigned_at": assigned_at,
                 "started_at": started_at, "notes": notes}

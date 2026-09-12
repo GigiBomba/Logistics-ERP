@@ -583,16 +583,8 @@ class DocumentRepository(BaseRepository):
 
         if query:
             if getattr(self.db, "_engine", "sqlite") == "postgresql":
-                terms = query.strip().split()
-                like_clauses = []
-                for term in terms:
-                    p = f"%{term}%"
-                    like_clauses.append(
-                        "(d.title ILIKE ? OR d.file_name ILIKE ? "
-                        "OR d.description ILIKE ? OR d.text_content ILIKE ?)"
-                    )
-                    params.extend([p, p, p, p])
-                conditions.append(f"({' AND '.join(like_clauses)})")
+                conditions.append("d.search_vector @@ plainto_tsquery('english', ?)")
+                params.append(query.strip())
             else:
                 conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
                 params.append(self._fts_query(query))
@@ -625,16 +617,8 @@ class DocumentRepository(BaseRepository):
 
         if query:
             if getattr(self.db, "_engine", "sqlite") == "postgresql":
-                terms = query.strip().split()
-                like_clauses = []
-                for term in terms:
-                    p = f"%{term}%"
-                    like_clauses.append(
-                        "(d.title ILIKE ? OR d.file_name ILIKE ? "
-                        "OR d.description ILIKE ? OR d.text_content ILIKE ?)"
-                    )
-                    params.extend([p, p, p, p])
-                conditions.append(f"({' AND '.join(like_clauses)})")
+                conditions.append("d.search_vector @@ plainto_tsquery('english', ?)")
+                params.append(query.strip())
             else:
                 conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
                 params.append(self._fts_query(query))
@@ -653,22 +637,22 @@ class DocumentRepository(BaseRepository):
         )
         return row["cnt"] if row else 0
 
-    def get_expiring_documents(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
+    def get_expiring_documents(self, days_ahead: int = 30, company_id: Optional[int] = None) -> List[Dict[str, Any]]:
         cutoff = (datetime.datetime.now() + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE expiry_date != '' "
-            f"AND expiry_date <= ? AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()} "
+            f"AND expiry_date <= ? AND is_archived = 0 {self._company_filter_for(company_id)} {self._soft_delete_filter()} "
             f"ORDER BY expiry_date ASC",
-            (cutoff,) + self._company_params(),
+            (cutoff,) + self._company_params_for(company_id),
         )
 
-    def get_overdue_documents(self) -> List[Dict[str, Any]]:
+    def get_overdue_documents(self, company_id: Optional[int] = None) -> List[Dict[str, Any]]:
         today = datetime.datetime.now().strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE expiry_date != '' "
-            f"AND expiry_date < ? AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()} "
+            f"AND expiry_date < ? AND is_archived = 0 {self._company_filter_for(company_id)} {self._soft_delete_filter()} "
             f"ORDER BY expiry_date ASC",
-            (today,) + self._company_params(),
+            (today,) + self._company_params_for(company_id),
         )
 
     @staticmethod

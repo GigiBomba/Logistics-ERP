@@ -176,12 +176,16 @@ class TripRepository(BaseRepository):
             (driver_id,) + self._company_params() + (limit,),
         )
 
-    def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200, company_id=None) -> List[Dict[str, Any]]:
+    def get_filtered(self, search: str = "", truck: str = "", status: str = "",
+                     statuses: Optional[List[str]] = None, limit: int = 200,
+                     company_id=None) -> List[Dict[str, Any]]:
         """Dynamic filter for trip history with pagination.
 
         ``company_id`` (resolved from the JWT by the API layer) scopes the
         query explicitly — without it the context filter is a no-op in the
-        HTTP request path.
+        HTTP request path.  ``statuses`` (a list of statuses) adds an
+        additive ``status IN (...)`` filter alongside the single ``status``
+        filter — neither disturbs the other's path.
         """
         query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} {self._soft_delete_filter()}"
         params: list = list(self._company_params_for(company_id))
@@ -194,6 +198,10 @@ class TripRepository(BaseRepository):
         if status:
             query += " AND status = ?"
             params.append(status)
+        if statuses:
+            placeholders = ", ".join("?" for _ in statuses)
+            query += f" AND status IN ({placeholders})"
+            params.extend(statuses)
         query += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
         return self._fetchall(query, tuple(params))
@@ -277,24 +285,29 @@ class TripRepository(BaseRepository):
                  WHERE tr.start_date >= ?
                    AND tr.start_date <= ?
                    AND LOWER(tr.status) IN ('delivered', 'completed', 'done', 'paid')
-                   {self._company_filter_for(company_id, "tr")} {self._soft_delete_filter("tr")}
+                   {self._company_filter_for(company_id, "tr")} {self._company_filter_for(company_id, "t")} {self._soft_delete_filter("tr")}
                  GROUP BY COALESCE(tr.truck_id, tr.truck_number)
                  ORDER BY revenue DESC
                  LIMIT ?""",
-            (month_start, month_end, limit) + self._company_params_for(company_id),
+            (month_start, month_end) + self._company_params_for(company_id) + self._company_params_for(company_id) + (limit,),
         )
 
     # ── Document Automation matchers ─────────────────────────────────────
 
-    def get_by_cmr_number(self, cmr_number: str) -> List[Dict[str, Any]]:
-        """Return trips whose ``cmr_number`` column matches the given value."""
+    def get_by_cmr_number(self, cmr_number: str, company_id=None) -> List[Dict[str, Any]]:
+        """Return trips whose ``cmr_number`` column matches the given value.
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        query explicitly; when omitted the repository falls back to the
+        tenant-context filter (desktop/local path).
+        """
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             "WHERE cmr_number IS NOT NULL AND TRIM(cmr_number) != '' "
             "AND LOWER(TRIM(cmr_number)) = LOWER(TRIM(?)) "
-            f"{self._company_filter()} {self._soft_delete_filter()} "
+            f"{self._company_filter_for(company_id)} {self._soft_delete_filter()} "
             "ORDER BY id DESC",
-            (cmr_number,) + self._company_params(),
+            (cmr_number,) + self._company_params_for(company_id),
         )
 
     def get_by_invoice_via_trip_invoice(self, invoice_number: str) -> List[Dict[str, Any]]:
@@ -303,9 +316,9 @@ class TripRepository(BaseRepository):
             f"""SELECT t.* FROM {self.TABLE} t
                  JOIN invoices i ON i.trip_id = t.id
                  WHERE LOWER(TRIM(i.invoice_number)) = LOWER(TRIM(?))
-                 {self._company_filter("t")} {self._soft_delete_filter("t")}
+                 {self._company_filter("t")} {self._company_filter("i")} {self._soft_delete_filter("t")}
                  ORDER BY t.id DESC""",
-            (invoice_number,) + self._company_params(),
+            (invoice_number,) + self._company_params() + self._company_params(),
         )
 
     def get_by_truck_plate(self, plate: str) -> List[Dict[str, Any]]:
@@ -315,10 +328,10 @@ class TripRepository(BaseRepository):
                  LEFT JOIN trucks t ON tr.truck_id = t.id
                  WHERE (LOWER(TRIM(COALESCE(tr.truck_number, ''))) = LOWER(TRIM(?))
                      OR LOWER(TRIM(COALESCE(t.plate_number, ''))) = LOWER(TRIM(?)))
-                 {self._company_filter("tr")} {self._soft_delete_filter("tr")}
+                 {self._company_filter("tr")} {self._company_filter("t")} {self._soft_delete_filter("tr")}
                  ORDER BY tr.id DESC
                  LIMIT 20""",
-            (plate, plate) + self._company_params(),
+            (plate, plate) + self._company_params() + self._company_params(),
         )
 
     def get_by_driver_name(self, driver_name: str) -> List[Dict[str, Any]]:
@@ -451,7 +464,10 @@ class TripRepository(BaseRepository):
     ) -> List[Dict[str, Any]]:
         """Return trips whose start_date is within ±window_days of target_date.
 
-        Sorted by date proximity in Python to support both SQLite and PostgreSQL.
+        The SQL fetch is bounded by ``LIMIT ?`` (the caller's ``limit``) so a
+        large window can never materialise every matching row; the bounded
+        candidate set is then sorted by date proximity in Python to support
+        both SQLite and PostgreSQL.
         """
         from datetime import datetime, timedelta
         try:
@@ -464,8 +480,8 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE start_date >= ? AND start_date <= ? "
             f"{self._company_filter()} {self._soft_delete_filter()} "
-            "ORDER BY id DESC",
-            (start, end) + self._company_params(),
+            "ORDER BY id DESC LIMIT ?",
+            (start, end) + self._company_params() + (limit,),
         )
         # Sort by proximity in Python (portable across DB engines)
         def _proximity(row: Dict[str, Any]) -> float:

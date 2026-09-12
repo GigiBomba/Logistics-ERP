@@ -149,6 +149,44 @@ class FleetRepository(BaseRepository):
             (status,) + self._company_params(),
         )
 
+    def search(
+        self,
+        search: str = "",
+        status: str = "",
+        limit: int = 200,
+        offset: int = 0,
+        company_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search trucks by plate/model/manufacturer substring and/or exact status.
+
+        Mirrors the filtering that ``FleetService.search`` used to do in
+        Python, pushed down to SQL so large fleets are never loaded whole:
+          - ``search`` matches a case-insensitive substring against
+            ``plate_number`` / ``model`` / ``manufacturer``
+            (``LOWER(...) LIKE LOWER(?)`` — same semantics as the old
+            ``q in value.lower()`` checks).
+          - ``status`` matches case-insensitive equality on ``status``
+            (same semantics as the old ``value.lower() == status.lower()``).
+        Ordering and pagination match ``get_all`` (``plate_number ASC``,
+        200-row default page).
+        """
+        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} {self._soft_delete_filter()}"
+        params: List[Any] = list(self._company_params_for(company_id))
+        if search:
+            like = f"%{search}%"
+            query += (
+                " AND (LOWER(plate_number) LIKE LOWER(?) "
+                "OR LOWER(model) LIKE LOWER(?) "
+                "OR LOWER(manufacturer) LIKE LOWER(?))"
+            )
+            params.extend([like, like, like])
+        if status:
+            query += " AND LOWER(status) = LOWER(?)"
+            params.append(status)
+        query += " ORDER BY plate_number ASC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        return self._fetchall(query, tuple(params))
+
     def get_maintenance_records_with_attachments(self) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT id, truck_id, maintenance_type, date, attachment_path "

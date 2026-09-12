@@ -4,6 +4,10 @@ import logging
 import os
 import re
 import sqlite3
+from decimal import Decimal
+# SQLite REAL affinity round-trips 2dp values exactly (str -> float);
+# psycopg2 binds Decimal natively on PostgreSQL.
+sqlite3.register_adapter(Decimal, lambda d: str(d))
 import threading
 import warnings
 from contextlib import contextmanager
@@ -593,21 +597,24 @@ class DatabaseManager:
             "  changed_at TEXT NOT NULL,"
             "  reason TEXT DEFAULT ''"
             ")",
-            # Invoices columns added by SQLite _run_column_migrations
+            # The 6 numeric invoice columns (subtotal_net, total_vat,
+            # total_gross, exchange_rate, amount_paid, amount_remaining) are
+            # owned by the schema_pg.sql CREATE TABLE and the
+            # n7f8a9b0c1d4 migration — no PG-path ADD COLUMN here.
+            # invoices.created_at is created here as TIMESTAMPTZ (Alembic runs
+            # before this extra DDL, so on a fresh PG DB the g8c9 migration saw
+            # no such column and left it to this statement to create).
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'EUR'",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items_json TEXT DEFAULT '[]'",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_net NUMERIC(12,2) DEFAULT 0",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_vat NUMERIC(12,2) DEFAULT 0",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_gross NUMERIC(12,2) DEFAULT 0",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS pdf_path TEXT DEFAULT ''",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TEXT",
+            # proforma_invoices.pdf_path (mirrors the invoices pdf_path line
+            # above; PG counterpart of the SQLite _run_column_migrations entry).
+            "ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS pdf_path TEXT DEFAULT ''",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12,6) DEFAULT 1.0",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_type TEXT DEFAULT 'invoice'",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_remaining NUMERIC(12,2) DEFAULT 0",
             # e-Factura XML artifact tracking (the XML FILE is the legal
             # deliverable; no ANAF submission chain exists).
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_status TEXT DEFAULT ''",
@@ -680,6 +687,19 @@ class DatabaseManager:
             "ON copilot_reasoning_graphs(company_id, conversation_id)",
             # R1 (Phase E): id tiebreak watermark column on sync_cursors.
             "ALTER TABLE sync_cursors ADD COLUMN IF NOT EXISTS last_id BIGINT NOT NULL DEFAULT 0",
+            # NF1 (Stage C review): one-shot search_vector backfill — idempotent
+            # because it targets only NULL vectors; mirrors
+            # DocumentRepository.rebuild_fts_index; native-PG boot path
+            # counterpart of import_to_pg's backfill.  On a PG database that
+            # predates the search_vector column (the ADD COLUMN IF NOT EXISTS
+            # upgrade), existing documents carry NULL search_vector and are
+            # unfindable via fts_search/fts_search_count until this runs.
+            "UPDATE documents SET search_vector = "
+            "to_tsvector('english', "
+            "COALESCE(title,'') || ' ' "
+            "|| COALESCE(description,'') || ' ' "
+            "|| COALESCE(text_content,'')) "
+            "WHERE search_vector IS NULL",
         ]
         # B4 (settings scoping): migrate the PG settings PK from ``key`` to
         # the composite ``(key, company_id)`` so per-company settings work on
@@ -703,9 +723,11 @@ class DatabaseManager:
         # syncable table for legacy PG deployments.  schema_pg.sql declares
         # updated_at inside CREATE TABLE IF NOT EXISTS blocks (no-op on
         # existing tables), so existing databases need the additive ALTER
-        # here.  TIMESTAMPTZ matches the canonical trigger output
-        # (to_char → 'YYYY-MM-DDTHH:MM:SSZ').  invoices is handled above;
-        # expenses is created by schema_pg.sql with the column already.
+        # here.  TIMESTAMPTZ matches the trigger output type:
+        # stamp_updated_at() assigns a native timestamptz at seconds
+        # precision (date_trunc('second', clock_timestamp())).  invoices
+        # is handled above; expenses is created by schema_pg.sql with the
+        # column already.
         _pg_extra_ddl.extend(
             f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"
             for table in _schema.SYNCABLE_TABLES
@@ -1210,6 +1232,13 @@ class DatabaseManager:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status)")
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
+        # route_history_v2_id was just ensured above; index it so the
+        # RouteRepository.get_by_trip_id JOIN (route_repository.py:119)
+        # uses SEARCH instead of SCAN.  Mirrors Alembic m6e7f8a9b0c3.
+        try:
+            self.conn.execute(S.INDEX_TRIPS_ROUTE_HISTORY_V2_ID)
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
         try:
             self._ensure_column("trips", "month", S.ALTER_TRIPS_ADD_MONTH)
         except Exception as e:
@@ -1280,6 +1309,12 @@ class DatabaseManager:
             # deliverable; no ANAF submission chain exists).
             ("efactura_status", "ALTER TABLE invoices ADD COLUMN efactura_status TEXT DEFAULT ''"),
             ("efactura_xml_path", "ALTER TABLE invoices ADD COLUMN efactura_xml_path TEXT DEFAULT ''"),
+        ])
+
+        # ── Proforma invoice table: add pdf_path (mirrors invoices pdf_path
+        # convention; enables proforma_service update(pdf_path=...)). ──
+        self._ensure_columns("proforma_invoices", [
+            ("pdf_path", "ALTER TABLE proforma_invoices ADD COLUMN pdf_path TEXT DEFAULT ''"),
         ])
 
         # ── Invoice number sequence table (race-condition-safe) ──────────
@@ -1495,6 +1530,25 @@ class DatabaseManager:
                 )
             except Exception as e:
                 logger.warning("Index creation failed for %s: %s", table, e)
+
+        # ── Tenant-scoped composite index on trips ──────────────────────
+        # schema.py declares INDEX_TRIPS_COMPANY_STATUS but no code path ever
+        # executed it — trips.company_id now exists (tenant migration above),
+        # so create it here.  Supports TripRepository.get_by_statuses
+        # (trip_repository.py:212-222).  Mirrors Alembic m6e7f8a9b0c3.
+        try:
+            self.conn.execute(S.INDEX_TRIPS_COMPANY_STATUS)
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
+        # ── Canonical DTA company index ─────────────────────────────────
+        # The tenant loop above created idx_driver_truck_assignments_company
+        # (generic ``idx_<table>_company`` name); PG also receives idx_dta_company
+        # from schema_pg.sql/_pg_extra_ddl.  Create the canonical name here so
+        # SQLite fresh installs match.  Mirrors Alembic m6e7f8a9b0c3.
+        try:
+            self.conn.execute(S.INDEX_DTA_COMPANY)
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
 
         # ── P0.7: Soft delete columns ─────────────────────────────────────
         # 13 business tables carry ``deleted_at`` — the desktop services

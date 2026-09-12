@@ -22,7 +22,37 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _table_exists(table: str) -> bool:
+    """True when *table* already exists in the database.
+
+    S3-NF-PGT (Stage 3 verification remediation): ``schema_pg.sql`` creates
+    ``copilot_autonomy_approvals`` (CREATE TABLE IF NOT EXISTS — it is an
+    explicit mirror of this migration, see database/schema_pg.sql ~1637)
+    BEFORE Alembic runs on the deployment path
+    (``DatabaseManager._init_pg_schema_locked`` → ``_init_pg_schema`` →
+    ``_run_alembic_upgrade``).  An unconditional ``op.create_table`` here
+    therefore aborts the whole chain on a fresh PostgreSQL database —
+    PostgreSQL's transactional DDL then rolls back every earlier migration
+    (including the g8c9/o8g9 TIMESTAMPTZ conversions) and ``alembic_version``
+    never gets stamped.  On such databases this migration must be a no-op;
+    on pure-Alembic databases (no schema_pg.sql) it creates the table.  This
+    mirrors the idempotent guards used by j2b3c4d5e6f0 / k4c5d6e7f8a1 /
+    l5d6e7f8a9b2 / m6e7f8a9b0c3 / n7f8a9b0c1d4.
+    """
+    from sqlalchemy import inspect
+
+    conn = op.get_bind()
+    try:
+        return table in inspect(conn).get_table_names()
+    except Exception:
+        return False
+
+
 def upgrade() -> None:
+    # See _table_exists: schema_pg.sql pre-creates this table on the
+    # deployment path, so skip (the indexes below already exist there too).
+    if _table_exists("copilot_autonomy_approvals"):
+        return
     op.create_table(
         "copilot_autonomy_approvals",
         sa.Column("id", sa.UUID(), primary_key=True, server_default=sa.text("gen_random_uuid()")),

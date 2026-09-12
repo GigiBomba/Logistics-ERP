@@ -622,8 +622,10 @@ class ApiClient:
 
     def get_driver_tacho_activity(self, driver_id: int, from_date: str = "",
                                    limit: int = 100) -> Dict[str, Any]:
+        # Backend reads `date_from` (from_date is deprecated) and `page_size`
+        # (limit was silently ignored); map to the accepted param names.
         return self._get(f"/api/v1/drivers/{driver_id}/tacho-activity",
-                         params=self._clean_params(from_date=from_date, limit=limit))
+                         params=self._clean_params(date_from=from_date, page_size=limit))
 
     # ── Route endpoints ───────────────────────────────────────────────
 
@@ -816,13 +818,13 @@ class ApiClient:
         return self._get("/api/v1/settings/company")
 
     def save_company_config(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        return self._put("/api/v1/settings/company", json_data=data)
+        return self._patch("/api/v1/settings/company", json_data=data)
 
     def get_setting(self, key: str) -> Dict[str, Any]:
         return self._get(f"/api/v1/settings/{key}")
 
     def save_setting(self, key: str, value: str) -> Dict[str, Any]:
-        return self._put(f"/api/v1/settings/{key}", json_data={"value": value})
+        return self._patch(f"/api/v1/settings/{key}", json_data={"value": value})
 
     def get_settings_bulk(self, keys) -> Dict[str, Any]:
         """Fetch multiple settings in one request (Phase D — settings sync).

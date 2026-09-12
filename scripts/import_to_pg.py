@@ -26,6 +26,15 @@ from database.db_manager import DatabaseManager
 # shadow tables alongside real tables.
 SQLITE_INTERNAL_TABLES = ("sqlite_", "documents_fts", "documents_fts_")
 
+#: Trips -> drivers/trucks FK constraints declared NOT VALID in schema_pg.sql
+#: (Phase D of Database_Rework P0.8).  Legacy SQLite dumps may carry trips
+#: whose driver/truck rows were deleted later; the importer NULLs those orphan
+#: ids, then VALIDATES the constraints so they become fully enforced.
+TRIPS_FK_SANITIZE = (
+    ("driver_id", "drivers", "fk_trips_driver"),
+    ("truck_id", "trucks", "fk_trips_truck"),
+)
+
 _TEMPORAL_TYPES = {
     "timestamp with time zone",
     "timestamp without time zone",
@@ -111,8 +120,91 @@ def _pg_schema_map(db) -> dict:
     return schema
 
 
-def import_from_json(input_path: str, dsn: str) -> dict:
-    """Import all tables from a JSON dump into PostgreSQL."""
+def sanitize_trips_orphan_fks(db, stats: dict, trips_columns: dict) -> dict:
+    """NULL orphan trips.driver_id/truck_id refs, then VALIDATE the FKs.
+
+    schema_pg.sql adds ``fk_trips_driver`` / ``fk_trips_truck`` as NOT VALID
+    (ON DELETE SET NULL) so booting stays safe on legacy rows whose driver or
+    truck was deleted.  ``ALTER TABLE trips VALIDATE CONSTRAINT`` would reject
+    those orphan rows, so they are NULLed first (orphan counts are logged
+    before the cleanup for auditability).  Older PG schemas that never received
+    the constraints get a warning and are skipped.
+
+    Logs and mutates ``stats`` (adds ``trips_fk_orphans`` and
+    ``trips_fk_validated``); never raises — per-constraint failures are logged
+    and counted instead of aborting the import.
+    """
+    stats.setdefault("trips_fk_orphans", {})
+    stats.setdefault("trips_fk_validated", [])
+    for column, ref_table, constraint in TRIPS_FK_SANITIZE:
+        if column not in trips_columns:
+            print(
+                f"  trips: {column} column missing in PG schema, "
+                f"{constraint} VALIDATE skipped"
+            )
+            continue
+        # Count orphans BEFORE nulling so the operator can audit the cleanup.
+        orphan_count = 0
+        try:
+            cur = db.execute(
+                f"SELECT COUNT(*) AS cnt FROM trips t WHERE t.{column} IS NOT NULL "
+                f"AND NOT EXISTS (SELECT 1 FROM {ref_table} d "
+                f"WHERE d.id = t.{column})"
+            )
+            # Pool connections use RealDictCursor, so the row is a dict here;
+            # tolerate a plain tuple too for non-pool callers.
+            row = cur.fetchone()
+            orphan_count = row["cnt"] if isinstance(row, dict) else row[0]
+        except Exception as e:
+            print(f"  trips: {column} orphan count ERROR - {e}")
+        stats["trips_fk_orphans"][column] = orphan_count
+        if orphan_count:
+            print(
+                f"  trips: {orphan_count} orphan {column} -> {ref_table}(id), "
+                f"NULLing before VALIDATE"
+            )
+        try:
+            db.execute(
+                f"UPDATE trips SET {column} = NULL WHERE {column} IS NOT NULL "
+                f"AND {column} NOT IN (SELECT id FROM {ref_table})"
+            )
+        except Exception as e:
+            stats["errors"] += 1
+            print(f"  trips: {column} sanitize UPDATE ERROR - {e}")
+        # Guarded VALIDATE: skip with a warning when the constraint is absent
+        # (older PG schemas predating the Phase D ALTERs).
+        exists = False
+        try:
+            cur = db.execute(
+                "SELECT 1 FROM information_schema.table_constraints "
+                "WHERE table_name = 'trips' AND constraint_name = %s "
+                "AND constraint_type = 'FOREIGN KEY'",
+                (constraint,),
+            )
+            exists = cur.fetchone() is not None
+        except Exception as e:
+            print(f"  trips: {constraint} existence check ERROR - {e}")
+        if not exists:
+            print(f"  trips: {constraint} not found in PG schema, VALIDATE skipped")
+            continue
+        try:
+            db.execute(f"ALTER TABLE trips VALIDATE CONSTRAINT {constraint}")
+            stats["trips_fk_validated"].append(constraint)
+            print(f"  trips: VALIDATE CONSTRAINT {constraint} OK")
+        except Exception as e:
+            stats["errors"] += 1
+            print(f"  trips: VALIDATE CONSTRAINT {constraint} ERROR - {e}")
+    return stats
+
+
+def import_from_json(input_path: str, dsn: str, sanitize_fks: bool = True) -> dict:
+    """Import all tables from a JSON dump into PostgreSQL.
+
+    ``sanitize_fks`` (default True) enables the post-import trips FK step:
+    orphan driver_id/truck_id values (rows referencing deleted drivers/trucks
+    in legacy dumps) are NULLed and the NOT VALID constraints from
+    schema_pg.sql are validated.  Pass False to skip it.
+    """
     if not os.path.isfile(input_path):
         raise FileNotFoundError(f"Dump file not found: {input_path}")
 
@@ -215,6 +307,20 @@ def import_from_json(input_path: str, dsn: str) -> dict:
         except Exception as e:
             print(f"  documents: search_vector backfill ERROR - {e}")
 
+    # Trips -> drivers/trucks FK sanitation (Phase D): schema_pg.sql declares
+    # fk_trips_driver / fk_trips_truck NOT VALID (ON DELETE SET NULL), so
+    # legacy SQLite dumps whose trips reference deleted drivers/trucks stay
+    # boot-safe.  NULL those orphans and VALIDATE the constraints here — this
+    # must happen after all tables are imported (FK checks re-enabled above)
+    # and before the sequence resets below.
+    if sanitize_fks and pg_schema.get("trips") is not None:
+        try:
+            sanitize_trips_orphan_fks(db, stats, pg_schema["trips"])
+            db.commit()
+        except Exception as e:
+            stats["errors"] += 1
+            print(f"  trips: FK sanitize/validate step ERROR - {e}")
+
     # Reset sequences to max id
     for table in ordered_tables:
         rows = tables.get(table, [])
@@ -274,10 +380,15 @@ if __name__ == "__main__":
     parser.add_argument("--dsn", default=os.environ.get(
         "OPERION_POSTGRES_DSN", "postgresql://operion:operion@localhost:5432/operion"
     ), help="PostgreSQL DSN")
+    parser.add_argument(
+        "--skip-fk-sanitize",
+        action="store_true",
+        help="Skip trips.driver_id/truck_id orphan cleanup and FK VALIDATE",
+    )
     args = parser.parse_args()
 
     print(f"Importing {args.input} -> PostgreSQL")
     print(f"Started: {datetime.now().isoformat()}")
-    stats = import_from_json(args.input, args.dsn)
+    stats = import_from_json(args.input, args.dsn, sanitize_fks=not args.skip_fk_sanitize)
     print(f"\nDone: {stats['total_rows']} rows in {stats['total_tables']} tables "
           f"({stats['errors']} errors, {len(stats['skipped'])} skipped)")

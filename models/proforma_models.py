@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, datetime
@@ -25,7 +27,7 @@ class ProformaResult(BaseModel):
     issue_date: date
     valid_until: date
     currency: str
-    total_amount: float
+    total_amount: Decimal
     status: str
     notes: str = ""
     pdf_path: Optional[str] = None

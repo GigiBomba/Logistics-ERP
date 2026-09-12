@@ -98,7 +98,50 @@ class RemoteTripService:
         return self.get_filtered(limit=limit)
 
     def get_by_statuses(self, statuses: list, limit: Optional[int] = None) -> list:
+        """Fetch trips across several statuses in ONE request (B7).
+
+        Uses the backend's optional ``statuses`` comma-separated query param
+        on ``GET /api/v1/trips/``.  If the param is rejected (HTTP error,
+        422, exception) or the response is not a TripListResponse, it falls
+        back to the previous per-status loop.  Return shape is unchanged: a
+        flat list of unique trip dicts limited to ``statuses``.
+        """
         status_set = set(statuses)
+        if not status_set:
+            return []
+        limit_val = limit if limit is not None else 1000
+        statuses_str = ",".join(str(s) for s in statuses)
+        try:
+            resp = self._api._get(
+                "/api/v1/trips/",
+                params=self._api._clean_params(statuses=statuses_str, limit=limit_val),
+            )
+        except Exception:
+            logger.debug(
+                "get_by_statuses multi-status call failed; "
+                "falling back to per-status loop", exc_info=True,
+            )
+            return self._get_by_statuses_per_status(statuses, status_set, limit)
+        if not isinstance(resp, dict) or not isinstance(resp.get("items"), list):
+            logger.debug(
+                "get_by_statuses unexpected response shape; "
+                "falling back to per-status loop",
+            )
+            return self._get_by_statuses_per_status(statuses, status_set, limit)
+        result: list = []
+        seen: set = set()
+        for t in resp["items"]:
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("id")
+            if tid is not None and tid not in seen and t.get("status") in status_set:
+                seen.add(tid)
+                result.append(t)
+        return result
+
+    def _get_by_statuses_per_status(self, statuses: list, status_set: set,
+                                    limit: Optional[int]) -> list:
+        """Fallback path: one list call per status, deduped by trip id."""
         result: list = []
         seen: set = set()
         for st in statuses:
@@ -203,15 +246,17 @@ class RemoteClientService:
             if cached is not None:
                 return cached
 
-        # Page through the API (backend caps page_size at 200) up to the
-        # local LIMIT 500 parity cap, then enrich each client with its
-        # dashboard revenue/trip_count. The backend does not truly slice the
-        # no-query path, so dedupe by id and stop on a no-progress page.
+        # Page through the API (backend caps page_size at 200) until the
+        # list is exhausted, then enrich each client with its dashboard
+        # revenue/trip_count. The backend does not truly slice the no-query
+        # path, so dedupe by id and stop on an empty, short, or no-progress
+        # page (no hard client cap — tenants with >500 clients are not
+        # truncated).
         all_clients: list = []
         seen_ids: set = set()
         page = 1
         page_size = 200
-        while len(all_clients) < 500:
+        while True:
             resp = self._api.list_clients(
                 include_inactive=include_inactive, page=page, page_size=page_size,
             )
