@@ -9,6 +9,18 @@ from services.dispatch_service.models import DriverAvailability, TruckAvailabili
 
 logger = logging.getLogger(__name__)
 
+# Truck statuses that make a truck undispatchable.  Lowercased against the
+# truck's ``status`` string.  The DB's canonical maintenance status is
+# 'In Service' (backend/schemas/mobile.py); the ARGO world and maintenance
+# flows also use lowercase 'maintenance'.
+_BLOCKED_TRUCK_STATUSES = {
+    "in service",
+    "maintenance",
+    "inactive",
+    "out of service",
+    "decommissioned",
+}
+
 
 class AvailabilityChecker:
     """Checks truck and driver availability for dispatch assignments."""
@@ -30,10 +42,11 @@ class AvailabilityChecker:
         blocks: list[str] = []
         conflicts: list[dict] = []
 
-        # 1. Status check: trucks "In Service" are unavailable
+        # 1. Status check: trucks in a blocked state (or inactive) are unavailable
         status = (truck.get("status") or "").lower()
-        if status == "in service":
-            blocks.append("Truck is in service/repair")
+        active_status = truck.get("active_status")
+        if status in _BLOCKED_TRUCK_STATUSES or active_status == 0:
+            blocks.append("Truck is not available (blocked state)")
 
         # 2. Insurance expiry check
         insurance = truck.get("insurance_expiry") or truck.get("insurance_valid_until")

@@ -44,6 +44,7 @@ class NotificationCenter:
             self._event_bus.unsubscribe(ALERT_RESOLVED, self._on_alert_resolved)
             logger.debug("NotificationCenter unsubscribed events")
         except Exception:
+            logger.warning("NotificationCenter failed to unsubscribe from event bus during shutdown", exc_info=True)
             pass
 
     def _on_alert_created(self, ev: dict[str, Any]) -> None:
@@ -147,6 +148,7 @@ class NotificationCenter:
             raw = cfg.get("alert_email_recipients", "")
             return [e.strip() for e in raw.split(",") if e.strip()]
         except Exception:
+            logger.warning("Failed to read alert email recipients from settings", exc_info=True)
             pass
         return []
 
@@ -222,6 +224,7 @@ class NotificationCenter:
                     from repositories.automail_repository import AutoMailRepository
                     AutoMailRepository(self._db).log_email(trip_id, to_address, subject, "sent")
                 except Exception:
+                    logger.warning("Failed to record sent email in AutoMailRepository", exc_info=True)
                     pass
             return True
         except smtplib.SMTPException as e:

@@ -156,9 +156,35 @@ class DriverTruckService:
             ServiceResult containing a list of DriverResult objects.
         """
         driver_dicts = self._driver_repo.get_all()
+        driver_ids = [d["id"] for d in driver_dicts]
+
+        # Batch enrichment (N+1 fix): instead of a per-driver
+        # ``get_by_driver()`` + fleet ``get_by_id()`` loop (2N+1 queries),
+        # resolve all assignments, plates and valid truck ids in three
+        # constant, company-scoped queries.  ``driver_id`` is UNIQUE in
+        # ``driver_truck_assignments`` (see schema), so the assignment map is
+        # exactly equivalent to the per-driver lookup.
+        assignments = self._repo.get_all()
+        truck_id_by_driver = {row["driver_id"]: row["truck_id"] for row in assignments}
+        plates_by_driver = self._repo.get_plates_by_driver_ids(driver_ids)
+        truck_ids = list(dict.fromkeys(truck_id_by_driver.values()))
+        # Only trucks that are valid for this tenant (same company + soft-delete
+        # filters as ``FleetRepository.get_by_id``) are reported.
+        valid_truck_ids = {
+            r["id"] for r in self._fleet_repo.get_trucks_by_ids(truck_ids)
+        } if truck_ids else set()
+
         drivers = []
         for d in driver_dicts:
-            enriched = self._enrich_with_truck(d)
+            truck_id = truck_id_by_driver.get(d["id"])
+            if truck_id is not None and truck_id in valid_truck_ids:
+                truck_data = {
+                    "id": truck_id,
+                    "plate_number": plates_by_driver.get(d["id"]),
+                }
+            else:
+                truck_data = None
+            enriched = self._dict_to_driver_result(d, truck_data)
             if enriched is not None:
                 drivers.append(enriched)
         return ServiceResult[list[DriverResult]](

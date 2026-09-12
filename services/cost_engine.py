@@ -99,9 +99,16 @@ class CostEngineService:
         """Typed cost estimation using a Pydantic request model."""
         logger.info("Cost estimation request: %s", request.model_dump())
         try:
-            consumption = self._resolve_consumption(request)
+            # Fetch the truck once and share it between consumption resolution
+            # and the truck_info string (they used to issue two identical
+            # ``get_by_id`` lookups).
+            truck = None
+            if request.truck_id is not None and self._fleet_repo is not None:
+                truck = self._fleet_repo.get_by_id(request.truck_id)
+
+            consumption = self._resolve_consumption(request, truck)
             fuel_price = self._resolve_fuel_price(request)
-            truck_info = self._resolve_truck_info(request)
+            truck_info = self._resolve_truck_info(request, truck)
 
             fuel_cost = round(request.distance_km * consumption / 100.0 * fuel_price, 2)
             driver_cost = round(request.driver_daily_rate * request.days, 2)
@@ -227,12 +234,18 @@ class CostEngineService:
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
-    def _resolve_consumption(self, request: CostEstimateRequest) -> float:
-        """Resolve fuel consumption (L/100km) from request or truck DB lookup."""
+    def _resolve_consumption(self, request: CostEstimateRequest, truck: Optional[dict] = None) -> float:
+        """Resolve fuel consumption (L/100km) from request or truck DB lookup.
+
+        ``truck`` may be passed in from the caller (already-fetched row) to
+        avoid a second lookup; when ``None`` it is fetched on demand, so the
+        helper keeps working when called directly.
+        """
         if request.consumption_l_per_100km is not None:
             return request.consumption_l_per_100km
         if request.truck_id is not None and self._fleet_repo is not None:
-            truck = self._fleet_repo.get_by_id(request.truck_id)
+            if truck is None:
+                truck = self._fleet_repo.get_by_id(request.truck_id)
             if truck and truck.get('fuel_consumption'):
                 return float(truck['fuel_consumption'])
         return 34.0  # fallback default
@@ -243,11 +256,16 @@ class CostEngineService:
             return request.fuel_price_per_liter
         return self.fuel_price
 
-    def _resolve_truck_info(self, request: CostEstimateRequest) -> str:
-        """Build a human-readable truck info string if truck_id is given."""
+    def _resolve_truck_info(self, request: CostEstimateRequest, truck: Optional[dict] = None) -> str:
+        """Build a human-readable truck info string if truck_id is given.
+
+        ``truck`` may be passed in from the caller (already-fetched row) to
+        avoid a second lookup; when ``None`` it is fetched on demand.
+        """
         if request.truck_id is None or self._fleet_repo is None:
             return ""
-        truck = self._fleet_repo.get_by_id(request.truck_id)
+        if truck is None:
+            truck = self._fleet_repo.get_by_id(request.truck_id)
         if not truck:
             return ""
         parts = [

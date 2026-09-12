@@ -12,6 +12,7 @@ import logging
 import os
 import tempfile
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from reportlab.lib import colors
@@ -122,11 +123,20 @@ class ReceiptGenerator:
             pass  # no db — skip permission check (backward compat)
 
         # ── 2. Compute total_amount from items ───────────────────────
+        # The final 2dp quantization reproduces the historical float-path
+        # rounding exactly — binary-exact .xx5 ties round half-even (1.875 ->
+        # 1.88), binary-inexact ones down (9.995 -> 9.99, 0.015 -> 0.01) —
+        # matching the invoice money-rounding policy (product decision
+        # 2026-09-07).  Cf. services/invoicing/service.py::_round_money.
         total_amount = request.total_amount
         if total_amount is None and request.items:
-            total_amount = round(sum(item.amount * item.quantity for item in request.items), 2)
+            total_amount = Decimal(
+                str(round(float(sum(
+                    (item.amount * item.quantity for item in request.items), Decimal("0")
+                )), 2))
+            )
         elif total_amount is None:
-            total_amount = 0.0
+            total_amount = Decimal("0")
 
         # ── 3. Generate receipt number + DB access ────────────────────
         receipt_number = ""
@@ -150,7 +160,7 @@ class ReceiptGenerator:
                 pass
 
             # ── 5. Prepare items JSON ────────────────────────────────
-            items_json = json.dumps([item.model_dump() for item in request.items])
+            items_json = json.dumps([item.model_dump(mode="json") for item in request.items])
 
             # ── 6. Save to DB ────────────────────────────────────────
             receipt_id = repo.create(
@@ -399,7 +409,7 @@ class ReceiptGenerator:
             receipt_date=receipt_date,
             currency=row.get("currency", "EUR"),
             items=items,
-            total_amount=float(row.get("total", 0) or 0),
+            total_amount=row.get("total", 0) or 0,
             notes=row.get("notes", ""),
             pdf_path=pdf_path,
             created_at=created_at,
@@ -525,6 +535,7 @@ class ReceiptGenerator:
                 logo_img.hAlign = "LEFT"
                 header_parts.append(logo_img)
             except Exception:
+                logger.warning("Failed to embed logo in receipt PDF; continuing without logo", exc_info=True)
                 pass
 
         company_block = (
@@ -761,10 +772,10 @@ class ReceiptGenerator:
         # FINANCIAL TABLE
         # ══════════════════════════════════════════════════════════════
 
-        amount = float(receipt_data.get("amount", 0))
-        vat_rate = float(receipt_data.get("vat_rate", 0))
-        vat_amount = float(receipt_data.get("vat_amount", amount * vat_rate / 100))
-        total = float(receipt_data.get("total", amount + vat_amount))
+        amount = receipt_data.get("amount", 0)
+        vat_rate = receipt_data.get("vat_rate", 0)
+        vat_amount = receipt_data.get("vat_amount", amount * vat_rate / 100)
+        total = receipt_data.get("total", amount + vat_amount)
 
         fin_rows = [
             [
@@ -957,6 +968,7 @@ class ReceiptGenerator:
                 sig_img = Image(sig_path, width=4 * cm, height=1.5 * cm)
                 left_block = sig_img
             except Exception:
+                logger.warning("Failed to embed signature image in receipt PDF", exc_info=True)
                 pass
         sig_table_data.append(left_block)
 
@@ -972,6 +984,7 @@ class ReceiptGenerator:
                 stamp_img = Image(stamp_path, width=3 * cm, height=3 * cm)
                 right_block = stamp_img
             except Exception:
+                logger.warning("Failed to embed stamp image in receipt PDF", exc_info=True)
                 pass
 
         sig_table_data.append(right_block)

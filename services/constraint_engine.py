@@ -3,7 +3,11 @@ from __future__ import annotations
 # services/constraint_engine.py
 # Refactored: Improved parameter building for GraphHopper truck routing
 
+import logging
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
 
 class TruckConstraintEngine:
     """
@@ -31,6 +35,7 @@ class TruckConstraintEngine:
             from utils.logger import get_logger
             self.logger = get_logger("TruckConstraintEngine")
         except Exception:
+            logger.debug("TruckConstraintEngine logger unavailable (get_logger failed)", exc_info=True)
             pass
 
     def validate_truck(self, truck: dict[str, Any]) -> tuple[bool, str]:

@@ -118,6 +118,7 @@ class FolderWatcher:
                 self._observer.stop()
                 self._observer.join(timeout=3.0)
             except Exception:
+                logger.warning("Failed to stop watchdog observer during FolderWatcher shutdown", exc_info=True)
                 pass
         if self._thread is not None:
             self._thread.join(timeout=3.0)

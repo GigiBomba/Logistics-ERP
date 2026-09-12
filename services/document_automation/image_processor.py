@@ -91,6 +91,7 @@ def _save_debug_image(image, debug_dir: str, name: str) -> None:
         else:
             _cv2.imwrite(path, image)
     except Exception:
+        logger.debug("Failed to save debug image %s (IMAGE_PROCESSOR_DEBUG=1)", name, exc_info=True)
         pass
 
 

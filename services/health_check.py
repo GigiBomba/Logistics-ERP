@@ -162,6 +162,6 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     logging.basicConfig(level=logging.WARNING)
     result = run_health_check()
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    logger.debug("Health check result: %s", json.dumps(result, indent=2, ensure_ascii=False))
     if result["overall"] != "healthy":
         sys.exit(1)

@@ -920,11 +920,15 @@ class DocumentService:
     def set_expiry_date(self, doc_id: int, expiry_date: str) -> None:
         self.expiry.set_expiry_date(doc_id, expiry_date)
 
-    def get_expiring(self, days_ahead: int = 30):
-        return self.expiry.get_expiring(days_ahead)
+    def get_expiring(self, days_ahead: int = 30, company_id=None):
+        if company_id is None:
+            return self.expiry.get_expiring(days_ahead)
+        return self.expiry.get_expiring(days_ahead, company_id=company_id)
 
-    def get_overdue(self):
-        return self.expiry.get_overdue()
+    def get_overdue(self, company_id=None):
+        if company_id is None:
+            return self.expiry.get_overdue()
+        return self.expiry.get_overdue(company_id=company_id)
 
     def evaluate_document_expiries(self, alert_mgr=None, db=None) -> int:
         return self.expiry.evaluate_document_expiries(alert_mgr=alert_mgr, db=db)

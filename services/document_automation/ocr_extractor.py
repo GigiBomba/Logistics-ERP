@@ -117,6 +117,7 @@ def _load_paddle_confidence_threshold(db=None) -> float:
                 except (ValueError, TypeError):
                     pass
         except Exception:
+            logger.warning("Failed to load PaddleOCR confidence threshold from settings", exc_info=True)
             pass
     with _PADDLE_CONF_THRESHOLD_LOCK:
         _PADDLE_CONF_THRESHOLD_CACHE = threshold
@@ -138,6 +139,7 @@ def set_paddle_gpu(enable: bool) -> None:
             import paddle
             paddle.device.set_device('gpu:0')
         except Exception:
+            logger.debug("Failed to set PaddleOCR device to GPU; continuing with default device", exc_info=True)
             pass
 
 
@@ -245,6 +247,7 @@ def _paddle_extract(pdf_path: str, max_pages: int) -> ExtractionResult | None:
             _pdi.create_predictor = _patched_fn
             _pdi._opencode_patched = True
     except Exception:
+        logger.warning("Failed to patch PaddleOCR predictor (mkldnn/onednn config)", exc_info=True)
         pass
 
     # Lazy-create the singleton PaddleOCR instance (thread-safe).
@@ -257,6 +260,7 @@ def _paddle_extract(pdf_path: str, max_pages: int) -> ExtractionResult | None:
                         import paddle
                         paddle.device.set_device('gpu:0')
                     except Exception:
+                        logger.debug("Failed to set PaddleOCR device to GPU at init; continuing with CPU", exc_info=True)
                         pass
                 _PADDLE_OCR_INSTANCE = paddleocr_mod.PaddleOCR(
                     lang=_resolve_paddle_lang(),

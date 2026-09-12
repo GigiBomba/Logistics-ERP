@@ -55,6 +55,7 @@ async def _check_provider_health(
                     datetime.now(timezone.utc).isoformat(),
                 )
         except Exception:
+            logger.warning("Failed to persist provider 'down' status after health-check timeout", exc_info=True)
             pass
     except Exception as e:
         logger.error(

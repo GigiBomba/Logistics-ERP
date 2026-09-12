@@ -15,11 +15,15 @@ class ExpiryService:
         self._repo.update(doc_id, expiry_date=expiry_date,
                           updated_at=datetime.now().isoformat())
 
-    def get_expiring(self, days_ahead: int = 30):
-        return self._repo.get_expiring_documents(days_ahead)
+    def get_expiring(self, days_ahead: int = 30, company_id=None):
+        if company_id is None:
+            return self._repo.get_expiring_documents(days_ahead)
+        return self._repo.get_expiring_documents(days_ahead, company_id=company_id)
 
-    def get_overdue(self):
-        return self._repo.get_overdue_documents()
+    def get_overdue(self, company_id=None):
+        if company_id is None:
+            return self._repo.get_overdue_documents()
+        return self._repo.get_overdue_documents(company_id=company_id)
 
     def evaluate_document_expiries(self, alert_mgr=None, db=None) -> int:
         from services.operations.alert_manager import (

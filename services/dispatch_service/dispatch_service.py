@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -38,27 +39,8 @@ from services.operations.event_bus import (
 
 logger = logging.getLogger(__name__)
 
-# ── Canonical status → column mapping (replicated from board_state.py) ──
-STATUS_TO_COLUMN: dict[str, str] = {
-    "Planned": "Planned",
-    "Scheduled": "Planned",
-    "Pending": "Planned",
-    "Loading": "Loading",
-    "Preparing": "Loading",
-    "Pickup": "Loading",
-    "In Transit": "In Transit",
-    "InTransit": "In Transit",
-    "Active": "In Transit",
-    "InProgress": "In Transit",
-    "Delivered": "Delivered",
-    "Completed": "Delivered",
-    "Done": "Delivered",
-    "Invoiced": "Delivered",
-    "Paid": "Delivered",
-    "Cancelled": "Cancelled",
-}
-
-COLUMN_KEYS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
+# ── Canonical status → column mapping (single source of truth: constants.py) ──
+from services.dispatch_service.constants import COLUMN_KEYS, STATUS_TO_COLUMN
 
 
 class DispatchService:
@@ -225,6 +207,17 @@ class DispatchService:
         driver_id: int | None,
     ) -> DispatchResult:
         """Assign both truck and driver. Rolls back truck if driver assignment fails."""
+        # 0. Snapshot the FULL pre-assignment state — the composite undo token
+        #    must restore every field assign_truck/assign_driver may touch.
+        trip = self._validate_trip_exists(trip_id)
+        previous: dict[str, Any] = {
+            "truck_id": trip.get("truck_id"),
+            "truck_number": trip.get("truck_number"),
+            "driver_id": trip.get("driver_id"),
+            "driver_name": trip.get("driver_name"),
+            "status": trip.get("status"),
+        }
+
         truck_undo: UndoToken | None = None
         truck_plate: str = ""
 
@@ -269,7 +262,13 @@ class DispatchService:
                     driver_id, truck_id, exc,
                 )
 
-        # 4. Build composite result
+        # 4. Build composite undo token + result
+        undo_token = UndoToken(
+            operation="assign_both",
+            trip_id=trip_id,
+            previous_state=previous,
+            undo_description=f"Undo dispatch of trip #{trip_id}",
+        )
         details: dict[str, Any] = {}
         if truck_plate:
             details["truck_plate"] = truck_plate
@@ -287,11 +286,19 @@ class DispatchService:
             trip_id=trip_id,
             operation="assign_both",
             message=f"Assigned truck {truck_plate or '—'} and driver {driver_name or '—'} to trip #{trip_id}",
+            undo_token=undo_token,
             details=details,
         )
 
     def bulk_assign_truck(self, trip_ids: list[int], truck_id: int) -> BulkDispatchResult:
-        """Bulk assign a truck to multiple trips."""
+        """Bulk assign a truck to multiple trips — atomic, all-or-nothing.
+
+        The whole batch runs inside a repository transaction (``transaction()``):
+        any per-trip ``DispatchError`` aborts the batch and rolls back every
+        assignment made so far, so a partial failure leaves NO trip assigned
+        (D-INV-05).  The result keeps the per-item shape the tool consumes — on
+        a rolled-back batch every trip is reported as failed (``succeeded == 0``).
+        """
         # 1. Validate truck once upfront (fail fast)
         truck = self._validate_truck_exists(truck_id)
         plate = truck.get("plate") or truck.get("truck_number") or str(truck_id)
@@ -300,28 +307,48 @@ class DispatchService:
         undo_tokens: list[UndoToken] = []
         succeeded = 0
         failed = 0
+        per_trip_errors: dict[int, str] = {}
 
-        for trip_id in trip_ids:
-            try:
-                result = self.assign_truck(trip_id, truck_id)
-                succeeded += 1
-                results.append(result)
-                if result.undo_token is not None:
-                    undo_tokens.append(result.undo_token)
-            except DispatchError as e:
-                failed += 1
-                results.append(
+        try:
+            with self._bulk_transaction(repo_kind="truck"):
+                for trip_id in trip_ids:
+                    try:
+                        result = self.assign_truck(trip_id, truck_id)
+                        succeeded += 1
+                        results.append(result)
+                        if result.undo_token is not None:
+                            undo_tokens.append(result.undo_token)
+                    except DispatchError as e:
+                        per_trip_errors[trip_id] = str(e)
+                        logger.error(
+                            "Bulk assign truck %s (id=%d) failed for trip #%d: %s",
+                            plate, truck_id, trip_id, e,
+                        )
+                        # Abort the batch → the transaction rolls back.
+                        raise
+        except DispatchError as e:
+            # The whole batch was rolled back — nothing was assigned.  Report
+            # every trip as failed so the tool's per-item contract stays intact.
+            logger.error(
+                "Bulk assign truck %s (id=%d) rolled back — batch aborted: %s",
+                plate, truck_id, e,
+            )
+            abort_message = f"Batch rolled back: {e}"
+            return BulkDispatchResult(
+                total=len(trip_ids),
+                succeeded=0,
+                failed=len(trip_ids),
+                results=[
                     DispatchResult(
                         success=False,
                         trip_id=trip_id,
                         operation="assign_truck",
-                        message=str(e),
+                        message=per_trip_errors.get(trip_id, abort_message),
                     )
-                )
-                logger.error(
-                    "Bulk assign truck %s (id=%d) failed for trip #%d: %s",
-                    plate, truck_id, trip_id, e,
-                )
+                    for trip_id in trip_ids
+                ],
+                undo_tokens=[],
+            )
 
         logger.info(
             "Bulk assign truck %s: %d succeeded, %d failed out of %d",
@@ -336,7 +363,14 @@ class DispatchService:
         )
 
     def bulk_assign_driver(self, trip_ids: list[int], driver_id: int) -> BulkDispatchResult:
-        """Bulk assign a driver to multiple trips."""
+        """Bulk assign a driver to multiple trips — atomic, all-or-nothing.
+
+        The whole batch runs inside a repository transaction (``transaction()``):
+        any per-trip ``DispatchError`` aborts the batch and rolls back every
+        assignment made so far, so a partial failure leaves NO trip assigned
+        (D-INV-05).  The result keeps the per-item shape the tool consumes — on
+        a rolled-back batch every trip is reported as failed (``succeeded == 0``).
+        """
         # 1. Validate driver once upfront (fail fast)
         driver = self._validate_driver_exists(driver_id)
         driver_name = driver.get("name") or driver.get("driver_name") or ""
@@ -345,28 +379,48 @@ class DispatchService:
         undo_tokens: list[UndoToken] = []
         succeeded = 0
         failed = 0
+        per_trip_errors: dict[int, str] = {}
 
-        for trip_id in trip_ids:
-            try:
-                result = self.assign_driver(trip_id, driver_id)
-                succeeded += 1
-                results.append(result)
-                if result.undo_token is not None:
-                    undo_tokens.append(result.undo_token)
-            except DispatchError as e:
-                failed += 1
-                results.append(
+        try:
+            with self._bulk_transaction(repo_kind="driver"):
+                for trip_id in trip_ids:
+                    try:
+                        result = self.assign_driver(trip_id, driver_id)
+                        succeeded += 1
+                        results.append(result)
+                        if result.undo_token is not None:
+                            undo_tokens.append(result.undo_token)
+                    except DispatchError as e:
+                        per_trip_errors[trip_id] = str(e)
+                        logger.error(
+                            "Bulk assign driver %s (id=%d) failed for trip #%d: %s",
+                            driver_name, driver_id, trip_id, e,
+                        )
+                        # Abort the batch → the transaction rolls back.
+                        raise
+        except DispatchError as e:
+            # The whole batch was rolled back — nothing was assigned.  Report
+            # every trip as failed so the tool's per-item contract stays intact.
+            logger.error(
+                "Bulk assign driver %s (id=%d) rolled back — batch aborted: %s",
+                driver_name, driver_id, e,
+            )
+            abort_message = f"Batch rolled back: {e}"
+            return BulkDispatchResult(
+                total=len(trip_ids),
+                succeeded=0,
+                failed=len(trip_ids),
+                results=[
                     DispatchResult(
                         success=False,
                         trip_id=trip_id,
                         operation="assign_driver",
-                        message=str(e),
+                        message=per_trip_errors.get(trip_id, abort_message),
                     )
-                )
-                logger.error(
-                    "Bulk assign driver %s (id=%d) failed for trip #%d: %s",
-                    driver_name, driver_id, trip_id, e,
-                )
+                    for trip_id in trip_ids
+                ],
+                undo_tokens=[],
+            )
 
         logger.info(
             "Bulk assign driver %s: %d succeeded, %d failed out of %d",
@@ -496,6 +550,11 @@ class DispatchService:
         route_repo = getattr(self._trip_service, "_route_repo", None)
 
         # 6. Group and filter trips
+        # First pass: bucket trips by column and collect the route ids that
+        # will be shown so the routes can be resolved in ONE batched query
+        # (``get_routes_by_ids``) instead of N sequential ``get_by_id`` calls.
+        accepted: list[tuple[dict[str, Any], str]] = []
+        route_ids: list[int] = []
         for trip in all_trips:
             raw_status = trip.get("status", "")
             column = STATUS_TO_COLUMN.get(raw_status)
@@ -509,8 +568,31 @@ class DispatchService:
                 if trip_date and trip_date < cutoff:
                     continue
 
-            # 7. Build card_data
-            card_data = self._build_card_data(trip, route_repo)
+            accepted.append((trip, column))
+            route_id = trip.get("route_history_v2_id")
+            if route_id:
+                try:
+                    route_ids.append(int(route_id))
+                except (ValueError, TypeError):
+                    # Non-numeric ids were silently tolerated by the old
+                    # per-trip path (returned "", "") — keep that behaviour.
+                    pass
+
+        # 7. Batch-resolve routes (best-effort; falls back to per-trip
+        #    get_by_id only for routes missing from the batch result).
+        routes_by_id: dict[int, dict[str, Any]] = {}
+        if route_repo is not None and route_ids:
+            try:
+                routes = route_repo.get_routes_by_ids(route_ids) or []
+                routes_by_id = {r["id"]: r for r in routes}
+            except Exception:
+                logger.debug(
+                    "Batch route resolution failed — falling back to per-trip lookups",
+                    exc_info=True,
+                )
+
+        for trip, column in accepted:
+            card_data = self._build_card_data(trip, route_repo, routes_by_id)
             column_trips[column].append(card_data)
 
         # 8. Compute status counts
@@ -528,6 +610,7 @@ class DispatchService:
         self,
         trip: dict[str, Any],
         route_repo: Any,
+        routes_by_id: dict[int, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Build a single card data dict from a trip row."""
         trip_id = trip.get("id", 0)
@@ -537,7 +620,7 @@ class DispatchService:
         driver_id = trip.get("driver_id")
         truck_id = trip.get("truck_id")
 
-        origin, destination = self._resolve_route(trip, route_repo)
+        origin, destination = self._resolve_route(trip, route_repo, routes_by_id)
 
         departure = trip.get("start_date", "") or ""
         eta = trip.get("end_date", "") or ""
@@ -561,6 +644,7 @@ class DispatchService:
         self,
         trip: dict[str, Any],
         route_repo: Any,
+        routes_by_id: dict[int, dict[str, Any]] | None = None,
     ) -> tuple[str, str]:
         """Resolve origin/destination from route_history_v2 if available."""
         route_id = trip.get("route_history_v2_id")
@@ -568,7 +652,13 @@ class DispatchService:
             return "", ""
 
         try:
-            route = route_repo.get_by_id(int(route_id))
+            route = None
+            if routes_by_id is not None:
+                route = routes_by_id.get(int(route_id))
+            if route is None:
+                # Fall back to a direct lookup (keeps per-trip behaviour when
+                # the batch map is unavailable / the route was not returned).
+                route = route_repo.get_by_id(int(route_id))
             if not route:
                 return "", ""
 
@@ -607,6 +697,23 @@ class DispatchService:
         if not driver:
             raise DriverNotFoundError(f"Driver #{driver_id} not found")
         return driver
+
+    def _bulk_transaction(self, repo_kind: str = "truck"):
+        """Return the repository transaction context manager for a bulk batch.
+
+        Bulk assignments write to the ``trips`` table, so the trip repository
+        (``_trip_service._trip_repo``) is preferred — the same handle
+        ``get_dispatch_board_data`` uses.  Fall back to the fleet/driver repo
+        (they share the same connection) when the trip service doesn't expose
+        one, and to a no-op context when the handle has no ``transaction()``.
+        """
+        repo = getattr(self._trip_service, "_trip_repo", None)
+        if repo is None:
+            repo = self._fleet_repo if repo_kind == "truck" else self._driver_repo
+        txn = getattr(repo, "transaction", None)
+        if txn is None:
+            return nullcontext()
+        return txn()
 
     # ═════════════════════════════════════════════════════════════════════
     # Delay evaluation (business logic extracted from dispatch_board UI)

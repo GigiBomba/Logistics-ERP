@@ -193,23 +193,16 @@ class FleetService:
     def search(self, request: VehicleSearchRequest) -> VehicleSearchResult:
         """Search vehicles with optional filters.
 
-        Supports filtering by ``query`` (plate / model), ``status``,
-        and ``fuel_type``.
+        Supports filtering by ``query`` (plate / model / manufacturer),
+        ``status``, and ``fuel_type``.  The query/status filters are pushed
+        down to SQL (``FleetRepository.search``) so only matching rows are
+        loaded; ``fuel_type`` is not stored in the DB and remains a no-op.
         """
         try:
-            rows = self._fleet_repo.get_all()
-            # Client-side filtering — acceptable for moderate fleet sizes.
-            # For large fleets, push filtering down to SQL.
-            if request.query:
-                q = request.query.lower()
-                rows = [
-                    r for r in rows
-                    if q in r.get("plate_number", "").lower()
-                    or q in r.get("model", "").lower()
-                    or q in r.get("manufacturer", "").lower()
-                ]
-            if request.status:
-                rows = [r for r in rows if r.get("status", "").lower() == request.status.lower()]
+            rows = self._fleet_repo.search(
+                search=request.query,
+                status=request.status or "",
+            )
             if request.fuel_type:
                 # fuel_type is not stored in DB — filter by consumption pattern instead
                 pass

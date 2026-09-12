@@ -31,6 +31,7 @@ from typing import Any, Callable, Optional
 from models.common import ErrorDetail, ServiceResult
 from models.ocr_models import MatchedTrip, OcrResult
 from repositories.settings_repository import SettingsRepository
+from services.operations.event_bus import RETRY_TRIGGERED, shared_event_bus
 
 from .field_extractors import validate_extracted_fields
 from .sanitizer import sanitize_ocr_text
@@ -39,6 +40,26 @@ from .types import FieldValidationResult, ValidationResult
 logger = logging.getLogger("document_automation.pipeline")
 
 ProgressCallback = Optional[Callable[[str, int], None]]
+
+
+def _publish_ocr_retry_event(doc_id: int, stage: str, exc: BaseException) -> None:
+    """Publish a ``retry.triggered`` telemetry event for a failed stage.
+
+    Best-effort telemetry — never masks the original OCR failure that
+    the caller is about to re-raise.  Guarded because the shared bus
+    may be absent in headless/edge environments.
+    """
+    if shared_event_bus is None:
+        return
+    shared_event_bus.publish(
+        RETRY_TRIGGERED,
+        {
+            "doc_id": doc_id,
+            "stage": stage,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        },
+    )
 
 
 def run_for_existing_document(
@@ -108,18 +129,25 @@ def run_for_existing_document(
             output_dir=temp_output_dir,
             job_id=job_id,
         )
-    except ProcessingError:
+    except ProcessingError as exc:
         logger.exception("ImageProcessor failed for document %d", doc_id)
+        _publish_ocr_retry_event(doc_id, "image_processing", exc)
         raise
     except (ValueError, TypeError, OSError, RuntimeError) as exc:
         logger.exception("Unexpected error in image processing for document %d", doc_id)
+        _publish_ocr_retry_event(doc_id, "image_processing", exc)
         raise RuntimeError(f"Image processing failed: {exc}") from exc
 
     if progress_callback:
         progress_callback("ocr", 50)
 
     ocr = OcrExtractor(db=db)
-    extraction = ocr.extract(result.pdf_path, stop_event=stop_event)
+    try:
+        extraction = ocr.extract(result.pdf_path, stop_event=stop_event)
+    except (ProcessingError, OSError, RuntimeError) as exc:
+        logger.exception("OCR extraction failed for document %d", doc_id)
+        _publish_ocr_retry_event(doc_id, "ocr_extraction", exc)
+        raise
 
     # Clean up temp dir after OCR has read the processed file.
     try:

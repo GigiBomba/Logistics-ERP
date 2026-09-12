@@ -232,7 +232,7 @@ class InvoiceGenerator:
 
             # ── HEADER ──────────────────────────────────────────────────
             if is_proforma:
-                title_text = "PROFORMA INVOICE"
+                title_text = self._tr("proforma_pdf.title", mode)
             else:
                 title_text = mode_title
             title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"],
@@ -303,6 +303,7 @@ class InvoiceGenerator:
                     story.append(logo_img)
                     story.append(Spacer(1, 0.3*cm))
                 except Exception:
+                    logger.warning("Failed to embed logo in invoice PDF; continuing without logo", exc_info=True)
                     pass
 
             info_table_data = [
@@ -526,6 +527,7 @@ class InvoiceGenerator:
                         f"<b>Amount in words:</b> [amount too large to convert to words]",
                         self.styles["Normal"]))
                 except Exception:
+                    logger.warning("Failed to render amount-in-words in invoice PDF", exc_info=True)
                     pass
 
             # ── NOTES ───────────────────────────────────────────────────
@@ -597,14 +599,18 @@ class InvoiceGenerator:
 
             if is_proforma:
                 story.append(Spacer(1, 0.3*cm))
+                disclaimer = self._tr("proforma_pdf.disclaimer", mode)
                 story.append(Paragraph(
-                    "<i>This is a proforma invoice and does not constitute a tax invoice.</i>",
+                    f"<i>{disclaimer}</i>",
                     self.styles["Italic"]))
 
             # Build with optional watermark for proforma
             if is_proforma:
-                doc.build(story, onFirstPage=self._draw_watermark,
-                          onLaterPages=self._draw_watermark)
+                watermark_text = self._tr("proforma_pdf.watermark", mode)
+                def _watermark(c, d, text=watermark_text):
+                    self._draw_watermark(c, d, text=text)
+                doc.build(story, onFirstPage=_watermark,
+                          onLaterPages=_watermark)
             else:
                 doc.build(story)
             logger.info("Rich invoice PDF generated successfully: path=%s, invoice_id=%s, grand_total=%s",

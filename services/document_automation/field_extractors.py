@@ -438,6 +438,7 @@ def normalize_date(date_str: str) -> str:
         dt = dateutil_parser.parse(s, fuzzy=True)
         return dt.strftime("%Y-%m-%d")
     except Exception:
+        logger.warning("normalize_date: dateutil fallback failed for '%s'", date_str, exc_info=True)
         pass
     logger.warning("normalize_date: unable to parse '%s'", date_str)
     return ""

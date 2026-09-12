@@ -150,6 +150,7 @@ class FeatureFlagService:
                 if value is not None:
                     return value == "1"
         except Exception:
+            logger.warning("Failed to read feature flag DB override", exc_info=True)
             pass
 
         return None

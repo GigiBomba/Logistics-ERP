@@ -10,9 +10,9 @@ The implementation focuses on clarity, type annotations and maintainability.
 from __future__ import annotations
 
 
-import contextlib
 import hashlib
 import math
+import os
 import threading
 import time
 from typing import Any, Optional
@@ -22,6 +22,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from config import Config
+from database.tenant_context import get_company_id
 from services.calculator import TripCalculator
 from services.constraint_engine import TruckConstraintEngine
 from services.country_exclusion import CountryExclusionEngine
@@ -43,8 +44,46 @@ from utils.logger import get_logger
 GRAPHHOPPER_PROFILES: dict[str, str] = Config.GRAPHHOPPER_PROFILES
 
 
+def _current_company_id() -> Optional[int]:
+    """Return the active tenant's company id, or ``None``.
+
+    The codebase keeps the current company in two contextvar providers
+    (``database.tenant_context`` — the canonical one used by services/tasks —
+    and ``backend.dependencies`` which is set by the HTTP auth middleware).
+    We read both so the Redis mirror works regardless of which path set the
+    context.  A ``None`` result means "no tenant scope": in that case we never
+    share through Redis (see :meth:`RouteCache._redis_ready`).
+    """
+    cid = get_company_id()
+    if cid is not None:
+        return cid
+    try:
+        from backend.dependencies import get_request_company_id
+        return get_request_company_id()
+    except Exception:
+        return None
+
+
+def _resolve_redis_mirror() -> Optional[Any]:
+    """Return a shared RedisCache mirror, or ``None`` when Redis is disabled.
+
+    The mirror is purely optional.  It is only used when ``OPERION_REDIS_URL``
+    is set (production workers) AND Redis is reachable.  Desktop / single
+    process deployments do not set ``OPERION_REDIS_URL``, so they get ``None``
+    here and keep the exact byte-identical in-memory fast path.
+    """
+    if not os.environ.get("OPERION_REDIS_URL"):
+        return None
+    try:
+        from backend.cache import get_cache
+        return get_cache()
+    except Exception:
+        return None
+
+
 class RouteCache:
-    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600) -> None:
+    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600,
+                 redis: Optional[Any] = None) -> None:
         from collections import OrderedDict
         self._cache: OrderedDict = OrderedDict()
         self._timestamps: dict[str, float] = {}
@@ -53,6 +92,10 @@ class RouteCache:
         self.ttl_seconds = ttl_seconds
         # Per-key locks for cache-stampede prevention
         self._compute_locks: dict[str, threading.Lock] = {}
+        # Optional cross-worker (Redis) mirror shared across uvicorn workers.
+        # It is ALWAYS optional: when absent/disabled the in-memory behaviour
+        # is byte-identical, so desktop single-process deployments are unaffected.
+        self._redis = redis
 
     def _make_key(self, points: list[tuple[float, float]], profile: str, exclusions: Optional[list[str]] = None) -> str:
         points_str = ",".join(f"{lat:.6f},{lon:.6f}" for lat, lon in points)
@@ -66,6 +109,43 @@ class RouteCache:
                 self._compute_locks[key] = threading.Lock()
             return self._compute_locks[key]
 
+    # ── Optional cross-worker (Redis) mirror ──────────────────────────────
+    def _redis_ready(self) -> bool:
+        """True when a company-scoped Redis mirror is available.
+
+        Deliberately requires a company id: shared keys MUST be tenant-scoped
+        for multi-tenant isolation.  Without a company context we never share.
+        """
+        if self._redis is None:
+            return False
+        try:
+            if not self._redis.is_enabled:
+                return False
+        except Exception:
+            return False
+        return _current_company_id() is not None
+
+    def _redis_key(self, local_key: str, kind: str) -> str:
+        """Build the company-scoped Redis key for a local cache key.
+
+        The company id is embedded in the key so two companies never share a
+        route/geocode entry in the shared Redis.  Format:
+        ``operion:{kind}:{company_id}:{local_key}``.
+        """
+        return f"operion:{kind}:{_current_company_id()}:{local_key}"
+
+    def _store_local(self, key: str, value: dict[str, Any]) -> None:
+        """Store *value* in the in-memory LRU under *key* (handles eviction)."""
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            else:
+                if len(self._cache) >= self.max_size:
+                    oldest_key, _ = self._cache.popitem(last=False)
+                    del self._timestamps[oldest_key]
+            self._cache[key] = value
+            self._timestamps[key] = time.time()
+
     def get(self, points: list[tuple[float, float]], profile: str, exclusions: Optional[list[str]] = None) -> Optional[dict[str, Any]]:
         key = self._make_key(points, profile, exclusions)
         with self._lock:
@@ -75,19 +155,25 @@ class RouteCache:
                     return self._cache[key]
                 del self._cache[key]
                 del self._timestamps[key]
+        # In-memory miss → consult the (optional, company-scoped) Redis mirror.
+        if self._redis_ready():
+            try:
+                value = self._redis.get(self._redis_key(key, "route"))
+            except Exception:
+                value = None
+            if value is not None:
+                self._store_local(key, value)
+                return value
         return None
 
     def set(self, points: list[tuple[float, float]], profile: str, result: dict[str, Any], exclusions: Optional[list[str]] = None) -> None:
         key = self._make_key(points, profile, exclusions)
-        with self._lock:
-            if key in self._cache:
-                self._cache.move_to_end(key)
-            else:
-                if len(self._cache) >= self.max_size:
-                    oldest_key, _ = self._cache.popitem(last=False)
-                    del self._timestamps[oldest_key]
-            self._cache[key] = result
-            self._timestamps[key] = time.time()
+        self._store_local(key, result)
+        if self._redis_ready():
+            try:
+                self._redis.set(self._redis_key(key, "route"), result, ttl=self.ttl_seconds)
+            except Exception:
+                pass
 
     def get_or_compute(
         self,
@@ -121,28 +207,187 @@ class RouteCache:
             self.set(points, profile, result, exclusions)
             return result
 
+    def get_or_compute_shared(
+        self,
+        points: list[tuple[float, float]],
+        profile: str,
+        compute_fn,
+        exclusions: Optional[list[str]] = None,
+        lock_ttl: int = 60,
+        lock_wait: float = 5.0,
+    ) -> tuple[dict[str, Any], bool]:
+        """Atomic get-or-compute with intra- AND cross-worker stampede guards.
+
+        Returns ``(result, from_cache)`` where ``from_cache`` is True when the
+        value was served from in-memory or Redis (so ``compute_fn`` was NOT
+        invoked).
+
+        Cross-worker protection (only when a company-scoped Redis mirror is
+        active): after an in-memory miss the key is looked up in Redis; if
+        absent we try to claim a Redis ``SET NX EX`` compute lock for the key.
+        If another worker holds the lock we bounded-wait for its published
+        value before falling back to computing (redundant but correct).
+        """
+        key = self._make_key(points, profile, exclusions)
+        # Fast in-memory path (primary; byte-identical for desktop).
+        with self._lock:
+            if key in self._cache:
+                if time.time() - self._timestamps[key] < self.ttl_seconds:
+                    self._cache.move_to_end(key)
+                    return self._cache[key], True
+                del self._cache[key]
+                del self._timestamps[key]
+        # Intra-worker per-key lock prevents concurrent computation of one key.
+        per_key_lock = self._get_compute_lock(key)
+        with per_key_lock:
+            # Double-check in-memory (another thread may have stored while waited).
+            with self._lock:
+                if key in self._cache:
+                    if time.time() - self._timestamps[key] < self.ttl_seconds:
+                        self._cache.move_to_end(key)
+                        return self._cache[key], True
+                    del self._cache[key]
+                    del self._timestamps[key]
+
+            # Cross-worker: consult the company-scoped Redis mirror + lock.
+            token: Optional[str] = None
+            redis_key = ""
+            lock_key = ""
+            if self._redis_ready():
+                redis_key = self._redis_key(key, "route")
+                lock_key = self._redis_key(key, "route-lock")
+                try:
+                    value = self._redis.get(redis_key)
+                except Exception:
+                    value = None
+                if value is not None:
+                    self._store_local(key, value)
+                    return value, True
+                try:
+                    token = self._redis.acquire_lock(lock_key, ttl=lock_ttl)
+                except Exception:
+                    token = None
+                if token is not None:
+                    # We own the lock — re-check in case another worker just published.
+                    try:
+                        value = self._redis.get(redis_key)
+                    except Exception:
+                        value = None
+                    if value is not None:
+                        self._release_redis_lock(lock_key, token)
+                        self._store_local(key, value)
+                        return value, True
+                else:
+                    # Another worker is computing — bounded wait for the result.
+                    deadline = time.time() + lock_wait
+                    while time.time() < deadline:
+                        try:
+                            value = self._redis.get(redis_key)
+                        except Exception:
+                            value = None
+                        if value is not None:
+                            self._store_local(key, value)
+                            return value, True
+                        time.sleep(0.05)
+
+            try:
+                result = compute_fn()
+                self.set(points, profile, result, exclusions)
+                return result, False
+            finally:
+                if token is not None:
+                    self._release_redis_lock(lock_key, token)
+
+    def _release_redis_lock(self, lock_key: str, token: str) -> None:
+        try:
+            self._redis.release_lock(lock_key, token)
+        except Exception:
+            pass
+
+    def begin_shared_compute(
+        self,
+        key: str,
+        kind: str = "route",
+        lock_ttl: int = 60,
+        lock_wait: float = 5.0,
+    ) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+        """Cross-worker stampede guard for a compute that is already underway.
+
+        Returns ``(shared_value_or_None, lock_token_or_None)``:
+        * a non-None ``shared_value`` → another worker already published it;
+        * a non-None ``lock_token`` → we own the Redis compute lock and should
+          compute, then call :meth:`end_shared_compute` with the token;
+        * both None → no mirror, or a bounded wait elapsed (proceed to compute;
+          the value may be published redundantly — correct, just not optimal).
+        """
+        if not self._redis_ready():
+            return None, None
+        redis_key = self._redis_key(key, kind)
+        lock_key = self._redis_key(key, kind + "-lock")
+        try:
+            shared = self._redis.get(redis_key)
+        except Exception:
+            shared = None
+        if shared is not None:
+            return shared, None
+        try:
+            token = self._redis.acquire_lock(lock_key, ttl=lock_ttl)
+        except Exception:
+            token = None
+        if token is not None:
+            try:
+                shared = self._redis.get(redis_key)
+            except Exception:
+                shared = None
+            return shared, token
+        # Another worker holds the lock → bounded wait for its published value.
+        deadline = time.time() + lock_wait
+        while time.time() < deadline:
+            try:
+                shared = self._redis.get(redis_key)
+            except Exception:
+                shared = None
+            if shared is not None:
+                return shared, None
+            time.sleep(0.05)
+        return None, None
+
+    def end_shared_compute(self, key: str, token: Optional[str], kind: str = "route") -> None:
+        if token is None:
+            return
+        self._release_redis_lock(self._redis_key(key, kind + "-lock"), token)
+
 
 class GeocodeCache:
-    def __init__(self, max_size: int = 2000, ttl_seconds: int = 604800) -> None:
+    def __init__(self, max_size: int = 2000, ttl_seconds: int = 604800,
+                 redis: Optional[Any] = None) -> None:
         self._cache: dict[str, tuple[float, float]] = {}
         self._timestamps: dict[str, float] = {}
         self._lock = threading.Lock()
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
+        # Optional cross-worker (Redis) mirror — always optional (see RouteCache).
+        self._redis = redis
+
+    def _redis_ready(self) -> bool:
+        if self._redis is None:
+            return False
+        try:
+            if not self._redis.is_enabled:
+                return False
+        except Exception:
+            return False
+        return _current_company_id() is not None
+
+    def _redis_key(self, local_key: str) -> str:
+        # Company id embedded → never shared across tenants (see RouteCache).
+        return f"operion:geocode:{_current_company_id()}:{local_key}"
 
     def _is_expired(self, address: str) -> bool:
         ts = self._timestamps.get(address)
         return ts is not None and (time.time() - ts) > self.ttl_seconds
 
-    def get(self, address: str) -> Optional[tuple[float, float]]:
-        with self._lock:
-            if address in self._cache and self._is_expired(address):
-                del self._cache[address]
-                del self._timestamps[address]
-                return None
-            return self._cache.get(address)
-
-    def set(self, address: str, coords: tuple[float, float]) -> None:
+    def _store_local(self, address: str, coords: tuple[float, float]) -> None:
         with self._lock:
             if self._is_expired(address):
                 del self._cache[address]
@@ -153,6 +398,38 @@ class GeocodeCache:
                 del self._timestamps[oldest_key]
             self._cache[address] = coords
             self._timestamps[address] = time.time()
+
+    def get(self, address: str) -> Optional[tuple[float, float]]:
+        with self._lock:
+            if address in self._cache and self._is_expired(address):
+                del self._cache[address]
+                del self._timestamps[address]
+                return None
+            if address in self._cache:
+                return self._cache[address]
+        # In-memory miss → consult the (optional, company-scoped) Redis mirror.
+        if self._redis_ready():
+            try:
+                raw = self._redis.get(self._redis_key(address))
+            except Exception:
+                raw = None
+            if raw is not None:
+                try:
+                    coords = (float(raw[0]), float(raw[1]))
+                except (TypeError, ValueError, IndexError):
+                    coords = None
+                if coords is not None:
+                    self._store_local(address, coords)
+                    return coords
+        return None
+
+    def set(self, address: str, coords: tuple[float, float]) -> None:
+        self._store_local(address, coords)
+        if self._redis_ready():
+            try:
+                self._redis.set(self._redis_key(address), [coords[0], coords[1]], ttl=self.ttl_seconds)
+            except Exception:
+                pass
 
 
 class GraphHopperClient:
@@ -574,8 +851,11 @@ class RouteService:
         self.country_exclusion = CountryExclusionEngine()
         gh_url = graphhopper_url if graphhopper_url is not None else graphhopper_base_url_from_env()
         self.client = GraphHopperClient(base_url=gh_url, timeout=timeout)
-        self._geocode_cache = GeocodeCache(max_size=2000)
-        self._route_cache = RouteCache(max_size=1000, ttl_seconds=3600)
+        # Optional cross-worker Redis mirror (None when Redis is unconfigured /
+        # unreachable → caches fall back to byte-identical in-memory only).
+        self._redis = _resolve_redis_mirror()
+        self._geocode_cache = GeocodeCache(max_size=2000, redis=self._redis)
+        self._route_cache = RouteCache(max_size=1000, ttl_seconds=3600, redis=self._redis)
 
         # segmentation defaults
         self.segment_distance_threshold_km = 800.0
@@ -807,9 +1087,14 @@ class RouteService:
             seg_meta["_segment_depth"] = depth
             seg_params["_meta"] = seg_meta
 
-            res = self.client.route(pair, profile=profile, params=seg_params)
-            with contextlib.suppress(Exception):
-                self._route_cache.set(pair, profile, res, exclusions=exclusions)
+            # get_or_compute_shared atomically checks memory + Redis and guards
+            # against cross-worker stampedes; compute_fn is skipped entirely
+            # when another worker already computed this exact segment.
+            res, _ = self._route_cache.get_or_compute_shared(
+                pair, profile,
+                compute_fn=lambda: self.client.route(pair, profile=profile, params=seg_params),
+                exclusions=exclusions,
+            )
             return res
         except Exception as exc:
             self.debug_logger.warning(f"Direct segment error {a}->{b}: {exc}")
@@ -846,6 +1131,19 @@ class RouteService:
             if cached:
                 cached["cached"] = True
                 return cached
+            # Cross-worker stampede guard: claim the Redis compute lock or
+            # bounded-wait for another worker already computing this exact
+            # route (value shared via the company-scoped Redis mirror). When no
+            # Redis is configured, begin_shared_compute is a no-op (None, None).
+            shared_key = self._route_cache._make_key(resolved_stops, profile, exclusions=avoid_countries)
+            shared_val, lock_token = self._route_cache.begin_shared_compute(shared_key, kind="route")
+            if shared_val is not None:
+                self._route_cache._store_local(shared_key, shared_val)
+                shared_val["cached"] = True
+                return shared_val
+        else:
+            shared_key = None
+            lock_token = None
 
         gh_params: dict[str, Any] = {}
         if truck:
@@ -980,6 +1278,14 @@ class RouteService:
                 self._route_cache.set(resolved_stops, profile, res, exclusions=avoid_countries)
             except Exception:
                 self.logger.warning("Failed to update route cache", exc_info=True)
+
+        # Release the cross-worker compute lock we own (if any). If the compute
+        # raised earlier, the Redis lock auto-expires via its TTL.
+        if lock_token is not None and shared_key is not None:
+            try:
+                self._route_cache.end_shared_compute(shared_key, lock_token, kind="route")
+            except Exception:
+                self.logger.warning("Failed to release route compute lock", exc_info=True)
 
         self.debug_logger.info(f"calculate_route_end total_s={time.time()-start:.2f} distance_km={res.get('distance_km')}")
         return res

@@ -3,12 +3,16 @@ from __future__ import annotations
 # services/route_runner.py
 # Production-grade route orchestrator with long-distance optimizations
 
+import logging
 import threading
 import time
 from typing import Any, Callable, Optional
 
 from services.geocode_nominatim import geocode_place
 from services.route_service import RouteService
+
+logger = logging.getLogger(__name__)
+
 
 class RouteRunner:
     """
@@ -32,6 +36,7 @@ class RouteRunner:
             from utils.logger import get_logger
             self.logger = get_logger("RouteRunner")
         except Exception:
+            logger.debug("RouteRunner logger unavailable (get_logger failed)", exc_info=True)
             pass
 
     def _log(self, level: str, message: str, *args, **kwargs):
@@ -131,6 +136,7 @@ class RouteRunner:
                     if geocode_cache is not None:
                         geocode_cache.set(address, (lat, lon))
                 except Exception:
+                    logger.debug("Failed to store geocode cache entry for %s", address, exc_info=True)
                     pass
 
                 resolved.append((lat, lon))

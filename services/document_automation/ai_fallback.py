@@ -57,6 +57,7 @@ def close_session() -> None:
         sess.close()
         _session_local.session = None
     except Exception:
+        logger.warning("Failed to close thread-local HTTP session", exc_info=True)
         pass
 
 # ── Module-level state (thread-safe via _lock) ───────────────────────
@@ -153,6 +154,7 @@ def init_from_db(db) -> None:
             try:
                 SettingsRepository(db).update_setting('qwen_endpoint', DEFAULT_ENDPOINT)
             except Exception:
+                logger.warning("Failed to persist migrated qwen_endpoint setting", exc_info=True)
                 pass
     except Exception:
         logger.warning("ai_fallback.init_from_db failed", exc_info=True)

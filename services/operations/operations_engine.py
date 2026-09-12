@@ -141,6 +141,7 @@ class OperationsEngine:
             if trip:
                 current_status = trip.get("status")
         except Exception:
+            logger.warning("Failed to load current trip status before undo", exc_info=True)
             pass
         cmd = self._undo_stack.undo(current_status=current_status)
         if not cmd:
@@ -304,14 +305,14 @@ class OperationsEngine:
                 status = t.get("status", "")
                 if status in ("Delivered", "Livrat", "Facturat", "Invoiced"):
                     try:
-                        created = datetime.strptime(created_at[:10], "%Y-%m-%d")
+                        created = datetime.strptime(str(created_at)[:10], "%Y-%m-%d")
                         age = (today - created).days
                         if age > overdue_days:
                             batch.append(Alert(
                                 type=AlertType.OVERDUE_INVOICE,
                                 severity=Severity.CRITICAL,
                                 title=f"Overdue invoice for trip #{trip_id}",
-                                message=f"Trip delivered but unpaid for {age} days ({created_at[:10]}), amount: {price:.2f} EUR",
+                                message=f"Trip delivered but unpaid for {age} days ({str(created_at)[:10]}), amount: {price:.2f} EUR",
                                 trip_id=str(trip_id),
                             ))
                     except Exception:

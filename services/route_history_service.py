@@ -661,6 +661,7 @@ class RouteHistoryService:
                     recovered = json.loads(text)
                     return recovered if isinstance(recovered, list) else []
             except Exception:
+                _logger.debug("Fallback route geometry recovery also failed", exc_info=True)
                 pass
             return []
 

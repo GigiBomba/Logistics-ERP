@@ -134,6 +134,7 @@ class PushSender:
             try:
                 self._notification_center.unsubscribe(self._on_alert_event)
             except Exception:
+                logger.warning("PushSender failed to unsubscribe from NotificationCenter during shutdown", exc_info=True)
                 pass
             self._subscribed = False
 

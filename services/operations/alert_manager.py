@@ -336,6 +336,7 @@ class AlertManager:
             except ImportError:
                 pass
             except Exception:
+                logger.warning("Failed to play system sound for alert", exc_info=True)
                 pass
             finally:
                 self._notification_playing = False

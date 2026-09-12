@@ -40,6 +40,7 @@ class TripStatusEngine:
             self._event_bus.unsubscribe(TRIP_STATUS_CHANGED, self._on_trip_status_change)
             logger.debug("TripStatusEngine unsubscribed events")
         except Exception:
+            logger.warning("TripStatusEngine failed to unsubscribe from event bus during shutdown", exc_info=True)
             pass
 
     def _on_trip_event(self, ev: dict[str, Any]) -> None:

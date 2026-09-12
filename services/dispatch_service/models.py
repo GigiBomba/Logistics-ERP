@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -13,6 +14,15 @@ class UndoToken:
     trip_id: int
     previous_state: dict[str, Any]     # snapshot of relevant trip fields before mutation
     undo_description: str              # "Unassign truck AA-12-BBB from trip #42"
+
+    def __str__(self) -> str:
+        """Serialize as JSON — the representation undo paths (``json.loads``) consume.
+
+        ``str(result.undo_token)`` must round-trip through
+        ``DispatchCreateTool.undo`` / ``UndoActionTool``, so this overrides the
+        default dataclass repr with ``json.dumps(asdict(self))``.
+        """
+        return json.dumps(asdict(self))
 
 
 @dataclass(frozen=True)

@@ -140,6 +140,7 @@ class PreferencesManager:
         self._currency_listeners: list[Callable[[str], None]] = []
         self._settings_cache: dict[str, str | None] = {}
         self._cache_dirty = True
+        self._audit = AuditService(db)
 
     # --- Load / persist -------------------------------------------------
 
@@ -197,7 +198,7 @@ class PreferencesManager:
         SettingsRepository(self._db).upsert_setting(key, encrypted)
         self._settings_cache[key] = encrypted
         try:
-            AuditService(self._db).log(
+            self._audit.log(
                 event_type="settings.updated",
                 entity_type="setting",
                 entity_id=key,
@@ -258,7 +259,7 @@ class PreferencesManager:
         self._set_setting(_PREF_LANG_KEY, code)
         AppState().set("language", code)
         try:
-            AuditService(self._db).log(
+            self._audit.log(
                 event_type="settings.language_changed",
                 entity_type="setting",
                 entity_id=_PREF_LANG_KEY,
@@ -288,7 +289,7 @@ class PreferencesManager:
         self._set_setting(_PREF_CURRENCY_KEY, code)
         AppState().set("currency", code)
         try:
-            AuditService(self._db).log(
+            self._audit.log(
                 event_type="settings.currency_changed",
                 entity_type="setting",
                 entity_id=_PREF_CURRENCY_KEY,

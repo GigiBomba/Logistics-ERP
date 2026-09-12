@@ -62,6 +62,7 @@ class DunnerEngine:
             self._event_bus.unsubscribe(DAILY_CHECK, self._on_daily_check)
             logger.debug("DunnerEngine unsubscribed events")
         except Exception:
+            logger.warning("DunnerEngine failed to unsubscribe from event bus during shutdown", exc_info=True)
             pass
 
     # ── Event handlers ──────────────────────────────────────────────

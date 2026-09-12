@@ -134,6 +134,7 @@ class TripService:
         self._event_bus = EventBus()
         self._trip_repo = TripRepository(db)
         self._route_repo = RouteRepository(db)
+        self._audit = AuditService(db)
 
     # ═════════════════════════════════════════════════════════════════════
     # New typed API
@@ -183,7 +184,7 @@ class TripService:
             )
             new_id = self._trip_repo.create(data)
             self._event_bus.publish(TRIP_CREATED, {"trip_id": new_id, "data": data})
-            AuditService(self.db).log(
+            self._audit.log(
                 event_type="trip.created",
                 entity_type="trip",
                 entity_id=str(new_id),
@@ -255,7 +256,7 @@ class TripService:
                     )
                 self._trip_repo.update(trip_id, dict(request), company_id=company_id)
                 self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": request})
-                AuditService(self.db).log(
+                self._audit.log(
                     event_type="trip.updated",
                     entity_type="trip",
                     entity_id=str(trip_id),
@@ -320,7 +321,7 @@ class TripService:
 
             self._trip_repo.update(trip_id, data, company_id=company_id)
             self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": data})
-            AuditService(self.db).log(
+            self._audit.log(
                 event_type="trip.updated",
                 entity_type="trip",
                 entity_id=str(trip_id),
@@ -358,14 +359,18 @@ class TripService:
                 errors=[ErrorDetail(message=str(e), code="internal_error")],
             )
 
-    def get(self, trip_id: int, driver_id: Optional[int] = None) -> TripCreateResult:
+    def get(self, trip_id: int, driver_id: Optional[int] = None, company_id=None) -> TripCreateResult:
         """Fetch a single trip by ID, returning a ``ServiceResult``.
 
         When ``driver_id`` is provided, the trip is only returned if it is
         assigned to that driver (driver scoping for the mobile app).
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        lookup explicitly — mirrors ``update()`` / ``delete()`` so a
+        cross-tenant ``get`` surfaces as "not found".
         """
         try:
-            row = self._trip_repo.get_by_id(trip_id)
+            row = self._trip_repo.get_by_id(trip_id, company_id=company_id)
             if not row:
                 return ServiceResult(
                     success=False,
@@ -438,7 +443,7 @@ class TripService:
 
             self._trip_repo.delete(trip_id, company_id=company_id)
             self._event_bus.publish(TRIP_DELETED, {"trip_id": trip_id})
-            AuditService(self.db).log(
+            self._audit.log(
                 event_type="trip.deleted",
                 entity_type="trip",
                 entity_id=str(trip_id),
@@ -527,8 +532,11 @@ class TripService:
     # Legacy query passthrough (return raw dicts for existing callers)
     # ═════════════════════════════════════════════════════════════════════
 
-    def get_filtered(self, search: str = "", status: str = "", limit: int = 200, company_id=None) -> list[dict[str, Any]]:
-        return self._trip_repo.get_filtered(search=search, truck="", status=status, limit=limit, company_id=company_id)
+    def get_filtered(self, search: str = "", status: str = "", statuses: Optional[list[str]] = None, limit: int = 200, company_id=None) -> list[dict[str, Any]]:
+        return self._trip_repo.get_filtered(
+            search=search, truck="", status=status, statuses=statuses,
+            limit=limit, company_id=company_id,
+        )
 
     def get_by_id(self, trip_id: int, company_id=None) -> Optional[dict[str, Any]]:
         return self._trip_repo.get_by_id(trip_id, company_id=company_id)
@@ -550,7 +558,7 @@ class TripService:
 
     def update_cmr_fields(self, trip_id: int, cmr_number: str, cmr_seq: int, user_id: int = 0) -> None:
         self._trip_repo.update_cmr_fields(trip_id, cmr_number, cmr_seq)
-        AuditService(self.db).log(
+        self._audit.log(
             event_type="trip.cmr_updated",
             entity_type="trip",
             entity_id=str(trip_id),

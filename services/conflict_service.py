@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from repositories.trip_repository import TripRepository
+from utils.date_utils import parse_trip_date
 
 logger = logging.getLogger(__name__)
 
@@ -26,24 +27,7 @@ class TripConflictService:
         ``DD/MM/YYYY`` branch keeps the original slice-[:10] behaviour so
         trailing time text is tolerated.  Unparseable input returns ``None``.
         """
-        if not date_str:
-            return None
-        raw = str(date_str).strip()
-        if not raw:
-            return None
-        iso_with_t = raw[:-1] if raw.endswith("Z") else raw
-        for candidate, fmt in (
-            (iso_with_t, "%Y-%m-%dT%H:%M:%S"),
-            (raw, "%Y-%m-%d %H:%M:%S"),
-            (raw, "%Y-%m-%d %H:%M"),
-            (raw, "%Y-%m-%d"),
-            (raw[:10], "%d/%m/%Y"),
-        ):
-            try:
-                return datetime.strptime(candidate, fmt)
-            except (ValueError, TypeError):
-                continue
-        return None
+        return parse_trip_date(date_str)
 
     def _estimate_eta(self, trip: dict[str, Any], start_dt: datetime) -> datetime:
         eta_raw = trip.get("end_date", "")
@@ -192,12 +176,48 @@ class TripConflictService:
             list(NON_ACTIVE_STATUSES), limit=2000,
         )
 
+        # Pre-index candidates by truck plate, truck id and driver id so each
+        # trip only scans the buckets it could actually conflict with instead
+        # of the whole candidate universe (O(n·m) → ~O(n + m)).  The bucket
+        # keys mirror the entity matching in ``_same_entity`` / the overlap
+        # pass below, so the exact conflict rules are preserved.
+        from collections import defaultdict
+
+        by_truck_plate: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        by_truck_id: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+        by_driver_id: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+        for candidate in candidates:
+            plate = (candidate.get("truck_number") or "").strip()
+            if plate:
+                by_truck_plate[plate].append(candidate)
+            if candidate.get("truck_id") is not None:
+                by_truck_id[candidate.get("truck_id")].append(candidate)
+            if candidate.get("driver_id") is not None:
+                by_driver_id[candidate.get("driver_id")].append(candidate)
+
         result: dict[int, list[dict[str, Any]]] = {}
         for trip in trips:
             tid = trip.get("id") or trip.get("trip_id_num")
             if tid is None:
                 continue
-            conflicts = self._candidate_conflicts(trip, candidates)
+            truck_plate = (trip.get("truck_number") or trip.get("truck_plate") or "").strip()
+            truck_id = trip.get("truck_id")
+            driver_id = trip.get("driver_id")
+
+            subset_ids: set[Any] = set()
+            subset: list[dict[str, Any]] = []
+            for bucket in (
+                by_truck_plate.get(truck_plate, ()),
+                by_truck_id.get(truck_id, ()),
+                by_driver_id.get(driver_id, ()),
+            ):
+                for candidate in bucket:
+                    cid = candidate.get("id")
+                    if cid and cid not in subset_ids:
+                        subset_ids.add(cid)
+                        subset.append(candidate)
+
+            conflicts = self._candidate_conflicts(trip, subset)
             if conflicts:
                 result[tid] = conflicts
         return result

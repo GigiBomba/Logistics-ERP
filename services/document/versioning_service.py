@@ -49,6 +49,7 @@ class VersioningService:
                     commit=True,
                 )
             except Exception:
+                logger.warning("Failed to prune old document version for doc %s", doc_id, exc_info=True)
                 pass
             versions = self._repo.get_versions(doc_id)
 

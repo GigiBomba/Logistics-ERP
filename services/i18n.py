@@ -167,6 +167,7 @@ def set_language(lang: str) -> None:
         with open(_LANG_FILE, "w", encoding="utf-8") as f:
             f.write(lang)
     except Exception:
+        logger.warning("Failed to persist language preference to %s", _LANG_FILE, exc_info=True)
         pass
     notified = 0
     failed = 0
@@ -239,5 +240,6 @@ def init_language() -> None:
                 if persisted in _translations or persisted == "en":
                     lang = persisted
     except Exception:
+        logger.warning("Failed to read persisted language preference from %s", _LANG_FILE, exc_info=True)
         pass
     set_language(lang)

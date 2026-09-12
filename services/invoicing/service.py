@@ -6,6 +6,7 @@ import logging
 import os
 import warnings
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any, Optional
 
 from repositories.client_repository import ClientRepository
@@ -21,6 +22,7 @@ from services.invoicing.generator import InvoiceGenerator
 from services.operations.event_bus import INVOICE_CREATED, INVOICE_EMAILED, EventBus
 from services.operations.notification_center import NotificationCenter
 from services.permission_service import PermissionService
+from utils.date_utils import parse_trip_date
 
 from models.common import ErrorDetail, ServiceResult
 from models.invoice_models import (
@@ -37,6 +39,36 @@ from models.invoice_models import (
 logger = logging.getLogger(__name__)
 
 
+def _round_money(d: Decimal) -> Decimal:
+    """Final 2dp quantization reproduces the historical float-path
+    rounding so all 29 committed invoice vectors + the mobile parity
+    contract stay intact (product decision 2026-09-07): binary-exact
+    .xx5 ties round half-even (e.g. 1.875 -> 1.88), binary-inexact
+    .xx5 round down (e.g. 9.995 -> 9.99, 0.015 -> 0.01)."""
+    return Decimal(str(round(float(d), 2)))
+
+
+# ── Stored line-item deserialization (read path) ─────────────────────
+# ``line_items_json`` was fully validated on write (API-layer request
+# validation).  The canonical write path persists ``model_dump(mode=
+# "json")`` strings while legacy rows store floats, so the former fast
+# path (``model_construct`` guarded by per-field no-coercion predicates
+# that required native ``Decimal`` instances) never fired — every read
+# fell through to the fully-validating constructor.  That fast-path
+# machinery was removed 2026-09-07 (dead since the Decimal write path
+# persisted strings); the validating constructor reproduces the exact
+# previous behaviour/exception for the callers' error handling.
+
+def _deserialize_line_item(li: Any) -> InvoiceLineItem:
+    """Deserialize one stored line-item dict into an ``InvoiceLineItem``.
+
+    Uses the fully-validating Pydantic constructor, which reproduces the
+    exact ``ValidationError``/``TypeError`` that callers' ``try/except``
+    blocks expect.
+    """
+    return InvoiceLineItem(**li)
+
+
 class InvoiceService:
     """Invoice operations: legacy PDF workflow + typed CRUD with permission checks."""
 
@@ -47,6 +79,7 @@ class InvoiceService:
         self._event_bus = EventBus()
         self._client_repo = ClientRepository(db)
         self._invoice_repo = InvoiceRepository(db)
+        self._audit = AuditService(db)
 
     # ── Helpers ────────────────────────────────────────────────────────
 
@@ -65,7 +98,7 @@ class InvoiceService:
 
     def _calculate_line_items(
         self, items: list[InvoiceLineItem]
-    ) -> tuple[list[InvoiceLineItem], float, float, float]:
+    ) -> tuple[list[InvoiceLineItem], Decimal, Decimal, Decimal]:
         """Fill in computed totals for each line item and return aggregates.
 
         Romanian-compliant calculation:
@@ -73,24 +106,41 @@ class InvoiceService:
             vat_amount = taxable_amount * vat_rate / 100
             line_total = taxable_amount + vat_amount
         """
+        # _round_money reproduces the historical float-path rounding exactly —
+        # binary-exact .xx5 ties round half-even (1.875 -> 1.88), binary-inexact
+        # ones down (9.995 -> 9.99, 0.015 -> 0.01) — keeping shared/
+        # test_vectors/invoice_calculations.json and the mobile parity contract
+        # intact (product decision 2026-09-07).
         calculated: list[InvoiceLineItem] = []
         for li in items:
-            qty = li.quantity or 1.0
-            price = li.unit_price or 0.0
-            gross_value = round(qty * price, 2)
+            qty = li.quantity or Decimal("1.0")
+            price = li.unit_price or Decimal("0")
+            gross_value = _round_money(qty * price)
 
             # Discount
-            discount_pct = li.discount_percent or 0.0
-            discount_amt = li.discount_amount or 0.0
+            discount_pct = li.discount_percent or Decimal("0")
+            discount_amt = li.discount_amount or Decimal("0")
             if discount_amt == 0 and discount_pct > 0:
-                discount_amt = round(gross_value * discount_pct / 100, 2)
+                discount_amt = _round_money(gross_value * discount_pct / 100)
             if discount_amt > gross_value:
                 discount_amt = gross_value
 
-            taxable_amount = li.taxable_amount if li.taxable_amount is not None else round(gross_value - discount_amt, 2)
-            vat_rate = li.vat_rate or 0.0
-            vat_amount = li.vat_amount if li.vat_amount is not None else round(taxable_amount * vat_rate / 100, 2)
-            line_total = li.line_total if li.line_total is not None else round(taxable_amount + vat_amount, 2)
+            taxable_amount = (
+                li.taxable_amount
+                if li.taxable_amount is not None
+                else _round_money(gross_value - discount_amt)
+            )
+            vat_rate = li.vat_rate or Decimal("0")
+            vat_amount = (
+                li.vat_amount
+                if li.vat_amount is not None
+                else _round_money(taxable_amount * vat_rate / 100)
+            )
+            line_total = (
+                li.line_total
+                if li.line_total is not None
+                else _round_money(taxable_amount + vat_amount)
+            )
 
             calculated.append(
                 InvoiceLineItem(
@@ -106,9 +156,15 @@ class InvoiceService:
                     line_total=line_total,
                 )
             )
-        subtotal_net = round(sum(float(li.taxable_amount or 0) for li in calculated), 2)
-        total_vat = round(sum(float(li.vat_amount or 0) for li in calculated), 2)
-        total_gross = round(sum(float(li.line_total or 0) for li in calculated), 2)
+        subtotal_net = _round_money(sum(
+            ((li.taxable_amount or Decimal("0")) for li in calculated), Decimal("0")
+        ))
+        total_vat = _round_money(sum(
+            ((li.vat_amount or Decimal("0")) for li in calculated), Decimal("0")
+        ))
+        total_gross = _round_money(sum(
+            ((li.line_total or Decimal("0")) for li in calculated), Decimal("0")
+        ))
         return calculated, subtotal_net, total_vat, total_gross
 
     def _row_to_invoice_result(self, row: dict[str, Any]) -> InvoiceResult:
@@ -118,7 +174,7 @@ class InvoiceService:
         if raw_json:
             try:
                 raw_items = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-                line_items = [InvoiceLineItem(**li) for li in raw_items]
+                line_items = [_deserialize_line_item(li) for li in raw_items]
             except (json.JSONDecodeError, TypeError, ValueError):
                 logger.warning("Failed to deserialize line_items_json for invoice %s", row.get("id"))
 
@@ -127,10 +183,10 @@ class InvoiceService:
 
         def _parse_date(val: Any):
             if isinstance(val, str) and val:
-                try:
-                    return datetime.strptime(val, "%Y-%m-%d").date()
-                except ValueError:
-                    return datetime.fromisoformat(val).date()
+                parsed = parse_trip_date(val)
+                if parsed is not None:
+                    return parsed.date()
+                return datetime.fromisoformat(val).date()
             return val
 
         client_name = ""
@@ -165,14 +221,14 @@ class InvoiceService:
             invoice_date=_parse_date(invoice_date) if invoice_date else datetime.now().date(),
             due_date=_parse_date(due_date) if due_date else datetime.now().date(),
             currency=row.get("currency", "EUR"),
-            exchange_rate=float(row.get("exchange_rate", 1.0)),
+            exchange_rate=row.get("exchange_rate", 1.0),
             invoice_type=row.get("invoice_type", "invoice"),
             line_items=line_items,
-            subtotal_net=float(row.get("subtotal_net", row.get("total_amount", 0))),
-            total_vat=float(row.get("total_vat", 0)),
-            total_gross=float(row.get("total_gross", row.get("total_amount", 0))),
-            amount_paid=float(row.get("amount_paid", 0)),
-            amount_remaining=float(row.get("amount_remaining", row.get("total_amount", 0))),
+            subtotal_net=row.get("subtotal_net", row.get("total_amount", 0)),
+            total_vat=row.get("total_vat", 0),
+            total_gross=row.get("total_gross", row.get("total_amount", 0)),
+            amount_paid=row.get("amount_paid", 0),
+            amount_remaining=row.get("amount_remaining", row.get("total_amount", 0)),
             status=row.get("status", "draft"),
             notes=row.get("notes", ""),
             pdf_path=row.get("pdf_path"),
@@ -361,14 +417,14 @@ class InvoiceService:
             "subtotal_net": subtotal_net,
             "total_vat": total_vat,
             "total_gross": total_gross,
-            "amount_paid": 0.0,
+            "amount_paid": Decimal("0"),
             "amount_remaining": total_gross,
             "created_at": now,
             "updated_at": now,
         }
         if calculated_items:
             data["line_items_json"] = json.dumps(
-                [li.model_dump() for li in calculated_items]
+                [li.model_dump(mode="json") for li in calculated_items]
             )
         if company_id is not None:
             data["company_id"] = company_id
@@ -389,7 +445,7 @@ class InvoiceService:
         })
 
         # Audit log
-        AuditService(self.db).log(
+        self._audit.log(
             event_type="invoice.created",
             entity_type="invoice",
             entity_id=str(invoice_id),
@@ -419,7 +475,7 @@ class InvoiceService:
             subtotal_net=subtotal_net,
             total_vat=total_vat,
             total_gross=total_gross,
-            amount_paid=0.0,
+            amount_paid=Decimal("0"),
             amount_remaining=total_gross,
             status="draft",
             notes=request.notes,
@@ -517,7 +573,7 @@ class InvoiceService:
             update_data["total_gross"] = total_gross
             update_data["total_amount"] = total_gross
             update_data["line_items_json"] = json.dumps(
-                [li.model_dump() for li in calculated_items]
+                [li.model_dump(mode="json") for li in calculated_items]
             )
         else:
             # Keep existing line items (deserialize for result)
@@ -525,7 +581,7 @@ class InvoiceService:
             if raw_json:
                 try:
                     existing_items = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-                    calculated_items = [InvoiceLineItem(**li) for li in existing_items]
+                    calculated_items = [_deserialize_line_item(li) for li in existing_items]
                 except (json.JSONDecodeError, TypeError, ValueError):
                     calculated_items = []
             else:
@@ -668,7 +724,7 @@ class InvoiceService:
         self._log_status_transition(invoice_id, current_status, "finalized", user_id)
 
         # Audit log
-        AuditService(self.db).log(
+        self._audit.log(
             event_type="invoice.finalized",
             entity_type="invoice",
             entity_id=str(invoice_id),
@@ -734,7 +790,7 @@ class InvoiceService:
         self._log_status_transition(invoice_id, current_status, "cancelled", user_id)
 
         # Audit log
-        AuditService(self.db).log(
+        self._audit.log(
             event_type="invoice.cancelled",
             entity_type="invoice",
             entity_id=str(invoice_id),
@@ -782,7 +838,7 @@ class InvoiceService:
 
         self._log_status_transition(invoice_id, current_status, new_status, user_id)
 
-        AuditService(self.db).log(
+        self._audit.log(
             event_type=f"invoice.status_changed",
             entity_type="invoice",
             entity_id=str(invoice_id),
@@ -873,7 +929,7 @@ class InvoiceService:
 
         try:
             raw_items = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-            items = [InvoiceLineItem(**li) for li in raw_items]
+            items = [_deserialize_line_item(li) for li in raw_items]
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             return InvoiceCreateResult(
                 success=False,
@@ -892,7 +948,7 @@ class InvoiceService:
                 "total_gross": total_gross,
                 "total_amount": total_gross,
                 "line_items_json": json.dumps(
-                    [li.model_dump() for li in calculated_items]
+                    [li.model_dump(mode="json") for li in calculated_items]
                 ),
                 "updated_at": now,
             })
@@ -981,7 +1037,7 @@ class InvoiceService:
             )
 
         # Audit log
-        AuditService(self.db).log(
+        self._audit.log(
             event_type="invoice.deleted",
             entity_type="invoice",
             entity_id=str(invoice_id),

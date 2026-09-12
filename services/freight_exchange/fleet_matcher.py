@@ -32,6 +32,24 @@ DEFAULT_MATCHER_WEIGHTS = {
 # Sum = 100
 
 
+def _truck_is_dispatchable(truck: dict) -> bool:
+    """True when a truck row is not in a dispatch-blocked state.
+
+    Mirrors the dispatch availability checker's occupancy gate
+    (``services.dispatch_service.availability``): trucks whose status is a
+    blocked state (in service / maintenance / inactive / out of service /
+    decommissioned) or whose ``active_status == 0`` are NOT dispatchable.
+    """
+    from services.dispatch_service.availability import _BLOCKED_TRUCK_STATUSES
+
+    status = (truck.get("status") or "").strip().lower()
+    if status in _BLOCKED_TRUCK_STATUSES:
+        return False
+    if truck.get("active_status") == 0:
+        return False
+    return True
+
+
 class FleetMatcherService:
     """Scores and ranks available trucks for a given freight load.
 
@@ -297,7 +315,12 @@ class FleetMatcherService:
     # ── Data access helpers (delegate to existing repos/services) ──────
 
     def _get_available_trucks(self, company_id: int) -> list[dict]:
-        """Get all trucks for a company."""
+        """Get dispatchable trucks for a company.
+
+        Occupancy guard: trucks in a dispatch-blocked status (e.g.
+        ``'In Service'``) or flagged inactive (``active_status == 0``) are
+        excluded — the same gate the dispatch availability checker applies.
+        """
         try:
             from repositories.fleet_repository import FleetRepository
             # Ensure company scoping matches the requested company
@@ -305,13 +328,23 @@ class FleetMatcherService:
             try:
                 self.db.user_company_id = company_id
                 repo = FleetRepository(self.db)
-                return repo.get_all(limit=500)
+                trucks = repo.get_all(limit=500)
             finally:
                 if original is not None:
                     self.db.user_company_id = original
         except Exception as e:
             logger.warning("Could not fetch trucks: %s", e)
             return []
+        return [t for t in trucks if _truck_is_dispatchable(t)]
+
+    def has_available_trucks(self, company_id: int) -> bool:
+        """Whether any dispatchable truck exists for this company.
+
+        Uses the same occupancy guard as ``find_best_trucks`` — the
+        ``freight.recommend_dispatch`` tool refuses (load not viable) when
+        this is False, so an occupied fleet is never recommended against.
+        """
+        return bool(self._get_available_trucks(company_id))
 
     def _get_driver_for_truck(self, truck_id: int) -> Optional[int]:
         """Get the driver currently assigned to a truck."""
@@ -335,6 +368,7 @@ class FleetMatcherService:
             if driver:
                 return float(driver.get("hours_remaining", 0) or 0)
         except Exception:
+            logger.warning("Failed to load driver hours_remaining for scoring", exc_info=True)
             pass
         return None
 
@@ -347,6 +381,7 @@ class FleetMatcherService:
             if health:
                 return float(health.get("score", health.get("health_score", 50)) or 50)
         except Exception:
+            logger.warning("Failed to load truck health for scoring", exc_info=True)
             pass
         return None
 

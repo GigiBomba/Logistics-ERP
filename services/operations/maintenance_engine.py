@@ -50,6 +50,7 @@ class MaintenanceEngine:
             self._event_bus.unsubscribe(SYSTEM_STARTUP, self._on_system_startup)
             logger.debug("MaintenanceEngine unsubscribed events")
         except Exception:
+            logger.warning("MaintenanceEngine failed to unsubscribe from event bus during shutdown", exc_info=True)
             pass
 
     # ── Event handlers ─────────────────────────────────────────────
@@ -241,7 +242,7 @@ class MaintenanceEngine:
         try:
             last_activity = TripRepository(self._db).get_last_activity_by_truck_id(truck_id_int)
             if last_activity:
-                last_date = datetime.strptime(last_activity[:10], "%Y-%m-%d")
+                last_date = datetime.strptime(str(last_activity)[:10], "%Y-%m-%d")
                 idle = (today - last_date).days
                 existing = self._alert_mgr.get_active_by_type_and_entity(AlertType.INACTIVE_TRUCK, truck_id)
                 if idle > inactive_days:
@@ -250,7 +251,7 @@ class MaintenanceEngine:
                         self._alert_mgr.create_alert(
                             AlertType.INACTIVE_TRUCK, Severity.INFO,
                             f"Truck {plate} inactive",
-                            f"No trips for {idle} days (last: {last_activity[:10]})",
+                            f"No trips for {idle} days (last: {str(last_activity)[:10]})",
                             truck_id=truck_id,
                         )
                         count += 1

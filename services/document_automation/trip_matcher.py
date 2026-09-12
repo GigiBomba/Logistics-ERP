@@ -177,6 +177,7 @@ def _load_weights(db) -> dict[str, float]:
             with contextlib.suppress(ValueError, TypeError):
                 w[key] = float(v)
     except Exception:
+        logger.warning("Failed to load trip matching weights from settings", exc_info=True)
         pass
     with _WEIGHTS_LOCK:
         _WEIGHTS_CACHE = w
@@ -206,6 +207,7 @@ def _load_auto_link_threshold(db) -> float:
             except (ValueError, TypeError):
                 pass
     except Exception:
+        logger.warning("Failed to load auto-link threshold from settings", exc_info=True)
         pass
     with _AUTO_LINK_THRESHOLD_LOCK:
         _AUTO_LINK_THRESHOLD_CACHE = threshold
@@ -407,7 +409,7 @@ class TripMatcher:
             base_w = w.get("date", 0.05)
             for t in matches:
                 # Temporal decay: trips further from the target date score less.
-                trip_date = t.get("start_date", "")[:10] if t.get("start_date") else ""
+                trip_date = str(t.get("start_date", ""))[:10] if t.get("start_date") else ""
                 decay = 1.0
                 if trip_date and normalized:
                     try:
