@@ -762,7 +762,12 @@ class TestE2EImportParity:
         )
 
         # For manual trip, revenue comes from price_eur
-        rev_manual = manual_trip.price_eur
+        # price_eur is a Decimal (models are Decimal since Stage 1) — the
+        # engine's _calculate_financials returns plain floats, so normalize
+        # the model-derived operand to float before the manual arithmetic
+        # (Decimal - float would raise TypeError). See the U17 float()
+        # normalization convention in tests/mobile/test_invoice_calculations.py.
+        rev_manual = float(manual_trip.price_eur)
         total_cost_manual = fuel_cost + toll_cost + salary_cost
         profit_manual = rev_manual - total_cost_manual
         margin_manual = (profit_manual / rev_manual * 100.0) if rev_manual != 0 else 0.0
@@ -784,7 +789,7 @@ class TestE2EImportParity:
             estimated_duration_hours=load.distance_km / 60.0,
             origin=load.origin,
             destination=load.destination,
-            load_price=load.price.amount,
+            load_price=float(load.price.amount),
         )
         # Manual trip risk would use same route data — identical result
         risk_manual = compute_risk_score(
@@ -793,7 +798,7 @@ class TestE2EImportParity:
             estimated_duration_hours=load.distance_km / 60.0,
             origin=load.origin,
             destination=load.destination,
-            load_price=manual_trip.price_eur,
+            load_price=float(manual_trip.price_eur),
         )
         assert risk_import == risk_manual, (
             f"Risk differs: import={risk_import} manual={risk_manual}"

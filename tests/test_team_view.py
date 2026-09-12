@@ -133,8 +133,8 @@ class TestQtTeamView:
         team_view._on_add_user()
         assert team_view._email_input.text() == "user@test.com"
 
-    def test_load_users_populates_table(self, team_view, mock_api_client):
-        """_load_users fetches data and populates table."""
+    def test_load_users_populates_table(self, team_view, mock_api_client, qtbot):
+        """_load_users fetches data (off-thread via WorkerPool) and populates table."""
         mock_api_client.list_users.return_value = {
             "items": [
                 {"id": 1, "email": "admin@test.com", "role": "admin", "status": "active",
@@ -144,6 +144,8 @@ class TestQtTeamView:
             ]
         }
         team_view._load_users()
+        # The fetch is async (WorkerPool) — wait for the table to be populated.
+        qtbot.waitUntil(lambda: team_view._table.rowCount() == 2)
         assert team_view._table.rowCount() == 2
 
     def test_clear_form_resets_state(self, team_view):

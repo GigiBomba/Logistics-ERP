@@ -215,5 +215,53 @@ class TestRouteRepositoryEdgeCases(unittest.TestCase):
         self.assertEqual(self.repo.count(), 0)
 
 
+class TestRouteRepositoryTenantIsolation(unittest.TestCase):
+    """``get_by_trip_id`` JOINs trips → route_history_v2: BOTH sides must be
+    company-scoped so a route is never returned for another company's trip."""
+
+    def setUp(self):
+        from database.tenant_context import set_request_context
+        self.db = make_db()
+        self.repo = RouteRepository(self.db)
+        set_request_context(1, "dispatcher")
+        self.route_a = self.repo.create(_route_data(route_fingerprint="fp-iso-a"))
+        set_request_context(2, "dispatcher")
+        self.route_b = self.repo.create(_route_data(route_fingerprint="fp-iso-b"))
+        set_request_context(None, "admin")
+        self.trip_a = self._seed_trip(self.route_a, company_id=1)
+        self.trip_b = self._seed_trip(self.route_b, company_id=2)
+
+    def _seed_trip(self, route_id: int, company_id: int) -> int:
+        self.db.conn.execute("PRAGMA foreign_keys=OFF")
+        cur = self.db.conn.execute(
+            "INSERT INTO trips (created_at, truck_number, driver_name, client_name, "
+            "status, route_history_v2_id, company_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("2026-01-01", "TRK-ISO", "Alice", "ACME", "planned", route_id, company_id),
+        )
+        self.db.conn.commit()
+        return int(cur.lastrowid or 0)
+
+    def test_get_by_trip_id_returns_own_company_route(self):
+        route = self.repo.get_by_trip_id(self.trip_a, company_id=1)
+        self.assertIsNotNone(route)
+        self.assertEqual(route["id"], self.route_a)
+
+    def test_get_by_trip_id_cross_tenant_returns_none(self):
+        # Company 1 asking for company 2's trip → not found.
+        self.assertIsNone(self.repo.get_by_trip_id(self.trip_b, company_id=1))
+
+    def test_get_by_trip_id_company_b_sees_only_own_route(self):
+        self.assertIsNone(self.repo.get_by_trip_id(self.trip_a, company_id=2))
+        route = self.repo.get_by_trip_id(self.trip_b, company_id=2)
+        self.assertEqual(route["id"], self.route_b)
+
+    def test_get_by_trip_id_context_scoped(self):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        self.assertEqual(self.repo.get_by_trip_id(self.trip_a)["id"], self.route_a)
+        self.assertIsNone(self.repo.get_by_trip_id(self.trip_b))
+
+
 if __name__ == "__main__":
     unittest.main()

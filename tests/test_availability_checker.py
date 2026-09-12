@@ -85,7 +85,7 @@ class TestCheckTruck:
         truck = {**self.valid_truck, "status": "In Service"}
         result = self.checker.check_truck(truck, {})
         assert result.available is False
-        assert "Truck is in service/repair" in result.blocks
+        assert "Truck is not available (blocked state)" in result.blocks
         assert len(result.blocks) == 1
 
     @pytest.mark.parametrize("status_val", ["in service", "In Service", "IN SERVICE", "In service"])
@@ -94,7 +94,7 @@ class TestCheckTruck:
         truck = {**self.valid_truck, "status": status_val}
         result = self.checker.check_truck(truck, {})
         assert result.available is False
-        assert "Truck is in service/repair" in result.blocks
+        assert "Truck is not available (blocked state)" in result.blocks
 
     @pytest.mark.parametrize("status_val", ["Active", "On Route", "Available", "", None])
     def test_other_statuses_not_block(self, status_val):
@@ -213,7 +213,7 @@ class TestCheckTruck:
         self.mock_conflict.check_conflicts.return_value = [{"trip_id": 99}]
         result = self.checker.check_truck(truck, {})
         assert result.available is False
-        assert "Truck is in service/repair" in result.blocks
+        assert "Truck is not available (blocked state)" in result.blocks
         assert "Insurance expired" in result.blocks
         assert "Inspection (ITP) expired" in result.blocks
         assert "Maintenance overdue" in result.blocks

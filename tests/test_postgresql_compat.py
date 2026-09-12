@@ -947,3 +947,464 @@ class TestConcurrentPgConnections:
             f"ID collision: got {len(set(ids))} unique IDs out of 20"
         )
         assert all(i is not None for i in ids)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# §13  Trips -> drivers/trucks FK constraints (Database_Rework P0.8)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestTripsFkConstraints:
+    """The trips.driver_id / trips.truck_id foreign keys (added post-table in
+    schema_pg.sql) exist as NOT VALID constraints, reject orphan inserts, and
+    null out on driver/truck deletion."""
+
+    #: NOT NULL columns required for a drivers insert (from schema_pg.sql).
+    _DRIVER_INSERT = (
+        "INSERT INTO drivers (name, created_at, updated_at) "
+        "VALUES (%s, NOW(), NOW()) RETURNING id"
+    )
+
+    def test_constraints_exist_not_validated(self, pg_conn):
+        """Both FKs exist in pg_constraint with convalidated = false."""
+        cur = pg_conn.cursor()
+        cur.execute(
+            "SELECT conname, convalidated "
+            "FROM pg_catalog.pg_constraint "
+            "WHERE conrelid = 'trips'::regclass "
+            "  AND contype = 'f' "
+            "  AND conname IN ('fk_trips_driver', 'fk_trips_truck')"
+        )
+        rows = {r[0]: r[1] for r in cur.fetchall()}
+        for name in ("fk_trips_driver", "fk_trips_truck"):
+            assert name in rows, f"FK constraint {name} not found on trips"
+            assert rows[name] is False, (
+                f"FK {name} should be NOT VALID (convalidated=false), "
+                f"got convalidated={rows[name]!r}"
+            )
+
+    def test_orphan_driver_insert_rejected(self, pg_conn):
+        """Inserting a trip referencing a nonexistent driver_id must raise a
+        foreign-key violation (NOT VALID still enforces new writes)."""
+        from psycopg2.errors import ForeignKeyViolation
+
+        cur = pg_conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO trips (driver_id, truck_number) VALUES (%s, %s)",
+                (-99999999, "FK-ORPHAN-DRIVER"),
+            )
+            pg_conn.commit()
+            assert False, "Expected a foreign key violation for bogus driver_id"
+        except ForeignKeyViolation:
+            pg_conn.rollback()  # expected — constraint rejected the orphan
+        except Exception as e:
+            pg_conn.rollback()
+            pytest.fail(f"Expected ForeignKeyViolation, got {type(e).__name__}: {e}")
+
+    def test_orphan_truck_insert_rejected(self, pg_conn):
+        """Inserting a trip referencing a nonexistent truck_id must raise a
+        foreign-key violation (NOT VALID still enforces new writes)."""
+        from psycopg2.errors import ForeignKeyViolation
+
+        cur = pg_conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO trips (truck_id, driver_name) VALUES (%s, %s)",
+                (-99999999, "FK-ORPHAN-TRUCK"),
+            )
+            pg_conn.commit()
+            assert False, "Expected a foreign key violation for bogus truck_id"
+        except ForeignKeyViolation:
+            pg_conn.rollback()  # expected — constraint rejected the orphan
+        except Exception as e:
+            pg_conn.rollback()
+            pytest.fail(f"Expected ForeignKeyViolation, got {type(e).__name__}: {e}")
+
+    def test_delete_driver_sets_trip_driver_id_null(self, pg_conn):
+        """Deleting a drivers row must SET NULL the referencing trips.driver_id."""
+        cur = pg_conn.cursor()
+        try:
+            cur.execute(self._DRIVER_INSERT, ("FK-SETNULL-DRIVER",))
+            driver_id = cur.fetchone()[0]
+            assert driver_id is not None
+
+            cur.execute(
+                "INSERT INTO trips (driver_id, truck_number) VALUES (%s, %s) "
+                "RETURNING id",
+                (driver_id, "FK-SETNULL-TRIP"),
+            )
+            trip_id = cur.fetchone()[0]
+            assert trip_id is not None
+
+            cur.execute("DELETE FROM drivers WHERE id = %s", (driver_id,))
+            cur.execute(
+                "SELECT driver_id FROM trips WHERE id = %s", (trip_id,)
+            )
+            row = cur.fetchone()
+            assert row is not None, "Trip row vanished after driver delete"
+            assert row[0] is None, (
+                f"trips.driver_id should be NULL after driver delete, "
+                f"got {row[0]!r}"
+            )
+        finally:
+            pg_conn.rollback()
+
+    def test_delete_truck_sets_trip_truck_id_null(self, pg_conn):
+        """Deleting a trucks row must SET NULL the referencing trips.truck_id."""
+        cur = pg_conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO trucks (plate_number) VALUES (%s) RETURNING id",
+                ("FK-SETNULL-TRUCK-PLATE",),
+            )
+            truck_id = cur.fetchone()[0]
+            assert truck_id is not None
+
+            cur.execute(
+                "INSERT INTO trips (truck_id, driver_name) VALUES (%s, %s) "
+                "RETURNING id",
+                (truck_id, "FK-SETNULL-TRUCK-DRIVER"),
+            )
+            trip_id = cur.fetchone()[0]
+            assert trip_id is not None
+
+            cur.execute("DELETE FROM trucks WHERE id = %s", (truck_id,))
+            cur.execute(
+                "SELECT truck_id FROM trips WHERE id = %s", (trip_id,)
+            )
+            row = cur.fetchone()
+            assert row is not None, "Trip row vanished after truck delete"
+            assert row[0] is None, (
+                f"trips.truck_id should be NULL after truck delete, "
+                f"got {row[0]!r}"
+            )
+        finally:
+            pg_conn.rollback()
+
+
+class TestTripsFkConstraintsOffline:
+    """Static, regex-based assertions that schema_pg.sql declares the two FK
+    constraints *conditionally* (Stage C review NF2) — no live PostgreSQL
+    connection needed.
+
+    The boot path must create the constraints only when absent, so a validated
+    state (``convalidated=true``) set by ``scripts/import_to_pg.py`` survives
+    application reboots.  An unconditional DROP+ADD on every boot would
+    silently reset the constraint back to NOT VALID.
+    """
+
+    def test_schema_pg_contains_both_trips_fk_alters(self):
+        with open(_SCHEMA_PG_SQL, encoding="utf-8") as f:
+            sql = f.read()
+
+        # The conditional guard is a DO block, not a top-level DROP+ADD.
+        assert re.search(r"\bDO\s+\$\$", sql, re.IGNORECASE), (
+            "schema_pg.sql must guard the trips FKs with a DO $$ ... $$ block "
+            "(NF2)"
+        )
+
+        # No unconditional DROP on the boot path — drop/re-add is an explicit
+        # repair path only.
+        assert not re.search(
+            r"ALTER\s+TABLE\s+trips\s+DROP\s+CONSTRAINT",
+            sql,
+            re.IGNORECASE,
+        ), (
+            "schema_pg.sql must NOT unconditionally DROP the trips FK "
+            "constraints on every boot (NF2)"
+        )
+
+        for conname, column, ref_table in (
+            ("fk_trips_driver", "driver_id", "drivers"),
+            ("fk_trips_truck", "truck_id", "trucks"),
+        ):
+            # information_schema guard: only add when the constraint is absent.
+            assert re.search(
+                rf"IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+"
+                rf"information_schema\.table_constraints\s+"
+                rf"WHERE\s+constraint_name\s*=\s*'{conname}'\s+"
+                rf"AND\s+table_name\s*=\s*'trips'\s*\)",
+                sql,
+                re.IGNORECASE,
+            ), (
+                f"schema_pg.sql missing information_schema guard for "
+                f"{conname} (NF2)"
+            )
+
+            # ADD with ON DELETE SET NULL + NOT VALID inside the DO block.
+            assert re.search(
+                rf"ALTER\s+TABLE\s+trips\s+ADD\s+CONSTRAINT\s+{conname}\s*"
+                rf"FOREIGN\s+KEY\s*\(\s*{column}\s*\)\s*REFERENCES\s+"
+                rf"{ref_table}\s*\(\s*id\s*\)\s+ON\s+DELETE\s+SET\s+NULL\s+"
+                rf"NOT\s+VALID",
+                sql,
+                re.IGNORECASE,
+            ), (
+                f"schema_pg.sql missing ON DELETE SET NULL NOT VALID FK "
+                f"{conname} on trips.{column} -> {ref_table}(id)"
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# §14  Soft-delete scope exclusion (Database_Rework P0.7)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSoftDeleteExclusion:
+    """Static, regex-based assertions that schema_pg.sql declares NO
+    `deleted_at` column for the 9 audit/operational/current-state tables.
+
+    Decision lock for Database_Rework P0.7: these tables intentionally stay
+    without soft-delete on PostgreSQL — parity with the SQLite-side exclusion
+    in db_manager._run_column_migrations.  Offline; no PostgreSQL connection
+    needed.
+    """
+
+    #: Tables that intentionally carry NO deleted_at column (audit/log,
+    #: operational, or current-state semantics).
+    _NO_SOFT_DELETE_TABLES = frozenset({
+        "email_logs",
+        "invoice_reminders",
+        "tacho_imports",
+        "tacho_driver_activity",
+        "tacho_vehicle_data",
+        "driver_truck_assignments",
+        "trip_status_history",
+        "operation_events",
+        "alerts",
+    })
+
+    @staticmethod
+    def _extract_table_block(sql: str, table: str) -> str:
+        """Return the ``CREATE TABLE`` body for *table* (through the closing
+        ``);``), mirroring the line-based block parser used elsewhere in this
+        file."""
+        lines = sql.splitlines()
+        pattern = re.compile(
+            rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table)}\s*\(",
+            re.IGNORECASE,
+        )
+        for i, line in enumerate(lines):
+            if pattern.search(line):
+                out = [line]
+                for l in lines[i + 1:]:
+                    out.append(l)
+                    if l.strip().startswith(")"):  # covers ');'
+                        break
+                return "\n".join(out)
+        raise AssertionError(f"schema_pg.sql has no CREATE TABLE block for {table}")
+
+    def test_soft_delete_excluded_from_nine_audit_tables(self):
+        """None of the 9 excluded tables may declare ``deleted_at`` in their
+        CREATE TABLE block (pins the Database_Rework P0.7 decision against
+        drift)."""
+        with open(_SCHEMA_PG_SQL, encoding="utf-8") as f:
+            sql = f.read()
+
+        violations = [
+            table for table in sorted(self._NO_SOFT_DELETE_TABLES)
+            if re.search(r"\bdeleted_at\b", self._extract_table_block(sql, table))
+        ]
+        assert not violations, (
+            f"Database_Rework P0.7 excluded these tables from soft-delete, but "
+            f"schema_pg.sql now declares deleted_at for them: {violations}"
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# §15  search_vector NULL backfill on the native-PG boot path (NF1)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSearchVectorBootBackfill:
+    """``DatabaseManager._apply_pg_extra_ddl`` must backfill NULL
+    ``search_vector`` rows on every PG boot (Stage C review NF1).
+
+    An existing PG database that predates the ``search_vector`` column (the
+    ``ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_vector tsvector``
+    upgrade) has every document row carrying a NULL vector — unfindable via
+    ``fts_search``/``fts_search_count`` until edited.  The import path
+    (``scripts/import_to_pg.py``) backfills, but the native-PG boot path did
+    not: ``DocumentRepository.rebuild_fts_index`` has the right expression yet
+    no boot-time caller.  The extra-DDL UPDATE is that counterpart.
+    """
+
+    def test_boot_backfills_null_search_vector(self, pg_conn):
+        """A document row forced to NULL ``search_vector`` is repopulated (and
+        becomes findable) when DatabaseManager boots."""
+        from database.db_manager import DatabaseManager
+
+        cur = pg_conn.cursor()
+        # Self-cleaning: a prior (interrupted) run may have left this row behind.
+        cur.execute("DELETE FROM documents WHERE doc_number = 'NF1-NULL-VECTOR'")
+        pg_conn.commit()
+        cur.execute(
+            "INSERT INTO documents "
+            "(doc_number, title, file_name, file_path, description, "
+            " text_content, company_id, uploaded_at, updated_at) "
+            "VALUES ('NF1-NULL-VECTOR', 'Boot Backfill Doc', 'nf1.pdf', "
+            "'/tmp/nf1.pdf', 'searchable description', 'searchable body text', "
+            "1, NOW(), NOW()) RETURNING id"
+        )
+        doc_id = cur.fetchone()[0]
+        # Simulate the pre-column upgrade: force the vector to NULL.  There is
+        # no BEFORE UPDATE trigger on search_vector itself (the trigger fires
+        # only for the text columns), so this NULL sticks.
+        cur.execute(
+            "UPDATE documents SET search_vector = NULL WHERE id = %s", (doc_id,)
+        )
+        pg_conn.commit()
+
+        cur.execute(
+            "SELECT search_vector FROM documents WHERE id = %s", (doc_id,)
+        )
+        assert cur.fetchone()[0] is None, "failed to seed a NULL search_vector"
+        # Close the read transaction so the boot's ALTER TABLE (ACCESS
+        # EXCLUSIVE) is not blocked by this connection's ACCESS SHARE lock.
+        pg_conn.commit()
+
+        # Boot the native-PG deployment path — runs schema_pg.sql + Alembic +
+        # _apply_pg_extra_ddl (including the NULL-only search_vector backfill).
+        db = DatabaseManager(
+            db_path=TEST_DSN, engine="postgresql", pool_min=1, pool_max=2
+        )
+        db.close()
+
+        cur.execute(
+            "SELECT search_vector, "
+            "       search_vector @@ plainto_tsquery('english', %s) AS matched "
+            "FROM documents WHERE id = %s",
+            ("searchable", doc_id),
+        )
+        row = cur.fetchone()
+        assert row is not None, "document row vanished after boot"
+        assert row[0] is not None, (
+            "search_vector was not backfilled at boot — NULL vectors remain "
+            "unfindable on pre-column PG databases (NF1)"
+        )
+        assert row[1] is True, (
+            "backfilled search_vector does not match the tsquery"
+        )
+
+        # Idempotent: a second boot must leave the (now non-NULL) vector alone.
+        cur.execute(
+            "SELECT search_vector FROM documents WHERE id = %s", (doc_id,)
+        )
+        before = cur.fetchone()[0]
+        pg_conn.commit()  # release ACCESS SHARE before the second boot
+        db = DatabaseManager(
+            db_path=TEST_DSN, engine="postgresql", pool_min=1, pool_max=2
+        )
+        db.close()
+        cur.execute(
+            "SELECT search_vector FROM documents WHERE id = %s", (doc_id,)
+        )
+        assert cur.fetchone()[0] == before, "backfill is not idempotent"
+
+        cur.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
+        pg_conn.commit()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# §16  Validated FK state survives a reboot (Stage C review NF2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestTripsFkValidatedStatePersists:
+    """schema_pg.sql must create the trips FKs *only when absent*, so a
+    ``VALIDATE CONSTRAINT`` performed by ``scripts/import_to_pg.py``
+    (``convalidated=true``) is not silently undone by the next application
+    boot.
+
+    Regression for Stage C review NF2: the old boot path ran an unconditional
+    ``DROP CONSTRAINT IF EXISTS`` + ``ADD ... NOT VALID`` on every boot, which
+    reset ``convalidated`` back to false and discarded the validation work.
+    """
+
+    _CONSTRAINTS = ("fk_trips_driver", "fk_trips_truck")
+
+    @classmethod
+    def _convalidated(cls, pg_conn) -> dict:
+        cur = pg_conn.cursor()
+        cur.execute(
+            "SELECT conname, convalidated "
+            "FROM pg_catalog.pg_constraint "
+            "WHERE conrelid = 'trips'::regclass "
+            "  AND contype = 'f' "
+            "  AND conname = ANY(%s)",
+            (list(cls._CONSTRAINTS),),
+        )
+        return {r[0]: r[1] for r in cur.fetchall()}
+
+    @staticmethod
+    def _boot() -> None:
+        from database.db_manager import DatabaseManager
+
+        db = DatabaseManager(
+            db_path=TEST_DSN, engine="postgresql", pool_min=1, pool_max=2
+        )
+        db.close()
+
+    def test_validated_state_survives_reboot(self, pg_conn):
+        from psycopg2 import sql as pgsql
+
+        cur = pg_conn.cursor()
+
+        # Start from a known state: drop the FKs (explicit repair path), so
+        # the next boot has to recreate them NOT VALID.  Sanitize any legacy
+        # orphan rows too, so a later VALIDATE CONSTRAINT can succeed.
+        for name in self._CONSTRAINTS:
+            cur.execute(
+                pgsql.SQL(
+                    "ALTER TABLE trips DROP CONSTRAINT IF EXISTS {}"
+                ).format(pgsql.Identifier(name))
+            )
+        cur.execute(
+            "UPDATE trips SET driver_id = NULL "
+            "WHERE driver_id IS NOT NULL AND NOT EXISTS "
+            "  (SELECT 1 FROM drivers d WHERE d.id = trips.driver_id)"
+        )
+        cur.execute(
+            "UPDATE trips SET truck_id = NULL "
+            "WHERE truck_id IS NOT NULL AND NOT EXISTS "
+            "  (SELECT 1 FROM trucks t WHERE t.id = trips.truck_id)"
+        )
+        pg_conn.commit()  # release locks before the boot's DDL runs
+
+        # First boot: schema_pg.sql recreates the constraints, NOT VALID.
+        self._boot()
+        states = self._convalidated(pg_conn)
+        pg_conn.commit()
+        for name in self._CONSTRAINTS:
+            assert name in states, f"FK {name} missing after boot"
+            assert states[name] is False, (
+                f"freshly created FK {name} should be NOT VALID, "
+                f"got convalidated={states[name]!r}"
+            )
+
+        # Simulate scripts/import_to_pg.py: VALIDATE both constraints.
+        for name in self._CONSTRAINTS:
+            cur.execute(
+                pgsql.SQL("ALTER TABLE trips VALIDATE CONSTRAINT {}").format(
+                    pgsql.Identifier(name)
+                )
+            )
+        pg_conn.commit()
+        states = self._convalidated(pg_conn)
+        pg_conn.commit()
+        for name in self._CONSTRAINTS:
+            assert states[name] is True, (
+                f"VALIDATE CONSTRAINT {name} did not set convalidated=true"
+            )
+
+        # Second boot: the validated state MUST survive (NF2 regression).
+        self._boot()
+        states = self._convalidated(pg_conn)
+        pg_conn.commit()
+        for name in self._CONSTRAINTS:
+            assert states[name] is True, (
+                f"FK {name} reverted to NOT VALID after a reboot — the boot "
+                f"path dropped and re-added it, discarding the validated "
+                f"state (NF2)"
+            )

@@ -50,3 +50,43 @@ class TestApplicationLogging:
         assert extras["conversation_id"] == ""
         assert extras["company_id"] == 0
         assert extras["user_id"] == 0
+
+    def test_correlation_log_filter_defaults(self):
+        """CorrelationLogFilter stamps None/empty defaults and returns True.
+
+        The autouse fixture above clears the ContextVars, so the filter must
+        fall back to the ContextVar defaults ("", 0, 0, "").
+        """
+        from backend.copilot.telemetry import CorrelationLogFilter
+
+        record = logging.LogRecord(
+            name="backend.copilot",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg="unit-check",
+            args=(),
+            exc_info=None,
+        )
+        assert CorrelationLogFilter().filter(record) is True
+        assert record.conversation_id == ""
+        assert record.company_id == 0
+        assert record.user_id == 0
+        assert record.phase == ""
+
+    def test_install_copilot_logging_is_idempotent(self):
+        """Calling install_copilot_logging() twice adds exactly one filter."""
+        from backend.copilot.telemetry import (
+            CorrelationLogFilter,
+            install_copilot_logging,
+        )
+
+        install_copilot_logging()
+        install_copilot_logging()
+        for name in ("backend.copilot", "backend.api.v1.copilot_router"):
+            count = sum(
+                1
+                for f in logging.getLogger(name).filters
+                if isinstance(f, CorrelationLogFilter)
+            )
+            assert count == 1, f"{name} has {count} CorrelationLogFilter instances"

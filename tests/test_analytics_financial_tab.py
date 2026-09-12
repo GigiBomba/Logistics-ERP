@@ -351,3 +351,89 @@ class TestFinancialAnalyticsTabKPIMetrics:
         tab._render()
         # DSO = (100-40)/100000 * 30 ≈ 0.018 days (near 0)
         assert tab._content_layout.count() >= 1
+
+    def test_dso_kpi_sparkline_series_3_points(self, qt_widget, qtbot):
+        """DSO KPI card carries a 3-point sparkline computed from invoiced/paid.
+
+        Regression (Fix 22): ``sparkline_values`` was hard-coded to ``[]`` so
+        the DSO trend was silently dropped even though the 12-month series is
+        already fetched. With a 3-month response the DSO card must get a
+        3-point series whose values match the estimator used by the KPI:
+        round((invoiced - paid) / revenue * max(days, 30)); days defaults to 30
+        in standalone tests, so month 1 -> round(30/1000 * 30) = 1 day.
+        """
+        svc = MagicMock()
+        svc.get_monthly_financial.return_value = [
+            {"month": "2026-01", "revenue": 1000, "profit": 200, "margin_pct": 20.0,
+             "trip_count": 10, "invoiced_count": 100, "paid_count": 70},
+            {"month": "2026-02", "revenue": 1000, "profit": 200, "margin_pct": 20.0,
+             "trip_count": 10, "invoiced_count": 100, "paid_count": 40},
+            {"month": "2026-03", "revenue": 1000, "profit": 200, "margin_pct": 20.0,
+             "trip_count": 10, "invoiced_count": 100, "paid_count": 10},
+        ]
+        svc.get_revenue_by_client.return_value = []
+        svc.get_revenue_by_country.return_value = []
+        svc.get_trip_status_distribution.return_value = []
+        svc.get_revenue_quarterly.return_value = []
+        svc.get_monthly_trip_volume.return_value = []
+        svc.get_cost_breakdown.return_value = []
+        svc.get_invoice_aging.return_value = None
+
+        from ui.views.analytics._tab_base import _SparklineLabel
+
+        tab = FinancialAnalyticsTab(parent=qt_widget, service=svc)
+        qtbot.addWidget(tab)
+        tab._render()
+
+        # Locate the DSO card via its "<n> days" value label.
+        dso_value_labels = [
+            lbl for lbl in tab.findChildren(QLabel)
+            if lbl.text().strip().endswith(" days")
+        ]
+        assert len(dso_value_labels) == 1, "expected exactly one DSO value label"
+        card = dso_value_labels[0].parentWidget()
+        sparklines = card.findChildren(_SparklineLabel)
+        assert len(sparklines) == 1, "DSO KPI card should render a sparkline"
+        series = list(sparklines[0]._last_fig.data[0].y)
+        assert len(series) == 3
+        # 30/1000*30=1, 60/1000*30=2, 90/1000*30=3
+        assert series == [1.0, 2.0, 3.0]
+        assert series[0] == 1.0
+
+    def test_dso_sparkline_empty_when_12_month_series_empty(self, qt_widget, qtbot):
+        """Empty trailing-12-month series -> empty DSO sparkline, no crash."""
+        svc = MagicMock()
+        rows = [
+            {"month": "2026-01", "revenue": 50000, "profit": 12000, "margin_pct": 24.0,
+             "trip_count": 45, "invoiced_count": 40, "paid_count": 30},
+            {"month": "2026-02", "revenue": 62000, "profit": 15000, "margin_pct": 24.2,
+             "trip_count": 52, "invoiced_count": 48, "paid_count": 35},
+            {"month": "2026-03", "revenue": 58000, "profit": 14000, "margin_pct": 24.1,
+             "trip_count": 50, "invoiced_count": 44, "paid_count": 38},
+        ]
+
+        def _monthly_financial(months, from_date, to_date):
+            return [] if months == 12 else rows
+
+        svc.get_monthly_financial.side_effect = _monthly_financial
+        svc.get_revenue_by_client.return_value = []
+        svc.get_revenue_by_country.return_value = []
+        svc.get_trip_status_distribution.return_value = []
+        svc.get_revenue_quarterly.return_value = []
+        svc.get_monthly_trip_volume.return_value = []
+        svc.get_cost_breakdown.return_value = []
+        svc.get_invoice_aging.return_value = None
+
+        from ui.views.analytics._tab_base import _SparklineLabel
+
+        tab = FinancialAnalyticsTab(parent=qt_widget, service=svc)
+        qtbot.addWidget(tab)
+        tab._render()  # must not crash
+
+        dso_value_labels = [
+            lbl for lbl in tab.findChildren(QLabel)
+            if lbl.text().strip().endswith(" days")
+        ]
+        assert len(dso_value_labels) == 1, "expected exactly one DSO value label"
+        card = dso_value_labels[0].parentWidget()
+        assert card.findChildren(_SparklineLabel) == []

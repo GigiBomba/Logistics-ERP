@@ -77,3 +77,57 @@ class TestTimestampHandling:
             assert len(stored) == 3, f"Expected 3 rows, got {len(stored)}"
         finally:
             db.close()
+
+
+class TestUpdatedAtTriggerEngineGuard:
+    """``_ensure_updated_at_triggers`` must be SQLite-only.
+
+    The updated_at stamping triggers are SQLite DDL created at runtime.  On
+    PostgreSQL the method early-returns before touching ``self.conn`` —
+    trigger ownership there lives in ``schema_pg.sql``, not in per-boot
+    trigger creation.
+    """
+
+    def test_pg_engine_is_noop_on_connection(self):
+        """A ``postgresql`` engine must never execute/commit DDL on conn.
+
+        Mirrors the ``DatabaseManager.__new__`` stub pattern from
+        ``test_backfill_updated_at._make_pg_db`` (``conn`` is a read-only
+        property that pulls from ``_pg_pool`` on the PG path); the fake
+        pool/connection record every call so a regression (dropping the
+        engine guard) is caught.
+        """
+        from database.db_manager import DatabaseManager
+
+        class _RecordingConn:
+            def __init__(self):
+                self.executed = []
+                self.committed = 0
+
+            def execute(self, *args):
+                self.executed.append(args)
+                return self
+
+            def commit(self):
+                self.committed += 1
+
+        class _StubPool:
+            def __init__(self, conn):
+                self._conn = conn
+                self.cached = 0
+
+            def get_cached_connection(self):
+                self.cached += 1
+                return self._conn
+
+        conn = _RecordingConn()
+        db = DatabaseManager.__new__(DatabaseManager)
+        db._engine = "postgresql"
+        db._pg_pool = _StubPool(conn)
+
+        db._ensure_updated_at_triggers()
+
+        assert conn.executed == [], (
+            f"PG path must not execute DDL on conn, got {conn.executed}"
+        )
+        assert conn.committed == 0, "PG path must not commit on conn"

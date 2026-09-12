@@ -8,11 +8,12 @@ methods that interact with the GUI (error display, load-older, dispatch).
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QMutex, QTimer
 from PySide6.QtWidgets import QStackedWidget, QWidget
 
 from ui.views.dispatch_board.board_state import (
@@ -82,6 +83,11 @@ def _make_state_mock() -> MagicMock:
     state._driver_cache = {}
     state._route_cache = {}
     state._alert_counts = {}
+    # Wire the thread-safe accessor to the mock's own dict so real mixin
+    # methods (e.g. ``_build_card_data``) read real counts under MagicMock.
+    state._get_alert_count = lambda trip_id, default=0: state._alert_counts.get(
+        trip_id, default
+    )
     state._driver_repo = MagicMock()
     state._route_repo = MagicMock()
     return state
@@ -411,3 +417,63 @@ class TestBoardStateMixinWithQt:
             assert qt_board_state._search_query == "test"
             assert qt_board_state._search_statuses == ["Planned", "Loading"]
             mock_apply.assert_called_once()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Thread safety for _alert_counts (no QApplication required)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class _AlertCountHarness(BoardStateMixin):
+    """Minimal ``BoardStateMixin`` instance for the alert-count locking test.
+
+    ``BoardStateMixin`` is a plain mixin — the real view's ``__init__`` lives
+    on ``QtDispatchBoardView`` — so the harness initialises just the two
+    attributes the alert-count helpers touch.
+    """
+
+    def __init__(self) -> None:
+        self._alert_counts: dict[int, int] = {}
+        self._alert_counts_lock = QMutex()
+
+
+class TestAlertCountThreadSafety:
+    """``_alert_counts`` is shared between the GUI thread and background
+    workers (board load, alert refresh after resolve), so the locked
+    read-modify-write in ``_bump_alert_count`` must never lose updates."""
+
+    def test_concurrent_bumps_are_lossless(self) -> None:
+        """N threads x M bumps of the same trip must total N*M.
+
+        Without the QMutex guarding the read-modify-write, interleaved
+        increments would race and the final count would drop below N*M.
+        """
+        harness = _AlertCountHarness()
+        n_threads = 8
+        iterations = 500
+        expected = n_threads * iterations
+
+        start = threading.Barrier(n_threads)
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                start.wait()
+                for _ in range(iterations):
+                    harness._bump_alert_count(1, +1)
+            except BaseException as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=worker, name=f"alert-bump-{i}")
+            for i in range(n_threads)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+
+        assert not errors, f"Worker thread(s) raised: {errors!r}"
+        assert harness._alert_counts.get(1, 0) == expected, (
+            f"Lost updates: expected {expected}, got {harness._alert_counts.get(1, 0)}"
+        )

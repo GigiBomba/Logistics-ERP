@@ -15,11 +15,12 @@ Tests cover:
 """
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import QCoreApplication, Qt, QTimer
-from PySide6.QtWidgets import QMenu, QMessageBox, QFileDialog
+from PySide6.QtWidgets import QLabel, QMenu, QMessageBox, QFileDialog
 
 # ── SP workaround ─────────────────────────────────────────────────────────────
 # ui/widgets/__init__.py imports SP as S; driver_manager expects SP at module
@@ -83,6 +84,29 @@ def _populate_table(mgr, drivers=None):
     mgr._driver_repo.get_all.return_value = drivers
     mgr.refresh()
     _process_events()
+
+
+def _collect_label_texts(layout):
+    """Collect all QLabel texts under a QLayout (recursively into sub-layouts).
+
+    Used to assert on the tachograph summary chips rendered by
+    ``_show_driver_tacho_detail`` (chips are QFrames containing QLabels).
+    """
+    texts = []
+    if layout is None:
+        return texts
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        if item is None:
+            continue
+        w = item.widget()
+        if w is not None:
+            if isinstance(w, QLabel):
+                texts.append(w.text())
+            child = w.layout() if hasattr(w, "layout") else None
+            if child is not None:
+                texts.extend(_collect_label_texts(child))
+    return texts
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -150,9 +174,9 @@ def driver_form():
     dlg.close()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 1. TestQtDriverManagerUI — Widget construction
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerUI:
     """Verify that all UI widgets are correctly built and visible."""
@@ -197,12 +221,12 @@ class TestQtDriverManagerUI:
 
     def test_tacho_container_hidden_initially(self, driver_manager):
         assert hasattr(driver_manager, "_tacho_container")
-        assert driver_manager._tacho_container.isVisible() is False
+        assert not driver_manager._tacho_container.isHidden() is False
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 2. TestQtDriverManagerLifecycle — Wakeup/shutdown/cleanup
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerLifecycle:
     """Lifecycle methods: wakeup, shutdown, cleanup."""
@@ -231,9 +255,9 @@ class TestQtDriverManagerLifecycle:
             mock_shutdown.assert_called_once()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 3. TestQtDriverManagerRefresh — Data loading and table
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerRefresh:
     """Data loading and table population."""
@@ -296,9 +320,9 @@ class TestQtDriverManagerRefresh:
         assert sorted(called_ids) == [SAMPLE_DRIVER["id"], SAMPLE_DRIVER_2["id"]]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 4. TestQtDriverManagerCRUD — Add/edit/delete flows
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerCRUD:
     """CRUD operations: open dialog, save, delete."""
@@ -387,9 +411,9 @@ class TestQtDriverManagerCRUD:
             QMessageBox.critical.assert_called()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 5. TestQtDriverManagerSearch — Filter/search
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerSearch:
     """Search and filtering behaviour."""
@@ -427,9 +451,9 @@ class TestQtDriverManagerSearch:
                 assert not hidden, f"Case-insensitive match failed for row {r}"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 6. TestQtDriverManagerKPI — KPI calculations
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerKPI:
     """KPI value updates after data load."""
@@ -459,9 +483,9 @@ class TestQtDriverManagerKPI:
         assert label.text() == "2"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 7. TestQtDriverManagerTruckAssignment — Assign truck dialog
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 #
 # NOTE: The source code of _assign_truck uses ``for t in trucks:`` as the
 # loop variable, which shadows the module-level ``t()`` i18n helper in the
@@ -478,9 +502,9 @@ class TestQtDriverManagerTruckAssignment:
     pass
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 8. TestQtDriverManagerActiveToggle — Toggle active via context menu
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerActiveToggle:
     """Toggle driver active state."""
@@ -499,9 +523,92 @@ class TestQtDriverManagerActiveToggle:
         driver_manager._toggle_active()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 9. TestQtDriverManagerExportImport — CSV import/export
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
+# 9. TestQtDriverManagerTachoActivity — tacho activity resolution chain
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Regression tests for the MIGRATION2313 tacho-activity resolution chain in
+# ``_show_driver_tacho_detail`` (~line 1248+):
+#   1. remote fallback  — ``RemoteDriverService.get_tacho_activity``
+#   2. local fallback   — ``TachoDriverActivityRepository`` built from ``self.db``
+#   3. bare MagicMock guard — non-list service return is coerced to ``[]``
+#
+# Driver selection goes through ``_on_row_selected`` which sets ``_selected_id``
+# and then calls ``_show_driver_tacho_detail``.
+
+class TestQtDriverManagerTachoActivity:
+    """Tacho activity resolution chain regression tests (S2-U3.2)."""
+
+    def test_remote_service_rows_render_summary(self, driver_manager):
+        """Remote fallback: get_tacho_activity rows drive the summary chips."""
+        driver_manager._dta_service.get_tacho_activity.return_value = [
+            {
+                "activity_date": "2026-08-01",
+                "driving_minutes": 60,
+                "violations": "[]",
+                "breaks": "",
+            }
+        ]
+        driver_manager._on_row_selected({"id": 1})
+
+        # Remote branch was hit: service called with driver id + iso date.
+        driver_manager._dta_service.get_tacho_activity.assert_called_once()
+        assert (
+            driver_manager._dta_service.get_tacho_activity.call_args[0][0] == 1
+        )
+        date_arg = driver_manager._dta_service.get_tacho_activity.call_args[0][1]
+        assert isinstance(date_arg, str) and date_arg[:4] == "2026"
+
+        texts = _collect_label_texts(driver_manager._tacho_layout)
+        # 60 driving minutes -> 1.0h in the total-hours summary chip
+        assert "1.0h" in texts
+        assert not driver_manager._tacho_container.isHidden()
+
+    def test_local_repo_rows_render_summary(self, driver_manager):
+        """Local fallback: repo built from self.db returns rows that render."""
+        from repositories import tacho_driver_activity_repository as tacho_mod
+
+        driver_manager.db = MagicMock()
+        with patch.object(
+            tacho_mod, "TachoDriverActivityRepository"
+        ) as mock_cls:
+            mock_repo = MagicMock()
+            mock_repo.get_by_driver.return_value = [
+                {
+                    "activity_date": "2026-08-01",
+                    "driving_minutes": 120,
+                    "violations": "[]",
+                    "breaks": "",
+                }
+            ]
+            mock_cls.return_value = mock_repo
+
+            driver_manager._on_row_selected({"id": 1})
+
+            mock_cls.assert_called_once_with(driver_manager.db)
+            mock_repo.get_by_driver.assert_called_once()
+
+        texts = _collect_label_texts(driver_manager._tacho_layout)
+        # 120 driving minutes -> 2.0h in the total-hours summary chip
+        assert "2.0h" in texts
+        assert not driver_manager._tacho_container.isHidden()
+
+    def test_bare_magicmock_service_no_crash(self, driver_manager):
+        """Bare MagicMock service (unchecked return) -> empty, no crash."""
+        # Default dta_service fixture is a bare MagicMock; get_tacho_activity
+        # returns an unchecked MagicMock (not a list). The isinstance guard
+        # coerces it to [] and the "no activity" branch is shown.
+        driver_manager._on_row_selected({"id": 1})
+
+        assert not driver_manager._tacho_container.isHidden()
+        texts = _collect_label_texts(driver_manager._tacho_layout)
+        # No summary chip value (e.g. "0.0h") was rendered for the empty set.
+        assert not any(re.match(r"\d\.\dh$", txt) for txt in texts)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 10. TestQtDriverManagerExportImport — CSV import/export
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerExportImport:
     """CSV export and import flows."""
@@ -576,9 +683,9 @@ class TestQtDriverManagerExportImport:
         assert driver_manager._driver_repo.create.call_count == 1
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 10. TestQtDriverManagerEvents — EventBus subscriptions
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverManagerEvents:
     """EventBus subscriptions trigger refresh."""
@@ -602,9 +709,9 @@ class TestQtDriverManagerEvents:
             mock_refresh.assert_called()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 11. TestQtDriverFormDialog — Dialog construction
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverFormDialog:
     """Driver form dialog widget construction."""
@@ -667,9 +774,9 @@ class TestQtDriverFormDialog:
             dlg.close()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # 12. TestQtDriverFormDialogSave — Dialog save
-# ══════════════════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 class TestQtDriverFormDialogSave:
     """Driver form dialog save logic."""

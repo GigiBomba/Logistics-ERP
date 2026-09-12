@@ -417,14 +417,14 @@ def _insert_invoice(db, company_id: int, client_id: int, trip_id, number: str,
     if line_items is None:
         line_items = [InvoiceLineItem(**_vector_input(0))]
     calc_items, net, vat, gross = _calc_line_items(line_items)
-    line_items_json = _json.dumps([li.model_dump() for li in calc_items])
+    line_items_json = _json.dumps([li.model_dump(mode="json") for li in calc_items])
     cur = db.execute(
         "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, "
         "status, company_id, client_id, currency, notes, line_items_json, "
         "subtotal_net, total_vat, total_gross, total_amount, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?)",
         (trip_id, number, issue, due, status, company_id, client_id, notes,
-         line_items_json, net, vat, gross, gross,
+         line_items_json, float(net), float(vat), float(gross), float(gross),
          (date.today()).isoformat() + "T00:00:00Z", (date.today()).isoformat() + "T00:00:00Z"),
     )
     db.conn.commit()

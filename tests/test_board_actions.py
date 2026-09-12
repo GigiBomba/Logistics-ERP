@@ -637,9 +637,12 @@ class TestBoardActionsMixinWithQt:
 
     # ── Resolve alert refresh ─────────────────────────────────────────────
 
-    def test_resolve_alert_refresh(self, qt_board_actions):
+    def test_resolve_alert_refresh(self, qt_board_actions, qtbot):
         """``_on_resolve_alert_refresh`` refreshes panels and updates alert
         counts."""
         qt_board_actions._alerts_panel = MagicMock()
         qt_board_actions._on_resolve_alert_refresh()
+        # The ops read runs off-thread via WorkerPool — wait for the panel
+        # refresh to be applied on the GUI thread.
+        qtbot.waitUntil(lambda: qt_board_actions._alerts_panel.refresh.called)
         qt_board_actions._alerts_panel.refresh.assert_called_once()

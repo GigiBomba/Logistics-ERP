@@ -11,6 +11,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QTableWidgetItem, QVBoxLayout, QWidget
 
+from services.i18n import t
 from ui.views.proforma_editor.line_items import LineItemsMixin
 
 
@@ -100,13 +101,23 @@ class TestInit:
         assert host._items_table.columnCount() == 4
 
     def test_items_table_headers(self, qtbot) -> None:
+        # Derive the expected labels through the same translation path the
+        # component uses.  ``t()`` returns the translated text when real
+        # translations are loaded and the raw key otherwise, so this pins the
+        # header wiring deterministically under both translation states.
+        expected = [
+            t("proforma_editor.description"),
+            t("proforma_editor.quantity"),
+            t("proforma_editor.unit_price"),
+            t("proforma_editor.total"),
+        ]
         host = ProformaLineItemsHost()
         qtbot.addWidget(host)
         headers = [
             host._items_table.horizontalHeaderItem(i).text()
             for i in range(4)
         ]
-        assert all(h.startswith("proforma_editor.") for h in headers)
+        assert headers == expected
 
     def test_totals_labels_created(self, qtbot) -> None:
         host = ProformaLineItemsHost()
@@ -471,6 +482,52 @@ class TestRecalcAll:
         host._items_table.blockSignals(False)
         assert "0.00 EUR" in host._canvas_tax_label.text()
 
+    def test_empty_discount_type_yields_zero_discount(self, qtbot) -> None:
+        # Regression: an empty/unknown discount type must never be applied as a
+        # percentage or fixed amount — only zero discount.
+        host = ProformaLineItemsHost()
+        qtbot.addWidget(host)
+        host._discount_value = "50"
+        host._discount_type = ""
+        host._tax_rate = "0"
+        _insert_row(host, "X", "10", "10")
+        host._items_table.blockSignals(True)
+        host._recalc_all()
+        host._items_table.blockSignals(False)
+        assert "100.00 EUR" in host._canvas_subtotal_label.text()
+        assert "0.00 EUR" in host._canvas_discount_label.text()
+        assert "100.00 EUR" in host._canvas_grand_label.text()
+
+    def test_unknown_discount_type_with_negative_value_yields_zero(
+        self, qtbot,
+    ) -> None:
+        # Even a negative value must not leak through when the type is unknown.
+        host = ProformaLineItemsHost()
+        qtbot.addWidget(host)
+        host._discount_value = "-5"
+        host._discount_type = "unknown"
+        host._tax_rate = "0"
+        _insert_row(host, "X", "10", "10")
+        host._items_table.blockSignals(True)
+        host._recalc_all()
+        host._items_table.blockSignals(False)
+        assert "0.00 EUR" in host._canvas_discount_label.text()
+
+    def test_zero_percentage_value_yields_zero_discount(self, qtbot) -> None:
+        # Percentage with a non-positive value falls through to zero, not to
+        # the fixed branch (raw value).
+        host = ProformaLineItemsHost()
+        qtbot.addWidget(host)
+        host._discount_value = "0"
+        host._discount_type = "percentage"
+        host._tax_rate = "0"
+        _insert_row(host, "X", "10", "10")
+        host._items_table.blockSignals(True)
+        host._recalc_all()
+        host._items_table.blockSignals(False)
+        assert "0.00 EUR" in host._canvas_discount_label.text()
+        assert "100.00 EUR" in host._canvas_grand_label.text()
+
 
 # ── Total display ──────────────────────────────────────────────────────────
 
@@ -554,9 +611,10 @@ class TestSignalHandlers:
         with pytest.MonkeyPatch().context() as mp:
             recalc = MagicMock()
             mp.setattr(host, "_recalc_all", recalc)
-            # t() returns the key when no translation loaded
+            # The combo feeds the *translated* label to the handler, so pass
+            # exactly what t() yields (translated text or key fallback).
             host._on_discount_type_changed(
-                "proforma_editor.discount_percentage"
+                t("proforma_editor.discount_percentage")
             )
             assert host._discount_type == "percentage"
             recalc.assert_called_once()

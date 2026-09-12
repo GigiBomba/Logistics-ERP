@@ -423,3 +423,57 @@ class TestQtDispatchBoardView:
             board_view._on_quick_assign_truck({"trip_id_num": 999})
             board_view._on_quick_assign_driver({"trip_id_num": 999})
             board_view._on_quick_assign_both({"trip_id_num": 999})
+
+    # ── B4: single trip fetch + alert cadence ──────────────────────────────
+
+    def test_load_cycle_single_trip_fetch_and_alert_cadence(self, board_view, qtbot):
+        """B4/alert-cadence: one trip fetch per load+scan cycle; alerts once.
+
+        The board load fetches the trip universe once via ``get_all`` and
+        caches it on ``_cycle_trips``; the conflict scan reuses that cache
+        instead of issuing a second ``get_all(limit=2000)`` right after the
+        load (previously two full trip reads per 30s cycle).  Active-alert
+        counts are fetched on the first load and then maintained
+        incrementally from ALERT_CREATED / ALERT_RESOLVED events, so the
+        2000-alert fetch is NOT repeated on the next 30s cycle.
+        """
+        ts = board_view._trip_service
+        # Force the first full alert fetch to be due (production set the
+        # timestamp during the construction load).
+        board_view._last_alert_full_fetch_ts = 0.0
+        ts.get_all.reset_mock()
+        ts.get_by_statuses.reset_mock()
+        board_view.ops.get_active_alerts.reset_mock()
+
+        def _full_alert_fetches():
+            """Count only the board's full 2000-alert preload fetches.
+
+            The alerts panel also calls ``get_active_alerts(limit=20)`` when
+            it refreshes, so isolate by the preload's ``limit=2000``.
+            """
+            return [
+                c for c in board_view.ops.get_active_alerts.call_args_list
+                if c.kwargs.get("limit") == 2000
+            ]
+
+        # ── Cycle 1: board load + conflict scan ─────────────────────────
+        board_view._start_load()
+        if board_view._load_thread is not None and board_view._load_thread.is_alive():
+            board_view._load_thread.join(timeout=5)
+        qtbot.wait(400)  # post-load QTimer + conflict-scan dispatch
+
+        assert ts.get_all.call_count == 1
+        assert ts.get_by_statuses.call_count == 0
+        assert len(_full_alert_fetches()) == 1
+
+        # ── Cycle 2 (simulates the 30s auto-refresh) ────────────────────
+        ts.get_all.reset_mock()
+        board_view.ops.get_active_alerts.reset_mock()
+        board_view._start_load()
+        if board_view._load_thread is not None and board_view._load_thread.is_alive():
+            board_view._load_thread.join(timeout=5)
+        qtbot.wait(400)
+
+        assert ts.get_all.call_count == 1
+        assert ts.get_by_statuses.call_count == 0
+        assert len(_full_alert_fetches()) == 0

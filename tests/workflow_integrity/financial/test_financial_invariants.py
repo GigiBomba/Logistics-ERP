@@ -175,7 +175,8 @@ class TestInvoiceTripTotalMatch:
         trip = workflow_env.get_trip(trip_id)
         assert trip is not None
 
-        gap = invoice.total_gross - float(trip["total_price_eur"])
+        # Decimal fields require explicit float normalization before comparison.
+        gap = float(invoice.total_gross) - float(trip["total_price_eur"])
         # System may or may not enforce matching — log gap and assert existence
         assert abs(gap) >= 0.01, (
             f"Expected gap when invoice total ({invoice.total_gross}) differs from "
@@ -305,7 +306,8 @@ class TestVATConsistency:
 
         # Also verify the invoice result model carries the correct VAT
         assert any(
-            abs(li.vat_rate - 19.0) < 0.01 for li in invoice.line_items
+            # Decimal fields require explicit float normalization.
+            abs(float(li.vat_rate) - 19.0) < 0.01 for li in invoice.line_items
         ), "No line item with vat_rate 19.0 found in InvoiceResult"
 
 
@@ -408,13 +410,14 @@ class TestRoundingConsistency:
         # Expected: taxable = ROUND_HALF_UP(3 * 33.3333) = 100.00
         # vat = ROUND_HALF_UP(100.00 * 19 / 100) = 19.00
         # total = 100.00 + 19.00 = 119.00
-        assert abs(invoice.total_gross - 119.00) < 0.01, (
+        # Decimal fields require explicit float normalization before comparison.
+        assert abs(float(invoice.total_gross) - 119.00) < 0.01, (
             f"Expected total_gross=119.00 after ROUND_HALF_UP, got {invoice.total_gross}"
         )
-        assert abs(invoice.subtotal_net - 100.00) < 0.01, (
+        assert abs(float(invoice.subtotal_net) - 100.00) < 0.01, (
             f"Expected subtotal_net=100.00, got {invoice.subtotal_net}"
         )
-        assert abs(invoice.total_vat - 19.00) < 0.01, (
+        assert abs(float(invoice.total_vat) - 19.00) < 0.01, (
             f"Expected total_vat=19.00, got {invoice.total_vat}"
         )
 
@@ -522,10 +525,11 @@ class TestRecalculationAudited:
         # total_gross = 1500.0 + 285.0 = 1785.0
         recalculated_invoice = recalc_result.data
         assert recalculated_invoice is not None
-        assert abs(recalculated_invoice.total_gross - 1785.0) < 0.01, (
+        # Decimal fields require explicit float normalization before comparison.
+        assert abs(float(recalculated_invoice.total_gross) - 1785.0) < 0.01, (
             f"After recalculate, total_gross should be ~1785.0, got {recalculated_invoice.total_gross}"
         )
-        assert abs(recalculated_invoice.subtotal_net - 1500.0) < 0.01, (
+        assert abs(float(recalculated_invoice.subtotal_net) - 1500.0) < 0.01, (
             f"After recalculate, subtotal_net should be ~1500.0, got {recalculated_invoice.subtotal_net}"
         )
 

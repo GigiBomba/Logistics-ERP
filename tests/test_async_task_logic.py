@@ -162,16 +162,34 @@ class TestAsyncTask:
         assert task._thread is None
 
     def test_cancel_stops_running_thread(self, task: AsyncTask) -> None:
-        """``cancel()`` should quit and wait on a running thread."""
+        """``cancel()`` should detach immediately and request ``quit()``
+        only — it must never block on ``wait()`` — and must disconnect the
+        cancelled task's user callbacks so they are never invoked."""
         mock_thread = MagicMock()
         mock_thread.isRunning.return_value = True
+        on_result = MagicMock()
+        on_error = MagicMock()
+        mock_worker = MagicMock()
+        # A real signal raises RuntimeError when disconnecting a slot that is
+        # no longer connected; cancel() must tolerate that.
+        mock_worker.finished.disconnect.side_effect = RuntimeError(
+            "disconnect failed"
+        )
         task._thread = mock_thread
-        task._worker = MagicMock()
+        task._worker = mock_worker
+        task._on_result_cb = on_result
+        task._on_error_cb = on_error
 
         task.cancel()
 
         mock_thread.quit.assert_called_once()
-        mock_thread.wait.assert_called_once_with(2000)
+        mock_thread.wait.assert_not_called()
+        # Both user callbacks were detached from the worker's signals.
+        mock_worker.finished.disconnect.assert_called_once_with(on_result)
+        mock_worker.error.disconnect.assert_called_once_with(on_error)
+        on_result.assert_not_called()
+        on_error.assert_not_called()
+        # State is fully detached even though the thread is still running.
         assert task._worker is None
         assert task._thread is None
 

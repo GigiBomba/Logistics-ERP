@@ -337,7 +337,7 @@ class TestQtOverviewView:
         overview_view._refresh_recent_activity()
         assert overview_view._activity_layout.count() >= 1
 
-    def test_alerts_with_data(self, overview_view, mock_ops):
+    def test_alerts_with_data(self, overview_view, mock_ops, qtbot):
         """_refresh_alerts renders alert rows when ops returns data."""
         mock_alert = MagicMock()
         mock_alert.severity = "WARNING"
@@ -346,6 +346,12 @@ class TestQtOverviewView:
         mock_alert.created_at = "2026-06-01T12:00:00"
         mock_ops.get_active_alerts.return_value = [mock_alert]
         overview_view._refresh_alerts()
+        # The ops read now runs off-thread via WorkerPool; wait for the
+        # async on_result (_render_alerts) to populate the alerts layout.
+        qtbot.waitUntil(
+            lambda: overview_view._alerts_layout.count() >= 1,
+            timeout=2000,
+        )
         assert overview_view._alerts_layout.count() >= 1
 
     # ── Event handling ──────────────────────────────────────────────────

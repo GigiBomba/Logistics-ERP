@@ -220,6 +220,36 @@ ALL_REVISIONS: list[dict] = [
         },
         "indexes": [],
     },
+    {
+        "id": "m6e7f8a9b0c3",
+        "down": "l5d6e7f8a9b2",
+        "doc": "add tenant-scoped query indexes on trips/drivers/trucks/assignments",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": [
+            "idx_trips_route_history_v2_id",
+            "idx_trips_company_status",
+            "idx_drivers_company",
+            "idx_trucks_company",
+            "idx_dta_company",
+        ],
+    },
+    {
+        "id": "n7f8a9b0c1d4",
+        "down": "m6e7f8a9b0c3",
+        "doc": "Financial precision follow-up - freight_negotiations/expenses/invoices NUMERIC convergence",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": [],
+    },
+    {
+        "id": "o8g9b0c2e5f6",
+        "down": "n7f8a9b0c1d4",
+        "doc": "Datetime integrity - Phase D follow-up: remaining Priority-1/2 TIMESTAMPTZ conversions (trips.deleted_at, route_history_v2.archived_at, trip_status_history.created_at, truck_route_assignments)",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": [],
+    },
 ]
 
 # Base tables that must exist before running migrations (referenced by FK / ADD COLUMN)
@@ -241,7 +271,12 @@ BASE_TABLES_SQL: dict[str, str] = {
             id INTEGER PRIMARY KEY,
             description TEXT,
             status TEXT DEFAULT 'draft',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            -- company_id / route_history_v2_id exist on real installs via
+            -- db_manager column migrations; the m6e7f8a9b0c3 harness needs
+            -- them here so its _table_has_columns guard creates the indexes.
+            company_id INTEGER,
+            route_history_v2_id INTEGER
         )
     """,
     # Base tables for k4c5d6e7f8a1 (covering-index migration).  Kept minimal —
@@ -270,6 +305,28 @@ BASE_TABLES_SQL: dict[str, str] = {
             company_id INTEGER,
             driver_id INTEGER,
             activity_date DATE NOT NULL
+        )
+    """,
+    # Base tables for m6e7f8a9b0c3 (tenant-scoped query indexes).  Minimal —
+    # just the company_id column the migration's _table_has_columns guard
+    # checks, so the indexes are actually created in the harness.  Monthly/
+    # timestamp columns are deliberately omitted (same reason as above).
+    "drivers": """
+        CREATE TABLE IF NOT EXISTS drivers (
+            id INTEGER PRIMARY KEY,
+            company_id INTEGER
+        )
+    """,
+    "trucks": """
+        CREATE TABLE IF NOT EXISTS trucks (
+            id INTEGER PRIMARY KEY,
+            company_id INTEGER
+        )
+    """,
+    "driver_truck_assignments": """
+        CREATE TABLE IF NOT EXISTS driver_truck_assignments (
+            id INTEGER PRIMARY KEY,
+            company_id INTEGER
         )
     """,
 }
@@ -543,8 +600,8 @@ class TestUpgradeAll:
             version = result.scalar()
         engine.dispose()
         assert version is not None, "alembic_version is empty"
-        # The sole head is l5d6e7f8a9b2
-        assert version == "l5d6e7f8a9b2", (
+        # The sole head is o8g9b0c2e5f6
+        assert version == "o8g9b0c2e5f6", (
             f"Unexpected alembic_version: {version}"
         )
 
@@ -975,7 +1032,7 @@ class TestRevisionChain:
 
         script = ScriptDirectory(ALEMBIC_DIR)
         heads = set(script.get_heads())
-        expected_heads = {"l5d6e7f8a9b2"}
+        expected_heads = {"o8g9b0c2e5f6"}
         assert heads == expected_heads, (
             f"Expected heads {expected_heads}, got {heads}"
         )

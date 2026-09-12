@@ -156,6 +156,10 @@ class TestRoutePlannerSignalMarshaling(unittest.TestCase):
                     "callback was never delivered to the GUI thread.",
                 )
                 self.assertTrue(v.calculate_btn.isEnabled())
+                # TASK 8: after result delivery the button is fully opaque.
+                self.assertEqual(
+                    v.calculate_btn.graphicsEffect().opacity(), 1.0
+                )
                 self.assertTrue(v.lbl_info.text(),
                                 "lbl_info should have been updated with the result")
                 self.assertIsNotNone(v._last_route_history_id,

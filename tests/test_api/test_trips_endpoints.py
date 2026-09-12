@@ -59,6 +59,47 @@ class TestTripsListEndpoint:
         assert call_kwargs.get("status") == ""
 
 
+class TestTripsListMultiStatus:
+    """GET /api/v1/trips/ — additive ``statuses`` comma-separated filter."""
+
+    def test_list_trips_filters_by_multiple_statuses(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        fake_items = [
+            {"id": 1, "status": "In Transit", "client_name": "Acme", "created_at": "2024-01-01"},
+            {"id": 2, "status": "Loading", "client_name": "Beta", "created_at": "2024-01-02"},
+        ]
+        mocks["trip_service"].get_filtered.return_value = fake_items
+
+        resp = client.get(f"{BASE}/?statuses=In Transit,Loading")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert {item["id"] for item in data["items"]} == {1, 2}
+        assert data["total"] == 2
+        call_kwargs = mocks["trip_service"].get_filtered.call_args[1]
+        assert call_kwargs.get("statuses") == ["In Transit", "Loading"]
+
+    def test_list_trips_statuses_strips_whitespace_and_blanks(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["trip_service"].get_filtered.return_value = []
+
+        resp = client.get(f"{BASE}/?statuses=In%20Transit, Loading ,,Planned")
+        assert resp.status_code == 200
+        call_kwargs = mocks["trip_service"].get_filtered.call_args[1]
+        assert call_kwargs.get("statuses") == ["In Transit", "Loading", "Planned"]
+
+    def test_list_trips_statuses_empty_preserves_single_status_path(self, client_with_mocks):
+        """Without statuses= the list must behave exactly as before."""
+        client, mocks = client_with_mocks
+        mocks["trip_service"].get_filtered.return_value = []
+
+        resp = client.get(f"{BASE}/?search=foo&status=Planned")
+        assert resp.status_code == 200
+        call_kwargs = mocks["trip_service"].get_filtered.call_args[1]
+        assert call_kwargs.get("search") == "foo"
+        assert call_kwargs.get("status") == "Planned"
+        assert call_kwargs.get("statuses") == []
+
+
 class TestTripsGetEndpoint:
     """GET /api/v1/trips/{trip_id}"""
 

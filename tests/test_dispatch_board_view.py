@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -854,6 +855,25 @@ class TestDispatchAlertCreatedResolved:
         ev = {"data": {"alert": {"trip_id": 42}}}
         view._handle_alert_resolved(ev)
         assert view._alert_counts[42] == 0
+
+    def test_alert_counts_survive_reload_cycle(self, view_with_mocks, qtbot):
+        """Incremental badge counts survive a board reload.
+
+        ``_start_load`` no longer clears ``_alert_counts`` on every 30s
+        cycle — the counts are maintained incrementally from ALERT_CREATED /
+        ALERT_RESOLVED events and only rebuilt from a full fetch on the slow
+        cadence.  A reload within that cadence must leave them intact.
+        """
+        view = view_with_mocks
+        view._alert_counts = {7: 2}
+        # The construction load already performed a full alert fetch; keep
+        # the cadence fresh so this reload skips the re-fetch (and the count).
+        view._last_alert_full_fetch_ts = time.time()
+        view._start_load()
+        if view._load_thread is not None and view._load_thread.is_alive():
+            view._load_thread.join(timeout=5)
+        qtbot.wait(200)
+        assert view._alert_counts.get(7) == 2
 
 
 # ═════════════════════════════════════════════════════════════════════════════

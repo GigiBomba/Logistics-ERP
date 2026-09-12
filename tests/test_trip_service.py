@@ -242,5 +242,60 @@ class TestTripServiceDelete(unittest.TestCase):
         self.svc.delete(99999)
 
 
+class TestTripServiceGetTenantScoped(unittest.TestCase):
+    """``TripService.get`` must be company-scoped like ``update()``/``delete()``.
+
+    A cross-tenant ``get(trip_id, company_id=...)`` must surface as
+    "not found" rather than returning another company's trip.
+    """
+
+    def setUp(self):
+        self.db = make_db()
+        self.svc = TripService(self.db)
+
+    def _seed_tenant_client(self, client_id: int, company_id: int) -> None:
+        """Seed a client row owned by *company_id* so ``_validate_external_refs``
+        (which is company-scoped in the HTTP path) accepts the trip create."""
+        self.db.conn.execute(
+            "INSERT OR IGNORE INTO clients (id, name, email, is_active, created_at, updated_at, company_id) "
+            "VALUES (?, ?, ?, 1, '2026-01-01', '2026-01-01', ?)",
+            (client_id, f"Client-{client_id}", f"client{client_id}@test.local", company_id),
+        )
+        self.db.conn.commit()
+
+    def test_get_respects_company_id(self):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        self._seed_tenant_client(1, company_id=1)
+        trip_a = _create_trip(self.svc, client_id=1, client_name="TenantA")
+        set_request_context(2, "dispatcher")
+        self._seed_tenant_client(2, company_id=2)
+        trip_b = _create_trip(self.svc, client_id=2, client_name="TenantB")
+
+        # Own company → returned.
+        res_a = self.svc.get(trip_a, company_id=1)
+        self.assertTrue(res_a.success)
+        self.assertEqual(res_a.data.client_name, "TenantA")
+
+        # Cross-company → not found.
+        res_cross = self.svc.get(trip_b, company_id=1)
+        self.assertFalse(res_cross.success)
+        self.assertEqual(res_cross.errors[0].code, "not_found")
+
+        # Company B sees its own trip.
+        res_b = self.svc.get(trip_b, company_id=2)
+        self.assertTrue(res_b.success)
+        self.assertEqual(res_b.data.client_name, "TenantB")
+
+    def test_get_driver_scoping_still_applies_with_company(self):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        self._seed_tenant_client(1, company_id=1)
+        trip_a = _create_trip(self.svc, client_id=1, client_name="TenantA")
+        res = self.svc.get(trip_a, driver_id=9999, company_id=1)
+        self.assertFalse(res.success)
+        self.assertEqual(res.errors[0].code, "not_found")
+
+
 if __name__ == "__main__":
     unittest.main()

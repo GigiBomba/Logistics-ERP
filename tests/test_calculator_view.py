@@ -68,7 +68,7 @@ def calculator_view(qtbot, mock_fleet_service, mock_trip_service,
     patchers = [
         patch("ui.views.calculator_view.TripCalculator", return_value=mock_calculator),
         patch("ui.views.calculator_view.TripConflictService"),
-        patch("ui.views.calculator_view.EventBus"),
+        patch("ui.views.calculator_view.shared_event_bus"),
         patch(
             "ui.views.calculator_view.TripContextService",
             spec=True,

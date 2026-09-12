@@ -132,6 +132,24 @@ class TestSizeHint:
         size = delegate.sizeHint(option, index)
         assert size.width() == 500
 
+    def test_size_hint_enforces_minimum_width_below_300(self, delegate):
+        from PySide6.QtWidgets import QStyleOptionViewItem
+
+        option = QStyleOptionViewItem()
+        option.rect = QRect(0, 0, 100, 100)
+        index = QModelIndex()
+        size = delegate.sizeHint(option, index)
+        assert size.width() == 300
+
+    def test_size_hint_above_300_keeps_option_width(self, delegate):
+        from PySide6.QtWidgets import QStyleOptionViewItem
+
+        option = QStyleOptionViewItem()
+        option.rect = QRect(0, 0, 400, 100)
+        index = QModelIndex()
+        size = delegate.sizeHint(option, index)
+        assert size.width() == 400
+
 
 # =========================================================================
 # paint — no alert (None data)

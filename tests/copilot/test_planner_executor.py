@@ -2098,3 +2098,65 @@ class TestHelpOnlyMode:
         ctx = _global_ctx()
         resp = await process_utterance("find available trucks", ctx, "help-only-5", help_only=False)
         assert resp.clarification_question_key != "copilot.error.help_only_tier"
+
+# ── Deterministic summary construction ──────────────────────────────────────
+
+class TestDeterministicSummary:
+    """copilot.summary.<intent> + summary_params must carry template-usable
+    data, and a fully-failed plan must surface the generic error summary
+    instead of leaking per-intent template placeholders."""
+
+    def test_collect_summary_params_flattens_nested_scalars(self):
+        from backend.copilot.planner import _collect_summary_params
+
+        data = {
+            "vehicles": [{"id": 1}, {"id": 2}],
+            "total_results": 2,
+            "truncated": False,
+            "health_score": {
+                "vehicle_id": 7,
+                "overall_score": 84.5678,
+                "maintenance_alerts": 2,
+            },
+        }
+        params = _collect_summary_params(data)
+        assert params["total_results"] == 2
+        assert params["truncated"] is False
+        assert params["vehicles_count"] == 2
+        # nested dict scalars surface directly for the summary templates
+        assert params["vehicle_id"] == 7
+        assert params["overall_score"] == 84.57  # floats rounded to 2 dp
+        assert params["maintenance_alerts"] == 2
+
+    def test_collect_summary_params_first_wins_on_collisions(self):
+        from backend.copilot.planner import _collect_summary_params
+
+        params = _collect_summary_params({
+            "total": 3,
+            "nested": {"total": 99, "label": "x"},
+        })
+        assert params["total"] == 3  # top-level scalar wins
+        assert params["label"] == "x"
+
+    def test_collect_summary_params_skips_non_scalars(self):
+        from backend.copilot.planner import _collect_summary_params
+
+        params = _collect_summary_params({
+            "blob": {"deep": {"deeper": 1}},  # only one nesting level flattens
+            "when": None,
+})
+        assert params == {}
+
+    @pytest.mark.asyncio
+    async def test_fully_failed_plan_uses_generic_error_summary(self):
+        """No succeeded step -> copilot.summary.error (never the per-intent
+        key whose template placeholders would leak raw).  Without a DB the
+        tool returns ``unavailable`` -> the step fails."""
+        ctx = _global_ctx()
+        resp = await process_utterance(
+            "find available trucks", ctx, "test-conv-summary-fail",
+            services=None,
+        )
+        assert resp.summary_key == "copilot.summary.error"
+        assert resp.summary_params["steps_succeeded"] == 0
+        assert resp.summary_params["steps_total"] >= 1

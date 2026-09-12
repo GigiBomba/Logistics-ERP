@@ -17,7 +17,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 
 from ui.views.automation_view.automation_queue import QueueManagementMixin
 
@@ -73,6 +73,32 @@ class _FakeQueueView(QObject, QueueManagementMixin):
         w.isRunning.return_value = True
         w.isFinished.return_value = False
         self._workers[id(w)] = w
+
+
+class _SignalDetail(QObject):
+    """Detail panel stand-in that carries a real ``link_requested`` Signal."""
+
+    link_requested = Signal(int, int)  # run_id, trip_id
+
+
+class _LinkedQueueView(_FakeQueueView):
+    """Fake queue view whose detail panel emits a real ``link_requested``.
+
+    Reuses the mixin wiring from ``_FakeQueueView`` but swaps the mocked
+    detail panel for a real signal carrier so emission actually dispatches
+    to ``_on_link_requested`` (recorded in ``_link_calls``).
+    """
+
+    def __init__(self, db=None, prefs=None, pipeline_repo=None):
+        super().__init__(db=db, prefs=prefs, pipeline_repo=pipeline_repo)
+        # Replace the mocked panel, then re-run the idempotent wiring.
+        self._detail = _SignalDetail(self)
+        self._detail_link_wired = False
+        self._ensure_link_requested_wired()
+        self._link_calls: list[tuple[int, int]] = []
+
+    def _on_link_requested(self, run_id: int, trip_id: int) -> None:
+        self._link_calls.append((run_id, trip_id))
 
 
 # =========================================================================
@@ -426,3 +452,40 @@ class TestRecoverStuckRuns:
         fake_view._recover_stuck_runs()
         # No recovered runs → _refresh_from_db is skipped (not called)
         fake_view._refresh_from_db.assert_not_called()
+
+
+# =========================================================================
+# link_requested wiring — connected exactly once
+# =========================================================================
+
+
+class TestLinkRequestedWiring:
+    """The detail panel's ``link_requested`` is wired exactly once.
+
+    Regression: the connection used to live in ``_start_worker_for_file``,
+    so starting N workers connected the slot N times and a single link
+    request fired ``_on_link_requested`` N times.
+    """
+
+    def test_wired_when_detail_exists_at_init(self):
+        view = _LinkedQueueView(db=MagicMock(), prefs=MagicMock(), pipeline_repo=MagicMock())
+        assert view._detail_link_wired is True
+        assert view._detail.link_requested is not None
+
+    def test_wiring_is_idempotent(self, fake_view):
+        # _FakeQueueView wires its (mock) detail panel at init; any number
+        # of later wiring attempts must not add further connections.
+        fake_view._detail.link_requested.reset_mock()
+        for _ in range(10):
+            fake_view._ensure_link_requested_wired()
+        fake_view._detail.link_requested.connect.assert_not_called()
+
+    def test_on_link_requested_fires_once_per_request_across_many_batches(self):
+        view = _LinkedQueueView(db=MagicMock(), prefs=MagicMock(), pipeline_repo=MagicMock())
+        # Simulate many worker batches: every drain re-attempts the wiring,
+        # but the guard keeps a single connection alive.
+        for _ in range(20):
+            view._drain_pending_files()
+        view._detail.link_requested.emit(1, 42)
+        view._detail.link_requested.emit(7, 99)
+        assert view._link_calls == [(1, 42), (7, 99)]

@@ -4,6 +4,7 @@ Uses ``client_with_mocks`` for mocked service layer.
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -251,3 +252,79 @@ class TestDocumentsAuth:
         mocks["document_service"].advanced_search.side_effect = RuntimeError("err")
         resp = client.get(f"{BASE}/")
         assert resp.status_code == 500
+
+
+class TestDocumentsExpiryEndpoints:
+    """GET /api/v1/documents/expiring and GET /api/v1/documents/overdue."""
+
+    @staticmethod
+    def _doc(doc_id: int, expiry_date: str) -> dict:
+        return {**FAKE_DOC, "id": doc_id, "expiry_date": expiry_date}
+
+    def test_expiring_returns_upcoming_not_expired(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        today = date.today()
+        mocks["document_service"].get_expiring.return_value = [
+            self._doc(1, (today + timedelta(days=5)).isoformat()),
+            self._doc(2, (today + timedelta(days=1)).isoformat()),
+            self._doc(3, (today - timedelta(days=3)).isoformat()),  # expired → excluded
+        ]
+
+        resp = client.get(f"{BASE}/expiring?days=30")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert {item["id"] for item in data["items"]} == {1, 2}
+
+    def test_expiring_passes_days_to_service(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["document_service"].get_expiring.return_value = []
+
+        resp = client.get(f"{BASE}/expiring?days=14")
+        assert resp.status_code == 200
+        mocks["document_service"].get_expiring.assert_called_once_with(days_ahead=14)
+
+    def test_expiring_defaults_days_to_30(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["document_service"].get_expiring.return_value = []
+
+        resp = client.get(f"{BASE}/expiring")
+        assert resp.status_code == 200
+        mocks["document_service"].get_expiring.assert_called_once_with(days_ahead=30)
+
+    def test_overdue_returns_past_expiries(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        today = date.today()
+        mocks["document_service"].get_overdue.return_value = [
+            self._doc(1, (today - timedelta(days=10)).isoformat()),
+            self._doc(2, (today - timedelta(days=1)).isoformat()),
+        ]
+
+        resp = client.get(f"{BASE}/overdue")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert {item["id"] for item in data["items"]} == {1, 2}
+
+    def test_expiring_and_overdue_are_company_scoped(self, app):
+        """Both endpoints must pass the JWT company_id to the service."""
+        from backend.dependencies import get_document_service
+        from backend.dependencies_security import require_dispatcher
+
+        svc = MagicMock()
+        svc.get_expiring.return_value = []
+        svc.get_overdue.return_value = []
+        app.dependency_overrides[get_document_service] = lambda: svc
+        app.dependency_overrides[require_dispatcher] = lambda: {
+            "id": 1, "email": "test@test.com", "role": "dispatcher",
+            "company_id": 1,
+        }
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.get(f"{BASE}/expiring?days=30")
+        assert resp.status_code == 200
+        svc.get_expiring.assert_called_once_with(days_ahead=30, company_id=1)
+
+        resp = client.get(f"{BASE}/overdue")
+        assert resp.status_code == 200
+        svc.get_overdue.assert_called_once_with(company_id=1)

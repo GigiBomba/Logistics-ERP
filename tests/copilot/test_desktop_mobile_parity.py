@@ -54,6 +54,13 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("OPERION_ENV", "testing")
 os.environ.setdefault("OPERION_JWT_SECRET_KEY", "test-jwt-secret-key-for-testing!!")
 
+from backend.copilot.schemas import (  # noqa: E402
+    CoPilotResponse,
+    ConfirmationLevel,
+    ExecutionPlan,
+    ExecutionStep,
+    Intent,
+)
 from backend.dependencies import get_db  # noqa: E402
 from backend.main import create_app  # noqa: E402
 from backend.security import create_access_token  # noqa: E402
@@ -285,6 +292,34 @@ def _canonical_lines(payload: Dict[str, Any], utterance: str) -> List[str]:
     lines.append(f"response.summary_params={json.dumps(payload.get('summary_params', {}), sort_keys=True, default=str)}")
     lines.append(f"response.plan_id={_mask(payload.get('plan_id'))}")
 
+    # ChatResponse.plan (ExecutionPlan) — masked so per-request artifacts
+    # (plan_id / conversation_id / reasoning_graph_id / created_at) never
+    # register as a client-shape divergence.  The None branch emits a matching
+    # set of lines so the two client paths stay line-count aligned.
+    plan = payload.get("plan")
+    if plan:
+        lines.append(f"response.plan.plan_id={_mask(plan.get('plan_id'))}")
+        lines.append(f"response.plan.conversation_id={_mask(plan.get('conversation_id'))}")
+        lines.append(f"response.plan.reasoning_graph_id={_mask(plan.get('reasoning_graph_id'))}")
+        lines.append(f"response.plan.created_at={_mask(plan.get('created_at'))}")
+        lines.append(f"response.plan.requires_confirmation={plan.get('requires_confirmation')!r}")
+        intent = plan.get("intent") or {}
+        lines.append(f"response.plan.intent.name={intent.get('name')!r}")
+        plan_steps = plan.get("steps", []) or []
+        lines.append(f"response.plan.steps_count={len(plan_steps)}")
+        for i, step in enumerate(plan_steps):
+            prefix = f"response.plan.step[{i}]"
+            lines.append(f"{prefix}.tool_name={step.get('tool_name', '')!r}")
+            lines.append(f"{prefix}.status={step.get('status', 'pending')!r}")
+    else:
+        lines.append("response.plan.plan_id=None")
+        lines.append("response.plan.conversation_id=None")
+        lines.append("response.plan.reasoning_graph_id=None")
+        lines.append("response.plan.created_at=None")
+        lines.append("response.plan.requires_confirmation=None")
+        lines.append("response.plan.intent.name=None")
+        lines.append("response.plan.steps_count=0")
+
     timeline = payload.get("timeline", []) or []
     lines.append(f"timeline.steps_count={len(timeline)}")
     for i, step in enumerate(timeline):
@@ -301,6 +336,47 @@ def _canonical_lines(payload: Dict[str, Any], utterance: str) -> List[str]:
         confirmation_level = step.get("confirmation_level", MOBILE_CONFIRMATION_LEVEL_DEFAULT)
         lines.append(f"{prefix}.confirmation_level={confirmation_level}")
     return lines
+
+
+def _mobile_parse_plan(plan: Any) -> Any:
+    """Python mirror of mobile CopilotExecutionPlan.fromJson / CopilotIntent
+    (copilot_models.dart): the fields the Flutter model reads from json['plan'].
+
+    Returns ``None`` when the wire omits the plan (matching
+    ``json['plan'] != null ? ... : null``).
+    """
+    if plan is None:
+        return None
+    intent = plan.get("intent") or {}
+    parsed_steps = []
+    for step in plan.get("steps", []) or []:
+        parsed_steps.append({
+            "step_id": step.get("step_id", ""),
+            "tool_name": step.get("tool_name", ""),
+            "tool_version": step.get("tool_version", "1.0.0"),
+            "parameters": step.get("parameters", {}),
+            "depends_on": step.get("depends_on", []),
+            "confirmation_level": step.get("confirmation_level", MOBILE_CONFIRMATION_LEVEL_DEFAULT),
+            "status": step.get("status", "pending"),
+            "result": step.get("result"),
+            "error": step.get("error"),
+        })
+    return {
+        "plan_id": _mask(plan.get("plan_id")),
+        "conversation_id": _mask(plan.get("conversation_id")),
+        "reasoning_graph_id": _mask(plan.get("reasoning_graph_id")),
+        "intent": {
+            "name": intent.get("name", ""),
+            "entities": intent.get("entities", []),
+            "missing_required_entities": intent.get("missing_required_entities", []),
+            "raw_utterance": intent.get("raw_utterance", ""),
+        },
+        "steps": parsed_steps,
+        "overall_confidence": plan.get("overall_confidence", 1.0),
+        "requires_confirmation": plan.get("requires_confirmation", False),
+        "confirmation_phrase": plan.get("confirmation_phrase"),
+        "created_at": _mask(plan.get("created_at")),
+    }
 
 
 def _mobile_parse(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -323,6 +399,7 @@ def _mobile_parse(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "conversation_id": _mask(payload.get("conversation_id")),
         "plan_present": payload.get("plan") is not None,
+        "plan": _mobile_parse_plan(payload.get("plan")),
         "plan_id": _mask(payload.get("plan_id")),
         "clarification_question_key": payload.get("clarification_question_key"),
         "clarification_params": payload.get("clarification_params", {}),
@@ -517,3 +594,67 @@ class TestParityExecutedPlan:
             assert desktop_parsed == mobile_parsed, (
                 f"Client shape changed the ExecutionPlan for {utterance!r}"
             )
+
+
+class TestChatResponsePlanShape:
+    """ChatResponse.plan — the new full ExecutionPlan field on the /chat wire.
+
+    The parity scenarios above pin the plan-absent path (the keyword planner
+    surfaces a clarification / executes without a stored plan).  This class
+    pins the plan-present path by stubbing ``process_utterance``: the endpoint
+    must serialize the full plan under ``plan`` AND keep the top-level
+    ``plan_id`` mirror for backward compatibility.
+    """
+
+    def _patched_process_utterance(self, response: CoPilotResponse):
+        return patch(
+            "backend.api.v1.copilot_router.process_utterance",
+            new_callable=AsyncMock,
+            return_value=response,
+        )
+
+    def test_chat_serializes_plan_and_backward_compatible_plan_id(self, backend) -> None:
+        client, headers = backend
+        plan = ExecutionPlan(
+            plan_id="p-x",
+            conversation_id="c-x",
+            reasoning_graph_id="rg-x",
+            intent=Intent(name="dispatch.cancel", raw_utterance="x"),
+            steps=[
+                ExecutionStep(
+                    step_id="s-1",
+                    tool_name="dispatch.cancel",
+                    tool_version="1.0.0",
+                    parameters={"trip_id": 1},
+                    confirmation_level=ConfirmationLevel.BUSINESS,
+                    status="awaiting_confirmation",
+                ),
+            ],
+            overall_confidence=0.9,
+            requires_confirmation=True,
+        )
+        response = CoPilotResponse(
+            conversation_id="c-x",
+            plan=plan,
+            summary_key="copilot.summary.dispatch.cancel",
+        )
+
+        with self._patched_process_utterance(response):
+            resp = client.post(
+                CHAT_URL,
+                json={"utterance": "cancel dispatch", "language": "en"},
+                headers=headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        # New field: full plan.
+        assert body["plan"]["plan_id"] == "p-x"
+        assert body["plan"]["requires_confirmation"] is True
+        assert body["plan"]["intent"]["name"] == "dispatch.cancel"
+        assert len(body["plan"]["steps"]) == 1
+        assert body["plan"]["steps"][0]["tool_name"] == "dispatch.cancel"
+
+        # Backward compatibility: the flat plan_id mirror survives.
+        assert body["plan_id"] == "p-x"

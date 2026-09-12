@@ -209,3 +209,97 @@ class TestGetDriverIdForTruck:
     def test_get_driver_id_for_truck_returns_none(self, repo):
         result = repo.get_driver_id_for_truck(9999)
         assert result is None
+
+
+# ── Tenant isolation: JOINs must scope BOTH sides ─────────────────────
+
+
+def _assignment_with_company(db: InMemoryDB, driver_id: int, truck_id: int, company_id: int) -> None:
+    """Seed an assignment with an explicit tenant, bypassing the repo (whose
+    ``assign`` would stamp the caller's own company_id)."""
+    db.conn.execute(
+        "INSERT OR REPLACE INTO driver_truck_assignments "
+        "(driver_id, truck_id, assigned_at, active, company_id) "
+        "VALUES (?, ?, datetime('now'), 1, ?)",
+        (driver_id, truck_id, company_id),
+    )
+    db.conn.commit()
+
+
+class TestTenantIsolation:
+    """A company-A query must never surface trucks/drivers owned by company B."""
+
+    def test_get_truck_plate_for_driver_cross_tenant_truck_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        did = _driver(db, name="Alice", company_id=1)
+        tid_b = _truck(db, plate_number="PLT-B", company_id=2)
+        _assignment_with_company(db, did, tid_b, company_id=1)
+        # The assignment belongs to company 1 but points at a company 2 truck —
+        # the trucks side of the JOIN must reject it.
+        assert repo.get_truck_plate_for_driver(did) == ""
+
+    def test_get_truck_plate_for_driver_same_company_truck_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        did = _driver(db, name="Alice", company_id=1)
+        tid_a = _truck(db, plate_number="PLT-A", company_id=1)
+        _assignment_with_company(db, did, tid_a, company_id=1)
+        assert repo.get_truck_plate_for_driver(did) == "PLT-A"
+
+    def test_get_plates_by_driver_ids_cross_tenant_truck_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        did_a = _driver(db, name="Alice", company_id=1)
+        did_b = _driver(db, name="Bob", company_id=1)
+        tid_a = _truck(db, plate_number="PLT-A", company_id=1)
+        tid_b = _truck(db, plate_number="PLT-B", company_id=2)
+        _assignment_with_company(db, did_a, tid_a, company_id=1)
+        _assignment_with_company(db, did_b, tid_b, company_id=1)
+        plates = repo.get_plates_by_driver_ids([did_a, did_b])
+        # Only the company-1 truck plate may be returned.
+        assert plates == {did_a: "PLT-A"}
+
+    def test_get_driver_names_for_trucks_cross_tenant_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        did_a = _driver(db, name="Alice", company_id=1)
+        did_b = _driver(db, name="Bob", company_id=2)
+        tid_a = _truck(db, plate_number="ISO-A", company_id=1)
+        tid_b = _truck(db, plate_number="ISO-B", company_id=2)
+        _assignment_with_company(db, did_a, tid_a, company_id=1)
+        _assignment_with_company(db, did_b, tid_b, company_id=2)
+        names = repo.get_driver_names_for_trucks([tid_a, tid_b])
+        # Company B's truck/driver must not leak into company A's mapping.
+        assert names == {tid_a: "Alice"}
+
+    def test_get_driver_names_for_trucks_explicit_company_id(self, db, repo):
+        # No tenant context set — the explicit company_id scopes the query.
+        did_a = _driver(db, name="Alice", company_id=1)
+        did_b = _driver(db, name="Bob", company_id=2)
+        tid_a = _truck(db, plate_number="ISO-A", company_id=1)
+        tid_b = _truck(db, plate_number="ISO-B", company_id=2)
+        _assignment_with_company(db, did_a, tid_a, company_id=1)
+        _assignment_with_company(db, did_b, tid_b, company_id=2)
+        names = repo.get_driver_names_for_trucks([tid_a, tid_b], company_id=1)
+        assert names == {tid_a: "Alice"}
+        names_b = repo.get_driver_names_for_trucks([tid_a, tid_b], company_id=2)
+        assert names_b == {tid_b: "Bob"}
+
+    def test_get_driver_name_for_truck_cross_tenant_driver_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        did_b = _driver(db, name="Bob", company_id=2)
+        tid_a = _truck(db, plate_number="ISO-A", company_id=1)
+        _assignment_with_company(db, did_b, tid_a, company_id=1)
+        # Company 1 assignment referencing a company 2 driver — the drivers
+        # side of the JOIN must reject it.
+        assert repo.get_driver_name_for_truck(tid_a) == ""
+
+    def test_get_driver_name_for_truck_same_company_driver_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        did_a = _driver(db, name="Alice", company_id=1)
+        tid_a = _truck(db, plate_number="ISO-A", company_id=1)
+        _assignment_with_company(db, did_a, tid_a, company_id=1)
+        assert repo.get_driver_name_for_truck(tid_a) == "Alice"

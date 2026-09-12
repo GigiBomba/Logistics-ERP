@@ -42,6 +42,56 @@ class TestAuthTokenEndpoint:
                   "OPERION_JWT_SECRET_KEY"):
             os.environ.pop(k, None)
 
+    def _login_admin(self, app, remember=None):
+        """Perform an admin-gateway login (env-var based, zero DB).
+
+        Returns the raw TestClient response so callers can inspect the
+        refresh_token cookie.  Cleans up the env vars it sets.
+        """
+        import os
+        import bcrypt
+        from tests.conftest import OPERION_TEST_JWT_SECRET
+        os.environ.setdefault("OPERION_JWT_SECRET_KEY", OPERION_TEST_JWT_SECRET)
+        os.environ["OPERION_ADMIN_EMAIL"] = "admin@test.com"
+        pw_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt(rounds=4)).decode()
+        os.environ["OPERION_ADMIN_PASSWORD_HASH"] = pw_hash
+
+        data = {"username": "admin@test.com", "password": "admin123"}
+        if remember is not None:
+            data["remember"] = remember
+
+        try:
+            resp = TestClient(app).post(f"{BASE}/token", data=data)
+        finally:
+            for k in ("OPERION_ADMIN_EMAIL", "OPERION_ADMIN_PASSWORD_HASH",
+                      "OPERION_JWT_SECRET_KEY"):
+                os.environ.pop(k, None)
+        return resp
+
+    def test_login_remember_true_sets_30_day_cookie(self, app):
+        """remember=true → refresh cookie max-age ≈ 30 days (2_592_000s)."""
+        resp = self._login_admin(app, remember="true")
+        assert resp.status_code == 200
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "refresh_token=" in set_cookie
+        assert "Max-Age=2592000" in set_cookie
+
+    def test_login_remember_false_sets_7_day_cookie(self, app):
+        """remember=false → refresh cookie max-age ≈ 7 days (604_800s)."""
+        resp = self._login_admin(app, remember="false")
+        assert resp.status_code == 200
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "refresh_token=" in set_cookie
+        assert "Max-Age=604800" in set_cookie
+
+    def test_login_default_remember_sets_session_cookie(self, app):
+        """No remember field → session cookie (max-age ≈ 7 days), like False."""
+        resp = self._login_admin(app)
+        assert resp.status_code == 200
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "refresh_token=" in set_cookie
+        assert "Max-Age=604800" in set_cookie
+
     def test_login_wrong_password_returns_401(self, app):
         """Wrong password returns 401."""
         import os

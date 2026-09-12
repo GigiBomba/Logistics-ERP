@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PySide6.QtWidgets import QWidget
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +142,45 @@ class TestControllerIntegration:
         with patch.object(copilot_view._panel, "ask_about_element") as mock_panel_method:
             copilot_view.ask_about_element("What is this?")
             mock_panel_method.assert_called_once_with("What is this?", None)
+
+
+# ===========================================================================
+# Insight queue mounting
+# ===========================================================================
+
+class TestInsightQueueMounting:
+    """Insight queue is hidden by default and toggled via the panel."""
+
+    def test_queue_mounted_and_hidden_by_default(self, copilot_view, qtbot):
+        """mount_insight_queue adds the queue to the layout and hides it."""
+        queue = QWidget()
+        qtbot.addWidget(queue)
+        copilot_view.mount_insight_queue(queue)
+
+        layout = copilot_view.layout()
+        assert layout is not None
+        # Queue should be the last item in the layout
+        assert layout.itemAt(layout.count() - 1).widget() is queue
+        assert not queue.isVisible()
+
+    def test_queue_toggled_visible(self, copilot_view, qtbot):
+        """The panel insights_toggled signal shows/hides the queue."""
+        queue = QWidget()
+        qtbot.addWidget(queue)
+        copilot_view.mount_insight_queue(queue)
+
+        copilot_view._panel.insights_toggled.emit(True)
+        assert not queue.isHidden()
+
+        copilot_view._panel.insights_toggled.emit(False)
+        assert queue.isHidden()
+
+    def test_queue_default_state_is_closed(self, copilot_view, qtbot):
+        """A freshly mounted queue never occupies screen space."""
+        queue = QWidget()
+        qtbot.addWidget(queue)
+        copilot_view.mount_insight_queue(queue)
+        assert queue.isHidden()
 
 
 # ===========================================================================

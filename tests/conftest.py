@@ -101,8 +101,11 @@ def reset_singletons():
     # Tenant context (contextvars) — a test that set a company/role scope and
     # didn't reset it would leak scoped SQL (`AND company_id = ?`) into later
     # tests in the same process and break unscoped repository fixtures.
-    from database.tenant_context import clear_context
-    clear_context()
+    # Gate on import: if the module was never imported, the context is already
+    # the default empty one, so clearing it would be a no-op anyway.
+    if "database.tenant_context" in sys.modules:
+        from database.tenant_context import clear_context
+        clear_context()
 
     # EventBus
     # ``services.operations`` has a heavy __init__ (imports all engine
@@ -186,8 +189,11 @@ def reset_singletons():
     # (module-scoped ``_set_env`` fixtures, monkeypatch.setenv) must not see
     # a stale cached copy.  Reset the cache before every test so the first
     # ``get_settings()`` call of each test re-reads the current environment.
-    from backend.config import reload_settings
-    reload_settings()
+    # Gate on import: if ``backend.config`` was never imported, there is no
+    # cached copy to invalidate and the first get_settings() reads fresh env.
+    if "backend.config" in sys.modules:
+        from backend.config import reload_settings
+        reload_settings()
 
     # ── Chart-export engine (Choreographer/Chrome) ────────────────
     # Replace with a mock so that async QThreadPool render workers
@@ -199,9 +205,12 @@ def reset_singletons():
         _saved_ce = _ce._ENGINE
         _ce._ENGINE = _mock_ce
 
-    # QtTheme cached stylesheet
-    from ui.theme_engine import QtTheme
-    QtTheme._style_sheet = None
+    # QtTheme cached stylesheet.  Gate on import: if ``ui.theme_engine`` was
+    # never imported, there is no cached stylesheet to reset (first import
+    # builds a fresh one).
+    if "ui.theme_engine" in sys.modules:
+        from ui.theme_engine import QtTheme
+        QtTheme._style_sheet = None
 
     yield
 

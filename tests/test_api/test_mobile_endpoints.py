@@ -641,6 +641,103 @@ class TestMobileDeviceEndpoints:
         )
         assert resp.status_code == 403, f"Expected 403 for driver, got {resp.status_code}"
 
+    def test_bulk_deactivate_devices(self):
+        """POST /mobile/devices/bulk-deactivate deactivates all listed devices."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        ids = ["bulk-dev-1", "bulk-dev-2", "bulk-dev-3"]
+
+        for device_id in ids:
+            reg = client.post(
+                "/api/v1/mobile/devices/register",
+                json={"token": device_id, "platform": "android",
+                      "device_id": device_id},
+                headers=_headers(token),
+            )
+            assert reg.status_code == 200
+
+        resp = client.post(
+            "/api/v1/mobile/devices/bulk-deactivate",
+            json={"device_ids": ids},
+            headers=_headers(token),
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+        assert body == {"deactivated": 3, "not_found": 0}, body
+
+        # Devices should be reported inactive in the list endpoint
+        listed = client.get("/api/v1/mobile/devices", headers=_headers(token))
+        assert listed.status_code == 200
+        listed_by_id = {d["device_id"]: d for d in listed.json()}
+        for device_id in ids:
+            assert listed_by_id[device_id]["is_active"] == 0, (
+                f"Device {device_id} still active: {listed_by_id[device_id]}"
+            )
+
+    def test_bulk_deactivate_unknown_ids(self):
+        """Unknown device ids are counted in not_found (idempotent)."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        known = "bulk-known-device"
+
+        reg = client.post(
+            "/api/v1/mobile/devices/register",
+            json={"token": known, "platform": "ios", "device_id": known},
+            headers=_headers(token),
+        )
+        assert reg.status_code == 200
+
+        resp = client.post(
+            "/api/v1/mobile/devices/bulk-deactivate",
+            json={"device_ids": [known, "ghost-id-1", "ghost-id-2"]},
+            headers=_headers(token),
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert resp.json() == {"deactivated": 1, "not_found": 2}, resp.json()
+
+    def test_bulk_deactivate_empty_list(self):
+        """Empty device_ids is a no-op returning zero counts."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        resp = client.post(
+            "/api/v1/mobile/devices/bulk-deactivate",
+            json={"device_ids": []},
+            headers=_headers(token),
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert resp.json() == {"deactivated": 0, "not_found": 0}, resp.json()
+
+    def test_bulk_deactivate_requires_auth(self):
+        """POST /mobile/devices/bulk-deactivate without token returns 401."""
+        real_client = _create_real_app_and_client()
+        resp = real_client.post(
+            "/api/v1/mobile/devices/bulk-deactivate",
+            json={"device_ids": ["some-device"]},
+        )
+        assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+
+    def test_bulk_deactivate_requires_dispatcher(self):
+        """POST /mobile/devices/bulk-deactivate with driver token returns 403."""
+        real_client = _create_real_app_and_client()
+        driver_tok = _login(real_client, DRIVER_EMAIL, DRIVER_PASSWORD)
+        resp = real_client.post(
+            "/api/v1/mobile/devices/bulk-deactivate",
+            json={"device_ids": ["some-device"]},
+            headers=_headers(driver_tok),
+        )
+        assert resp.status_code == 403, f"Expected 403 for driver, got {resp.status_code}: {resp.text}"
+
+    def test_bulk_deactivate_missing_device_ids(self):
+        """Missing device_ids in the body returns 422."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        resp = client.post(
+            "/api/v1/mobile/devices/bulk-deactivate",
+            json={},
+            headers=_headers(token),
+        )
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TestMobileDispatcherEndpoints

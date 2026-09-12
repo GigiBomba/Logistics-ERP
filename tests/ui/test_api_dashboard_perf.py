@@ -22,7 +22,9 @@ def dashboard(qapp, qtbot):
     view._refresh_timer.stop()
     # Wait for the construction-triggered async refresh to settle so the
     # in-flight guard (_refreshing) is clear before a test calls _refresh_status.
-    qtbot.waitUntil(lambda: view._refreshing is False, timeout=5000)
+    # The api client is mocked (no real network), so the worker completes in
+    # microseconds — 1000ms is a generous ceiling, not a minimum.
+    qtbot.waitUntil(lambda: view._refreshing is False, timeout=1000)
     yield view
     view.shutdown()
 
@@ -49,8 +51,8 @@ def test_network_dispatched_off_calling_thread(dashboard, qtbot):
     # synchronously on the main thread.
     assert seen.get("is_online") is None or seen["is_online"] != main_tid
 
-    qtbot.waitUntil(lambda: "is_online" in seen, timeout=5000)
-    qtbot.waitUntil(lambda: "health" in seen, timeout=5000)
+    qtbot.waitUntil(lambda: "is_online" in seen, timeout=1000)
+    qtbot.waitUntil(lambda: "health" in seen, timeout=1000)
     assert seen["is_online"] != main_tid
     assert seen["health"] != main_tid
 
@@ -77,7 +79,7 @@ def test_refresh_skipped_when_in_flight(dashboard, qtbot):
     assert started.wait(5)  # first poll actually started
     dashboard._refresh_status()  # should be skipped (already in flight)
     release.set()
-    qtbot.waitUntil(lambda: dashboard._refreshing is False, timeout=5000)
+    qtbot.waitUntil(lambda: dashboard._refreshing is False, timeout=1000)
     assert len(calls) == 1
 
 
@@ -87,11 +89,11 @@ def test_refresh_updates_cards_in_place(dashboard, qtbot):
     dashboard._api.health_check = lambda: {"database": "ok", "version": "1.2.3"}
 
     dashboard._refresh_status()
-    qtbot.waitUntil(lambda: (0, 0) in dashboard._status_cards, timeout=5000)
-    qtbot.waitUntil(lambda: (1, 0) in dashboard._status_cards, timeout=5000)
+    qtbot.waitUntil(lambda: (0, 0) in dashboard._status_cards, timeout=1000)
+    qtbot.waitUntil(lambda: (1, 0) in dashboard._status_cards, timeout=1000)
 
     api_card = dashboard._status_cards[(0, 0)]
     dashboard._refresh_status()
-    qtbot.waitUntil(lambda: dashboard._refreshing is False, timeout=5000)
+    qtbot.waitUntil(lambda: dashboard._refreshing is False, timeout=1000)
     # The card object must be preserved (updated in place, not recreated).
     assert dashboard._status_cards[(0, 0)] is api_card

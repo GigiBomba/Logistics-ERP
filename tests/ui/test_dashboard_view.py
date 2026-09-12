@@ -81,9 +81,11 @@ def dashboard(qt_widget, qtbot, mock_prefs):
     # via WorkerPool (result delivered through a queued Qt signal).  Wait for
     # the initial cycle to complete so the widget tree (KPI cards + chart
     # frames) is deterministic regardless of prior test-suite Qt state.
+    # All services are mocked, so the cycle completes in ms; 1500ms is a
+    # generous ceiling for the several queued-slot deliveries involved.
     qtbot.waitUntil(
         lambda: hasattr(view, "_left_chart_frame") and hasattr(view, "_kpi_cards"),
-        timeout=5000,
+        timeout=1500,
     )
 
     # Stop the auto-refresh timer

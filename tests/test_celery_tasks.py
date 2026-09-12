@@ -26,6 +26,7 @@ from backend.celery_app.tasks.ocr_tasks import (  # noqa: E402
     batch_ocr_documents,
     flush_gps_batch_to_postgres,
     process_document_ocr,
+    process_ocr_chunk,
 )
 from backend.celery_app.tasks.document_tasks import (  # noqa: E402
     build_email_package,
@@ -252,13 +253,20 @@ class TestBatchOcrDocuments:
         assert result["tasks"] == []
 
     def test_batch_with_docs(self, _mock_db, _mock_doc_service):
-        """Enqueue three OCR tasks via .delay()."""
-        with patch.object(process_document_ocr, "delay") as mock_delay:
-            mock_delay.return_value = MagicMock(id="fake-task-id")
+        """Three docs fit one OCR chunk → one process_ocr_chunk .delay() call."""
+        with patch.object(process_ocr_chunk, "delay") as mock_chunk_delay:
+            mock_chunk_delay.return_value = MagicMock(id="fake-task-id")
             result = batch_ocr_documents([1, 2, 3], company_id=1)
         assert result["status"] == "batch_enqueued"
-        assert len(result["tasks"]) == 3
-        assert mock_delay.call_count == 3
+        assert len(result["tasks"]) == 1
+        assert result["tasks"][0]["document_ids"] == [1, 2, 3]
+        assert result["tasks"][0]["count"] == 3
+        mock_chunk_delay.assert_called_once_with([1, 2, 3], 1, "auto")
+        # Per-document dispatch is gone — process_document_ocr is only run
+        # inside a chunk, never enqueued directly by the batch task.
+        with patch.object(process_document_ocr, "delay") as mock_doc_delay:
+            batch_ocr_documents([1, 2, 3], company_id=1)
+        mock_doc_delay.assert_not_called()
 
 
 # ── flush_gps_batch_to_postgres ─────────────────────────────────────────────

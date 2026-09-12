@@ -188,6 +188,26 @@ class TestConstruction:
         assert panel._new_btn is not None
         assert panel._recorder is not None
 
+    def test_insights_button_exists(self, panel):
+        assert panel._insights_btn is not None
+        assert "Insights" in panel._insights_btn.text() or "copilot.insights.toggle" in panel._insights_btn.text()
+
+    def test_insights_button_default_unchecked(self, panel):
+        assert panel._insights_btn.isCheckable()
+        assert not panel._insights_btn.isChecked()
+
+    def test_insights_button_toggles_signal(self, panel, qtbot):
+        signals = []
+        panel.insights_toggled.connect(lambda checked: signals.append(checked))
+
+        panel._insights_btn.click()
+        assert signals == [True]
+        assert panel._insights_btn.isChecked()
+
+        panel._insights_btn.click()
+        assert signals == [True, False]
+        assert not panel._insights_btn.isChecked()
+
     def test_set_controller(self, panel_no_controller, controller):
         assert panel_no_controller._controller is None
         panel_no_controller.set_controller(controller)
@@ -449,6 +469,76 @@ class TestFormatResponse:
         result = panel._format_response(d)
         assert "{answer}" not in result
 
+    def test_deterministic_summary_renders_translated_sentence(self, panel):
+        """A deterministic copilot.summary.<intent> key resolves through the
+        client i18n catalog into a real sentence — never the raw execution
+        timeline (the "tool result pasted" regression)."""
+        from services.i18n import t
+
+        expected = t("copilot.summary.vehicle.search", total_results=5)
+        assert expected != "copilot.summary.vehicle.search"  # must be translated
+
+        d = {
+            "summary_key": "copilot.summary.vehicle.search",
+            "summary_params": {"total_results": 5, "truncated": False},
+            "clarification_question_key": None,
+            "clarification_params": {},
+            "timeline": [
+                {
+                    "tool_name": "vehicle.search",
+                    "status": "succeeded",
+                    "result": {
+                        "status": "success",
+                        "data": {"total_results": 5, "truncated": False},
+                        "message_key": "copilot.step.vehicle_search_done",
+                    },
+                }
+            ],
+            "conversation_id": "c1",
+        }
+        result = panel._format_response(d)
+        assert result == expected
+        assert "5" in result
+        # Neither the raw i18n key nor the raw step dump may leak into the bubble
+        assert "copilot.summary" not in result
+        assert "Vehicle Search: Succeeded" not in result
+
+    def test_all_deterministic_summary_keys_are_translated(self, panel):
+        """Every copilot.summary.<intent> key the deterministic pipeline can
+        emit must resolve through t() (placeholders substituted), so the panel
+        never falls back to the raw timeline for a supported intent."""
+        from services.i18n import t
+
+        intents = [
+            "vehicle.search",
+            "vehicle.health_score",
+            "driver.check_hours",
+            "route.calculate",
+            "route.estimate_cost",
+            "route.plan_multistop",
+            "route.list",
+            "route.get",
+            "trip.calculate_profitability",
+            "trip.list",
+            "trip.get",
+            "conversation.recall_recent",
+            "client.payment_summary",
+            "document.search",
+            "currency.get_rate",
+            "currency.convert",
+            "tracking.get_live_positions",
+            "tracking.get_vehicle_history",
+            "analytics.query",
+            "help.answer_question",
+            "help.guide_workflow",
+            "error",
+        ]
+        for intent in intents:
+            key = f"copilot.summary.{intent}"
+            text = t(key)
+            assert text != key, f"{key} is not translated"
+            assert text.strip(), f"{key} is empty"
+
     def test_clarification_question_only(self, panel):
         d = {
             "clarification_question_key": "copilot.test.confirm",
@@ -509,6 +599,37 @@ class TestVoiceFlow:
     def test_process_voice_no_controller(self, panel_no_controller):
         """When there is no controller, _process_voice returns early."""
         panel_no_controller._process_voice(b"data", "en")  # Should not raise
+
+    def test_voice_and_chat_forward_plan_identically(self, panel, qtbot, controller):
+        """The voice path emits the same plan dict shape as the chat path."""
+        from ui.copilot.models import ExecutionPlan, ExecutionStep
+
+        plan = ExecutionPlan(
+            plan_id="p_1",
+            conversation_id="c_1",
+            steps=[ExecutionStep(step_id="s_1", tool_name="vehicle.search")],
+            requires_confirmation=True,
+        )
+        response = make_mock_response()
+        response.plan = plan
+        controller.send_voice.return_value = response
+        controller.send_utterance.return_value = response
+
+        emitted = []
+        panel.response_ready.connect(emitted.append)
+
+        with patch.object(threading.Thread, "start", lambda self: self.run()):
+            panel._process_voice(b"fake_audio", "en")
+            panel._process_utterance("Show the plan")
+            qtbot.wait(100)
+
+        voice_dict = next(d for d in emitted if d.get("status") == "ok")
+        chat_dict = emitted[-1]
+        assert "plan" in voice_dict
+        assert "plan" in chat_dict
+        assert voice_dict["plan"] == chat_dict["plan"]
+        assert voice_dict["plan"]["plan_id"] == "p_1"
+        assert voice_dict["plan"]["steps"][0]["tool_name"] == "vehicle.search"
 
     def test_ask_about_element_prefills_text(self, panel, qtbot, controller):
         """ask_about_element pre-fills the input before sending."""

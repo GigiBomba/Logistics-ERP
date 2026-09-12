@@ -429,7 +429,7 @@ class TestMainWindowAdvanced:
         qtbot.wait(10)
         main_window._refresh_alerts.assert_called_once()
 
-    def test_refresh_alerts_pushes_count_to_top_bar(self, main_window):
+    def test_refresh_alerts_pushes_count_to_top_bar(self, main_window, qtbot):
         """_refresh_alerts pushes alert count to the top bar."""
         main_window.ops.get_active_alert_count.return_value = 5
         main_window.app_shell = MagicMock()
@@ -437,9 +437,15 @@ class TestMainWindowAdvanced:
         main_window.app_shell.top_bar = MagicMock()
         main_window.app_shell.top_bar.set_alerts = MagicMock()
         main_window._refresh_alerts()
+        # The ops reads now run off-thread via WorkerPool; wait for the
+        # async on_result to deliver the count to the top bar.
+        qtbot.waitUntil(
+            lambda: main_window.app_shell.set_alert_count.called,
+            timeout=2000,
+        )
         main_window.app_shell.set_alert_count.assert_called_once_with(5)
 
-    def test_refresh_alerts_pushes_list_to_top_bar(self, main_window):
+    def test_refresh_alerts_pushes_list_to_top_bar(self, main_window, qtbot):
         """_refresh_alerts pushes the alert list to the top bar."""
         alerts = [{"id": 1, "message": "Test alert"}]
         main_window.ops.get_active_alerts.return_value = alerts
@@ -449,6 +455,12 @@ class TestMainWindowAdvanced:
         main_window.app_shell.top_bar = MagicMock()
         main_window.app_shell.top_bar.set_alerts = MagicMock()
         main_window._refresh_alerts()
+        # The ops reads now run off-thread via WorkerPool; wait for the
+        # async on_result to deliver the alert list to the top bar.
+        qtbot.waitUntil(
+            lambda: main_window.app_shell.top_bar.set_alerts.called,
+            timeout=2000,
+        )
         main_window.app_shell.top_bar.set_alerts.assert_called_once_with(alerts)
 
     # ── Fuel timer tests (2) ────────────────────────────────────────────

@@ -679,6 +679,18 @@ class TestRemoteInvoiceService:
             trip_data={"extra": "info"}, mode="company",
         )
 
+    # ── create_record (API-parity no-op) ─────────────────────────
+
+    def test_create_record_is_noop_parity(self, service, api):
+        """create_record is a deliberate no-op kept for API parity with the
+        local InvoiceService: ``generate``/``generate_and_record`` already
+        persist the invoice server-side on /generate, so no local record is
+        created and the API client must receive no new calls."""
+        before = list(api.method_calls)
+        result = service.create_record(42, "INV-2026-0042", 1200.0, "2026-02-01")
+        assert result is None
+        assert api.method_calls == before  # no new API calls made
+
 
 # ── RemoteDriverService ─────────────────────────────────────────────
 

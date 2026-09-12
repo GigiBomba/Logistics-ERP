@@ -61,3 +61,26 @@ class TestQtAnalyticsView:
         analytics_view._tabs = {}
         analytics_view.shutdown()
         assert analytics_view._tabs == {}
+
+    def test_shutdown_forces_tab_cleanup(self, analytics_view):
+        """shutdown() must force-remove rendered chart widgets.
+
+        ``BaseTab.cleanup()`` is a documented no-op unless ``force=True``;
+        shutdown is an explicit teardown, so it must pass ``force=True``.
+        """
+        tab = MagicMock()
+        analytics_view._tabs = {0: tab}
+        analytics_view.shutdown()
+        tab.cleanup.assert_called_once_with(force=True)
+
+    def test_shutdown_stops_refresh_spin_timer(self, analytics_view):
+        """shutdown() must stop the refresh-button spin animation."""
+        analytics_view._start_refresh_spin()
+        assert analytics_view._refresh_spin_timer.isActive()
+        analytics_view.shutdown()
+        assert not analytics_view._refresh_spin_timer.isActive()
+
+    def test_shutdown_idempotent_when_spin_never_started(self, analytics_view):
+        """shutdown() is safe when the refresh spin never started."""
+        analytics_view.shutdown()
+        analytics_view.shutdown()

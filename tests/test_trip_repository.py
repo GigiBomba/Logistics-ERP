@@ -56,6 +56,31 @@ def _trip(db: InMemoryDB, **kw) -> int:
     return db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
+def _truck(db: InMemoryDB, **kw) -> int:
+    """Seed a truck row with an explicit tenant (for JOIN-scoping tests)."""
+    t: Dict[str, Any] = dict(
+        plate_number="ISO-TRK",
+        model="Volvo FH",
+        manufacturer="Volvo",
+    )
+    t.update(kw)
+    cols = ", ".join(t.keys())
+    vals = ", ".join("?" for _ in t)
+    db.conn.execute(f"INSERT INTO trucks ({cols}) VALUES ({vals})", list(t.values()))
+    db.conn.commit()
+    return db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def _invoice(db: InMemoryDB, trip_id: int, invoice_number: str, company_id: int) -> None:
+    """Seed an invoice row linked to a trip with an explicit tenant."""
+    db.conn.execute(
+        "INSERT INTO invoices (trip_id, invoice_number, total_amount, status, company_id) "
+        "VALUES (?, ?, 100.0, 'paid', ?)",
+        (trip_id, invoice_number, company_id),
+    )
+    db.conn.commit()
+
+
 # ── CRUD ─────────────────────────────────────────────────────────────
 
 
@@ -352,6 +377,29 @@ class TestGetByCmrNumber:
         assert len(results) == 1
 
 
+class TestGetByCmrNumberTenantIsolation:
+    """``get_by_cmr_number`` must never return another company's trip."""
+
+    def test_cmr_number_explicit_company_id(self, db, repo):
+        _trip(db, cmr_number="CMR-2026-000001", company_id=1)
+        _trip(db, cmr_number="CMR-2026-000001", company_id=2)
+        results = repo.get_by_cmr_number("CMR-2026-000001", company_id=1)
+        assert len(results) == 1
+        assert results[0]["company_id"] == 1
+        results_b = repo.get_by_cmr_number("CMR-2026-000001", company_id=2)
+        assert len(results_b) == 1
+        assert results_b[0]["company_id"] == 2
+
+    def test_cmr_number_context_scoped(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        _trip(db, cmr_number="CMR-2026-000001", company_id=1)
+        _trip(db, cmr_number="CMR-2026-000001", company_id=2)
+        results = repo.get_by_cmr_number("CMR-2026-000001")
+        assert len(results) == 1
+        assert results[0]["company_id"] == 1
+
+
 class TestGetByTruckPlate:
     def test_finds_by_truck_number(self, db, repo):
         _trip(db, truck_number="PLATE-123")
@@ -367,3 +415,69 @@ class TestGetByDriverName:
 
     def test_no_match(self, repo):
         assert repo.get_by_driver_name("nobody") == []
+
+
+# ── Tenant isolation: JOINs must scope BOTH sides ─────────────────────
+
+
+class TestGetByTruckPlateTenantIsolation:
+    """``get_by_truck_plate`` LEFT JOINs trips → trucks: the trucks side must
+    be company-scoped so a company-B truck plate never surfaces company-A trips."""
+
+    def test_cross_tenant_truck_plate_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        tid_b = _truck(db, plate_number="PLT-B", company_id=2)
+        _trip(db, truck_id=tid_b, truck_number="TRK-A", company_id=1)
+        assert repo.get_by_truck_plate("PLT-B") == []
+
+    def test_same_company_truck_plate_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        tid_a = _truck(db, plate_number="PLT-A", company_id=1)
+        _trip(db, truck_id=tid_a, truck_number="TRK-A", company_id=1)
+        results = repo.get_by_truck_plate("PLT-A")
+        assert len(results) == 1
+
+
+class TestGetByInvoiceViaTripInvoiceTenantIsolation:
+    """``get_by_invoice_via_trip_invoice`` JOINs trips → invoices: the
+    invoices side must be company-scoped too."""
+
+    def test_cross_tenant_invoice_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        _trip(db, company_id=1)
+        trip_x = _trip(db, company_id=1)
+        # Company 1 trip whose linked invoice row is owned by company 2 —
+        # the invoices side of the JOIN must reject it.
+        _invoice(db, trip_id=trip_x, invoice_number="INV-B", company_id=2)
+        assert repo.get_by_invoice_via_trip_invoice("INV-B") == []
+
+    def test_same_company_invoice_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        trip_a = _trip(db, company_id=1)
+        _invoice(db, trip_id=trip_a, invoice_number="INV-2", company_id=1)
+        results = repo.get_by_invoice_via_trip_invoice("INV-2")
+        assert len(results) == 1
+        assert results[0]["id"] == trip_a
+
+
+class TestGetTopTrucksByRevenueTenantIsolation:
+    """``get_top_trucks_by_revenue`` LEFT JOINs trips → trucks: a company-B
+    truck must never contribute revenue to a company-A top-trucks list."""
+
+    def test_cross_tenant_truck_not_returned(self, db, repo):
+        from database.tenant_context import set_request_context
+        set_request_context(1, "dispatcher")
+        tid_a = _truck(db, plate_number="PLT-A", company_id=1)
+        tid_b = _truck(db, plate_number="PLT-B", company_id=2)
+        _trip(db, truck_id=tid_a, start_date="2026-01-10", status="delivered",
+              total_price_eur=1000, company_id=1)
+        _trip(db, truck_id=tid_b, start_date="2026-01-10", status="delivered",
+              total_price_eur=9000, company_id=2)
+        results = repo.get_top_trucks_by_revenue("2026-01-01", "2026-01-31", limit=4, company_id=1)
+        assert len(results) == 1
+        assert results[0]["truck_number"] == "PLT-A"
+        assert results[0]["revenue"] == 1000

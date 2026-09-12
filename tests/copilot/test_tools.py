@@ -757,18 +757,25 @@ class TestParameterEdgeCases:
         errors = asyncio.run(tool.validate(params, ctx))
         assert isinstance(errors, list)
 
-    def test_dispatch_create_schema_constructor_has_ordering_bug(self):
-        """dispatch.create schema can NOT be built with truck_id alone (ordering bug).
+    def test_dispatch_create_schema_validates_at_least_one_after_all_fields(self):
+        """dispatch.create schema accepts either truck_id or driver_id (not neither).
 
-        The ``_check_at_least_one`` field-validator on ``trip_id`` runs
-        before ``truck_id``/``driver_id`` are in ``info.data``, so truck_id=10
-        is invisible. This is a known Pydantic field-ordering issue in the
-        production model — tracked for fix in the model definition.
+        The ``_check_at_least_one`` model-validator runs after all fields are
+        populated, so truck_id=10 is visible. Neither provided still raises.
         """
         tool = get_tool("dispatch.create")
         assert tool is not None
+
+        truck_only = tool.parameters_schema(trip_id=1, truck_id=10)
+        assert truck_only.truck_id == 10
+        assert truck_only.driver_id is None
+
+        driver_only = tool.parameters_schema(trip_id=1, driver_id=5)
+        assert driver_only.driver_id == 5
+        assert driver_only.truck_id is None
+
         with pytest.raises(ValidationError):
-            tool.parameters_schema(trip_id=1, truck_id=10)
+            tool.parameters_schema(trip_id=1)
 
     def test_dispatch_cancel_requires_positive_trip_id(self):
         """dispatch.cancel Pydantic schema rejects trip_id=0 (gt=0)."""

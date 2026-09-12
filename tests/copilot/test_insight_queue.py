@@ -699,6 +699,8 @@ class TestInsightQueueWidgetFiltering:
         qtbot.addWidget(widget)
         widget.set_filter(InsightQueueWidget.FILTER_ALL)
         assert widget._active_filter == InsightQueueWidget.FILTER_ALL
+        # The fetch runs off-thread via WorkerPool — wait for it.
+        qtbot.waitUntil(lambda: api.get.called)
         api.get.assert_called()
 
     def test_set_filter_new(self, qtbot):
@@ -708,6 +710,8 @@ class TestInsightQueueWidgetFiltering:
         qtbot.addWidget(widget)
         widget.set_filter(InsightQueueWidget.FILTER_NEW)
         assert widget._active_filter == InsightQueueWidget.FILTER_NEW
+        # Let the async refresh (via WorkerPool) finish before teardown.
+        qtbot.waitUntil(lambda: api._get.called)
 
     def test_set_filter_reviewed(self, qtbot):
         api = MagicMock()
@@ -716,6 +720,8 @@ class TestInsightQueueWidgetFiltering:
         qtbot.addWidget(widget)
         widget.set_filter(InsightQueueWidget.FILTER_REVIEWED)
         assert widget._active_filter == InsightQueueWidget.FILTER_REVIEWED
+        # Let the async refresh (via WorkerPool) finish before teardown.
+        qtbot.waitUntil(lambda: api._get.called)
 
 
 class TestInsightQueueWidgetRefresh:
@@ -741,6 +747,8 @@ class TestInsightQueueWidgetRefresh:
         widget = InsightQueueWidget(api_client=api)
         qtbot.addWidget(widget)
         widget.refresh()
+        # The fetch runs off-thread via WorkerPool — wait for the list to rebuild.
+        qtbot.waitUntil(lambda: len(widget._insights) == 2)
         assert len(widget._insights) == 2
 
     def test_refresh_with_underscore_get_method(self, qtbot):
@@ -750,6 +758,8 @@ class TestInsightQueueWidgetRefresh:
         widget = InsightQueueWidget(api_client=api)
         qtbot.addWidget(widget)
         widget.refresh()
+        # The fetch runs off-thread via WorkerPool — wait for it.
+        qtbot.waitUntil(lambda: api._get.called)
         api._get.assert_called_once()
 
     def test_refresh_handles_api_error(self, qtbot):
@@ -759,6 +769,8 @@ class TestInsightQueueWidgetRefresh:
         widget = InsightQueueWidget(api_client=api)
         qtbot.addWidget(widget)
         widget.refresh()  # Should not raise
+        # The fetch runs off-thread via WorkerPool — wait for the error path.
+        qtbot.waitUntil(lambda: api.get.called)
         assert widget._insights == []
 
     def test_refresh_handles_none_response(self, qtbot):
@@ -768,6 +780,8 @@ class TestInsightQueueWidgetRefresh:
         widget = InsightQueueWidget(api_client=api)
         qtbot.addWidget(widget)
         widget.refresh()  # Should not raise
+        # The fetch runs off-thread via WorkerPool — wait for the result path.
+        qtbot.waitUntil(lambda: api.get.called)
         assert widget._insights == []
 
 
@@ -815,6 +829,7 @@ class TestInsightQueueWidgetOverflow:
             for i in range(count)
         ]
         widget._rebuild_list()
+        widget.show()
         cards = widget.findChildren(_InsightCard)
         assert len(cards) == count
         # The scroll area should be visible and contain the cards
@@ -990,6 +1005,7 @@ class TestInsightQueueWidgetScrollContent:
         qtbot.addWidget(widget)
         widget._insights = [_make_insight()]
         widget._rebuild_list()
+        widget.show()
         assert widget._scroll_area.isVisible() is True
         assert widget._empty_lbl.isVisible() is False
 
@@ -1005,8 +1021,8 @@ class TestInsightQueueWidgetFilterCombo:
         qtbot.addWidget(widget)
         # Switch to a filter value that differs from the default "All"
         widget._filter_combo.setCurrentText("New")
-        # Allow event loop to process
-        QApplication.processEvents()
+        # The fetch runs off-thread via WorkerPool — wait for it.
+        qtbot.waitUntil(lambda: api.get.called)
         assert api.get.called
 
     def test_filter_combo_updates_active_filter(self, qtbot):

@@ -6,6 +6,7 @@ and per-phase timing is recorded and retrievable.
 from __future__ import annotations
 
 
+import logging
 import time
 from unittest.mock import MagicMock, patch
 
@@ -25,6 +26,21 @@ class TestCorrelationContext:
         set_correlation_context(conversation_id="test-conv-123", company_id=42, user_id=7)
         assert current_conversation_id.get() == "test-conv-123"
         assert current_company_id.get() == 42
+
+    def test_correlation_filter_stamps_log_records(self, caplog):
+        """§23.6: every copilot log line carries conversation_id/company_id.
+
+        The CorrelationLogFilter is installed on the ``backend.copilot`` logger
+        at import time; a logger filter only runs for records logged directly
+        through that logger, so the check emits through it.
+        """
+        set_correlation_context("conv-trace", 42, 7)
+        copilot_logger = logging.getLogger("backend.copilot")
+        assert copilot_logger.propagate is True
+        with caplog.at_level(logging.INFO, logger="backend.copilot"):
+            copilot_logger.info("trace-check")
+        assert caplog.records[-1].conversation_id == "conv-trace"
+        assert caplog.records[-1].company_id == 42
 
 
 class TestPhaseTimer:

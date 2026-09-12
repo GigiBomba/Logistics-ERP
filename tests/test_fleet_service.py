@@ -189,27 +189,32 @@ def test_list_all_error(service):
 
 
 def test_search_by_query(service, sample_repo_row):
-    service._fleet_repo.get_all.return_value = [sample_repo_row]
+    service._fleet_repo.search.return_value = [sample_repo_row]
     req = VehicleSearchRequest(query="Volvo")
     result = service.search(req)
     assert result.success is True
     assert len(result.data) == 1
+    service._fleet_repo.search.assert_called_once_with(search="Volvo", status="")
 
 
 def test_search_by_status(service, sample_repo_row):
-    service._fleet_repo.get_all.return_value = [sample_repo_row]
+    service._fleet_repo.search.return_value = [sample_repo_row]
     req = VehicleSearchRequest(status="active")
     result = service.search(req)
     assert result.success is True
     assert len(result.data) == 1
+    service._fleet_repo.search.assert_called_once_with(search="", status="active")
 
 
 def test_search_no_match(service, sample_repo_row):
-    service._fleet_repo.get_all.return_value = [sample_repo_row]
+    # Filtering is pushed down to SQL — the repo returns no rows for a
+    # no-match query, so the service result is empty.
+    service._fleet_repo.search.return_value = []
     req = VehicleSearchRequest(query="Nonexistent")
     result = service.search(req)
     assert result.success is True
     assert result.data == []
+    service._fleet_repo.search.assert_called_once_with(search="Nonexistent", status="")
 
 
 def test_find_available(service, sample_repo_row):

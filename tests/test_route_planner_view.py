@@ -6,7 +6,13 @@ import contextlib
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtWidgets import QPushButton, QStackedWidget, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsOpacityEffect,
+    QPushButton,
+    QStackedWidget,
+    QWidget,
+)
+from ui.widgets.flow_layout import FlowLayout
 
 # ── SP workaround ──────────────────────────────────────────────────────────
 import ui.widgets as _ui_widgets
@@ -127,6 +133,11 @@ class TestQtRoutePlannerViewInit:
         assert hasattr(route_planner, "calc_btn")
         assert isinstance(route_planner.calc_btn, QPushButton)
         assert route_planner.calc_btn.isEnabled() is False
+        # TASK 8: the disabled Calculate button is dimmed via a
+        # QGraphicsOpacityEffect at 0.4 opacity.
+        eff = route_planner.calc_btn.graphicsEffect()
+        assert isinstance(eff, QGraphicsOpacityEffect)
+        assert eff.opacity() == 0.4
 
     def test_profile_combo_populated(self, route_planner):
         assert hasattr(route_planner, "profile_combo")
@@ -183,6 +194,8 @@ class TestQtRoutePlannerViewStops:
             route_planner.stop_vars[sid] = f"Address {i}"
         route_planner._update_calc_button_state()
         assert route_planner.calc_btn.isEnabled() is True
+        # TASK 8: enabled state restores full 1.0 opacity.
+        assert route_planner.calc_btn.graphicsEffect().opacity() == 1.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -273,6 +286,18 @@ class TestQtRoutePlannerViewResults:
         route_planner._last_route_result = None
         # Should not raise
         route_planner._on_create_trip()
+
+    def test_result_pills_render_12px_icons(self, route_planner):
+        for pill in (
+            route_planner.pill_distance,
+            route_planner.pill_duration,
+            route_planner.pill_fuel_cost,
+            route_planner.pill_rate,
+        ):
+            pix = pill.icon_label.pixmap()
+            assert pix is not None
+            assert not pix.isNull()
+            assert pix.width() == 12
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -434,3 +459,45 @@ class TestQtRoutePlannerViewI18N:
         route_planner._on_language_changed("ro")
         # Profile combo should still have items (refreshed)
         assert route_planner.profile_combo.count() == original_count
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 11. Excluded-country chips (FlowLayout)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestQtRoutePlannerViewChips:
+    """Excluded-country chips render through the shared wrapping FlowLayout."""
+
+    def test_chips_layout_is_flow_layout(self, route_planner):
+        assert isinstance(route_planner._chips_container_layout, FlowLayout)
+
+    def test_refresh_chips_presents_all_excluded_countries(self, route_planner):
+        route_planner._core.get_excluded_countries.return_value = [
+            "RO", "BG", "HU", "RS", "MD", "UA", "PL",
+        ]
+        route_planner._refresh_chips()
+        assert route_planner._chips_container_layout.count() == 7
+
+    def test_refresh_chips_empty_state_renders_nothing(self, route_planner):
+        route_planner._core.get_excluded_countries.return_value = []
+        route_planner._refresh_chips()
+        assert route_planner._chips_container_layout.count() == 0
+
+    def test_chip_remove_button_toggles_country(self, route_planner):
+        codes = ["RO", "BG", "HU", "RS", "MD", "UA", "PL"]
+
+        def _toggle(code):
+            if code in codes:
+                codes.remove(code)
+
+        route_planner._core.country_avoidance.toggle.side_effect = _toggle
+        route_planner._core.get_excluded_countries.side_effect = lambda: list(codes)
+        route_planner._refresh_chips()
+        assert route_planner._chips_container_layout.count() == 7
+
+        first_chip = route_planner._chips_container_layout.itemAt(0).widget()
+        first_chip.remove_btn.click()
+
+        route_planner._core.country_avoidance.toggle.assert_called_once_with("RO")
+        assert route_planner._chips_container_layout.count() == 6

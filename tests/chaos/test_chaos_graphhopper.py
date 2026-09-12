@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from services.route_service import GraphHopperClient
+from services.route_service import GraphHopperClient, RouteCache
 
 pytestmark = pytest.mark.chaos
 
@@ -157,7 +157,12 @@ class TestChaosGraphhopper:
         success = self._gh_success_response()
         failure = self._gh_error_response(503)
 
-        with patch.object(GraphHopperClient, "_route_post") as mock_post:
+        # The process-wide RouteService memoises routes, so a prior test may
+        # already have cached this coordinate set.  Force cache misses so the
+        # retry loop inside GraphHopperClient.route is actually exercised.
+        with patch.object(GraphHopperClient, "_route_post") as mock_post, \
+                patch.object(RouteCache, "get", return_value=None), \
+                patch.object(RouteCache, "begin_shared_compute", return_value=(None, None)):
             mock_post.side_effect = [failure, failure, failure, success]
             resp = client.post(
                 "/api/v1/routes/calculate",
@@ -174,7 +179,12 @@ class TestChaosGraphhopper:
         """All retry attempts fail with 503 — verify 500 + message."""
         failure = self._gh_error_response(503)
 
-        with patch.object(GraphHopperClient, "_route_post") as mock_post:
+        # Same cache-miss isolation as test_gh_transient_then_success: the
+        # shared RouteService may already hold this coordinate set from an
+        # earlier test, which would short-circuit to 200 without retrying.
+        with patch.object(GraphHopperClient, "_route_post") as mock_post, \
+                patch.object(RouteCache, "get", return_value=None), \
+                patch.object(RouteCache, "begin_shared_compute", return_value=(None, None)):
             mock_post.return_value = failure
             resp = client.post(
                 "/api/v1/routes/calculate",

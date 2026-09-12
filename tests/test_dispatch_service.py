@@ -545,6 +545,7 @@ class TestBulkAssignTruck:
         assert len(result.undo_tokens) == 3
 
     def test_mixed_success_failure(self):
+        """One failing trip rolls back the whole batch — nothing stays assigned."""
         call_count = 0
 
         def assign_truck_side_effect(trip_id, truck_id):
@@ -564,11 +565,11 @@ class TestBulkAssignTruck:
         result = self.service.bulk_assign_truck([1, 2, 3], 7)
 
         assert result.total == 3
-        assert result.succeeded == 2
-        assert result.failed == 1
+        assert result.succeeded == 0          # batch rolled back — nothing assigned
+        assert result.failed == 3
         assert len(result.results) == 3
-        assert len(result.undo_tokens) == 2
-        assert result.results[1].success is False
+        assert all(r.success is False for r in result.results)
+        assert result.undo_tokens == []       # rolled-back batch keeps no undo tokens
         assert "not found" in result.results[1].message
 
     def test_all_fail(self):
@@ -649,6 +650,7 @@ class TestBulkAssignDriver:
         assert len(result.undo_tokens) == 3
 
     def test_mixed(self):
+        """One failing trip rolls back the whole batch — nothing stays assigned."""
         call_count = 0
 
         def assign_driver_side_effect(trip_id, driver_id):
@@ -668,9 +670,10 @@ class TestBulkAssignDriver:
         result = self.service.bulk_assign_driver([1, 2, 3], 5)
 
         assert result.total == 3
-        assert result.succeeded == 2
-        assert result.failed == 1
-        assert result.results[1].success is False
+        assert result.succeeded == 0          # batch rolled back — nothing assigned
+        assert result.failed == 3
+        assert all(r.success is False for r in result.results)
+        assert "not found" in result.results[1].message
 
     def test_all_fail(self):
         def assign_driver_side_effect(trip_id, driver_id):

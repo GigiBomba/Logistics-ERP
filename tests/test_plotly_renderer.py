@@ -41,3 +41,42 @@ class TestPlotlyRenderer:
         widget.set_figure(None)
         # After setting None, _fig should be None or the widget still exists
         assert widget is not None
+
+
+class TestPlotlyChartWidgetLruCache:
+    """``PlotlyChartWidget._pixmap_cache`` true-LRU eviction semantics.
+
+    The cache is bounded (``CACHE_MAX_ENTRIES``) and eviction must be
+    least-recently-used — a hit on the oldest entry preserves it, and a
+    subsequent insert evicts the *second*-oldest instead."""
+
+    def test_accessing_oldest_preserves_it_on_eviction(self, qt_widget, qtbot):
+        from PySide6.QtGui import QPixmap
+        from ui.plotly_renderer import PlotlyChartWidget
+
+        w = PlotlyChartWidget(qt_widget)
+        qtbot.addWidget(w)
+        size = 100
+        oldest_key = (0, size, size)
+        second_key = (1, size, size)
+        n = PlotlyChartWidget.CACHE_MAX_ENTRIES
+        assert n >= 4  # scenario below needs at least 4 slots
+        # Insert 4 distinct keys, oldest (fig_id=0) first.
+        for fig_id in range(n):
+            w._cache_pixmap(fig_id, size, size, QPixmap(size, size))
+        assert len(w._pixmap_cache) == n
+        # Access the oldest entry — refresh its recency exactly as the
+        # cache-hit paths (set_figure/showEvent/_on_resize_finished) do.
+        w._pixmap_cache.move_to_end(oldest_key)
+        # Insert a 5th distinct key; capacity is full so one entry must
+        # be evicted.  LRU order is now [1, 2, 3, 0] → evict fig_id=1
+        # (the second-oldest), NOT fig_id=0 (the oldest, which was just
+        # touched).
+        w._cache_pixmap(n, size, size, QPixmap(size, size))
+        assert len(w._pixmap_cache) == n, "cache must stay bounded"
+        assert oldest_key in w._pixmap_cache, (
+            "oldest entry was accessed and must survive eviction"
+        )
+        assert second_key not in w._pixmap_cache, (
+            "second-oldest entry should be the LRU evicted on overflow"
+        )

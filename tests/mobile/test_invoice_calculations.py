@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal
 
 import pytest
 
@@ -64,27 +65,34 @@ class TestCalcCrossCheck:
         line = calc_items[0]
         # Plain float equality — the vectors were generated from THIS code path,
         # so any drift (rounding changes, coalescing changes) fails loudly.
-        assert line.quantity == exp_line["quantity"]
+        # Decimal fields require explicit normalization (Decimal == float does
+        # exact-binary comparison and rejects numerically identical values).
+        assert float(line.quantity) == exp_line["quantity"]
         assert line.unit_of_measure == exp_line["unit_of_measure"]
-        assert line.unit_price == exp_line["unit_price"]
-        assert line.discount_percent == exp_line["discount_percent"]
-        assert line.discount_amount == exp_line["discount_amount"]
-        assert line.taxable_amount == exp_line["taxable_amount"]
-        assert line.vat_rate == exp_line["vat_rate"]
+        assert float(line.unit_price) == exp_line["unit_price"]
+        assert float(line.discount_percent) == exp_line["discount_percent"]
+        assert float(line.discount_amount) == exp_line["discount_amount"]
+        assert float(line.taxable_amount) == exp_line["taxable_amount"]
+        assert float(line.vat_rate) == exp_line["vat_rate"]
+        # total_net stays None end-to-end (nullable, both sides None by contract).
         assert line.total_net == exp_line["total_net"]
-        assert line.vat_amount == exp_line["vat_amount"]
-        assert line.line_total == exp_line["line_total"]
-        assert subtotal_net == expected["subtotal_net"]
-        assert total_vat == expected["total_vat"]
-        assert total_gross == expected["total_gross"]
+        assert float(line.vat_amount) == exp_line["vat_amount"]
+        assert float(line.line_total) == exp_line["line_total"]
+        assert float(subtotal_net) == expected["subtotal_net"]
+        assert float(total_vat) == expected["total_vat"]
+        assert float(total_gross) == expected["total_gross"]
 
     def test_multi_line_aggregation(self):
         """Sums across lines use the sequential left-to-right rounding."""
         items = [InvoiceLineItem(**_vector_input(i)) for i in (0, 1, 2)]
-        _calc, subtotal_net, total_vat, total_gross = _real_calc(items)
-        assert subtotal_net == round(370.35 + 950.0 + 319.69, 2)
-        assert total_vat == round(70.37 + 180.5 + 0.0, 2)
-        assert total_gross == round(440.72 + 1130.5 + 319.69, 2)
+        calc_items, subtotal_net, total_vat, total_gross = _real_calc(items)
+        # Regression: model money fields are Decimal, not float.
+        assert isinstance(subtotal_net, Decimal)
+        assert isinstance(calc_items[0].line_total, Decimal)
+        # Decimal fields require explicit normalization for float comparison.
+        assert float(subtotal_net) == round(370.35 + 950.0 + 319.69, 2)
+        assert float(total_vat) == round(70.37 + 180.5 + 0.0, 2)
+        assert float(total_gross) == round(440.72 + 1130.5 + 319.69, 2)
 
 
 class TestCalcEndToEnd:

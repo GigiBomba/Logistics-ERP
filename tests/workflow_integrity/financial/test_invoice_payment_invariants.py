@@ -360,7 +360,8 @@ class TestInvoiceInvariants:
 
         # subtotal_net should be 2*300 + 1*500 = 1100
         expected_net = 1100.0
-        assert abs(invoice.subtotal_net - expected_net) < 0.01, (
+        # Decimal fields require explicit float normalization before comparison.
+        assert abs(float(invoice.subtotal_net) - expected_net) < 0.01, (
             f"Expected subtotal_net={expected_net}, got {invoice.subtotal_net}"
         )
 
@@ -723,7 +724,8 @@ class TestPaymentInvariants:
         invoice = inv_result.data
         assert invoice is not None
         assert invoice.amount_paid == 0.0
-        assert abs(invoice.amount_remaining - 2000.0) < 0.01
+        # Decimal fields require explicit float normalization before comparison.
+        assert abs(float(invoice.amount_remaining) - 2000.0) < 0.01
 
         # Record a partial payment via direct SQL UPDATE
         db.conn.execute(
