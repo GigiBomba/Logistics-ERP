@@ -320,6 +320,17 @@ def run_app(return_window: bool = False):
         except Exception as e:
             logger.warning("Document Center migration skipped: %s", e)
 
+        # Startup OCR retry per Proforma plan Phase 5.3 — a live OcrService owns
+        # the worker queue that consumes retry_pending_ocr; constructing it here
+        # runs the pending-doc scan (max 50) before the UI shows.
+        try:
+            if db is not None:
+                from repositories.document_repository import DocumentRepository
+                from services.document.ocr_service import OcrService
+                _startup_ocr = OcrService(db, DocumentRepository(db))
+        except Exception as exc:
+            logger.warning("Startup OCR retry wiring skipped: %s", exc, exc_info=True)
+
         # 8. Qt application + main window
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.Round
