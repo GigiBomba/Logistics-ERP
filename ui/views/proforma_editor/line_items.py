@@ -253,8 +253,10 @@ class LineItemsMixin:
             disc_val = 0
         if self._discount_type == "percentage" and disc_val > 0:
             discount_amount = subtotal * (disc_val / 100)
+        elif self._discount_type == "fixed":
+            discount_amount = disc_val
         else:
-            discount_amount = disc_val if self._discount_type == "fixed" else 0
+            discount_amount = 0
         if discount_amount > subtotal:
             discount_amount = subtotal
         after_discount = subtotal - discount_amount

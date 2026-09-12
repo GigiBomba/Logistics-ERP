@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import array
 import asyncio
+import dataclasses
 import logging
 import threading
 import time
@@ -55,6 +56,7 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
+    COLOR_TEXT_WHITE,
     COLOR_WARNING_DEFAULT,
     FONT_SIZE_BASE,
     FONT_SIZE_LG,
@@ -124,6 +126,7 @@ class CoPilotPanel(QFrame):
     # slots always run on the GUI thread.
     response_ready = Signal(dict)   # backend response dict → _handle_response
     request_failed = Signal(str)    # error message → _handle_error
+    insights_toggled = Signal(bool)  # True → show insight queue, False → hide
 
     def _schedule_after(self, ms: int, fn: Callable[[], None]) -> None:
         """Run *fn* after *ms* ms, no-op if this widget was destroyed first.
@@ -249,6 +252,42 @@ class CoPilotPanel(QFrame):
             """
             )
             self._wake_word_notice.setVisible(False)
+
+        # Insights toggle button
+        self._insights_btn = QPushButton(
+            t("copilot.insights.toggle", default="Insights")
+        )
+        self._insights_btn.setCheckable(True)
+        self._insights_btn.setChecked(False)
+        self._insights_btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {COLOR_TEXT_SECONDARY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
+                border-radius: {RADIUS_MD}px;
+                font-size: {FONT_SIZE_XS}px;
+                font-weight: {FONT_WEIGHT_MEDIUM};
+                padding: 4px {SPACE_3}px;
+                height: {BTN_HEIGHT_SM}px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLOR_BG_OVERLAY};
+                color: {COLOR_TEXT_PRIMARY};
+            }}
+            QPushButton:checked {{
+                background-color: {COLOR_ACCENT_PRIMARY};
+                color: {COLOR_TEXT_WHITE};
+                border: 1px solid {COLOR_ACCENT_PRIMARY};
+            }}
+            QPushButton:checked:hover {{
+                background-color: {COLOR_ACCENT_HOVER};
+                border: 1px solid {COLOR_ACCENT_HOVER};
+            }}
+            """
+        )
+        self._insights_btn.clicked.connect(self._on_insights_toggled)
+        header_layout.addWidget(self._insights_btn)
 
         # New Conversation button
         self._new_btn = QPushButton(t("copilot.chat.new_conversation"))
@@ -384,6 +423,9 @@ class CoPilotPanel(QFrame):
                 response = asyncio.run(
                     self._controller.send_voice(audio_bytes, language=language)
                 )
+                # Forward the backend plan as a plain dict, mirroring the chat
+                # path so downstream consumers (controller plan tracking) see it.
+                plan = response.plan
                 # Emit on the Qt signal — auto-queued to the main thread
                 self.response_ready.emit(
                     {
@@ -392,6 +434,7 @@ class CoPilotPanel(QFrame):
                         "clarification_question_key": response.clarification_question_key,
                         "clarification_params": response.clarification_params,
                         "status": "ok",
+                        "plan": dataclasses.asdict(plan) if dataclasses.is_dataclass(plan) else None,
                     }
                 )
             except Exception as exc:
@@ -453,7 +496,11 @@ class CoPilotPanel(QFrame):
                 response = asyncio.run(
                     self._controller.send_utterance(text, language=language)
                 )
-                # Convert CoPilotResponse dataclass to dict for _handle_response
+                # Convert CoPilotResponse dataclass to dict for _handle_response.
+                # ``plan`` is forwarded as a plain dict so downstream consumers
+                # (controller plan tracking) see the backend plan; it stays
+                # in-process, so no serialization round-trip is involved.
+                plan = response.plan
                 response_dict = {
                     "summary_key": response.summary_key,
                     "summary_params": response.summary_params,
@@ -461,6 +508,7 @@ class CoPilotPanel(QFrame):
                     "clarification_params": response.clarification_params,
                     "timeline": response.timeline,
                     "conversation_id": response.conversation_id,
+                    "plan": dataclasses.asdict(plan) if dataclasses.is_dataclass(plan) else None,
                 }
                 # Emit on the Qt signal — auto-queued to the main thread
                 self.response_ready.emit(response_dict)
@@ -885,6 +933,10 @@ class CoPilotPanel(QFrame):
         except Exception:
             logger.exception("Failed to propagate voice-mode state to controller")
 
+    def _on_insights_toggled(self, checked: bool) -> None:
+        """Emit the insights_toggled signal when the user clicks the toggle."""
+        self.insights_toggled.emit(checked)
+
     def _on_new_conversation(self) -> None:
         """Clear the conversation and reset state."""
         self._conversation.clear()
@@ -897,6 +949,10 @@ class CoPilotPanel(QFrame):
         """Refresh UI labels when the language changes."""
         try:
             self._title_label.setText(t("copilot.panel.title", default="AI Co-Pilot"))
+            if self._insights_btn is not None:
+                self._insights_btn.setText(
+                    t("copilot.insights.toggle", default="Insights")
+                )
             # Sub-widgets will pick up language changes via their own listeners
         except Exception:
             logger.exception("CoPilotPanel language refresh failed")

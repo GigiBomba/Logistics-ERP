@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Вот ответ на ваш вопрос.",
+                "guide_workflow": "Вот пошаговая инструкция."
+            },
+            "error": "Извините, не удалось выполнить запрос. Попробуйте ещё раз.",
+            "vehicle": {
+                "search": "Вот транспортные средства, соответствующие вашему запросу ({total_results} всего).",
+                "health_score": "Оценка состояния транспортного средства {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} доступно {available_hours_today} часов сегодня ({hours_worked_today} отработано)."
+            },
+            "route": {
+                "calculate": "Маршрут — {distance_km} км, примерно {duration_min} минут.",
+                "estimate_cost": "Ориентировочная стоимость: {total_cost} {currency} ({cost_per_km} за км).",
+                "plan_multistop": "Спланированный маршрут с {ordered_stops_count} остановками: {total_distance_km} км, примерно {total_duration_min} минут.",
+                "list": "Вот ваши сохранённые маршруты ({total} всего).",
+                "get": "Вот детали запрошенного маршрута."
+            },
+            "trip": {
+                "calculate_profitability": "Ориентировочная прибыль: {net_profit} (маржа {margin_percent}%).",
+                "list": "Вот ваши поездки ({total} всего).",
+                "get": "Вот детали запрошенной поездки."
+            },
+            "conversation": {
+                "recall_recent": "Вот о чём мы недавно говорили ({total} тем)."
+            },
+            "client": {
+                "payment_summary": "Сводка платежей клиента: {total_billed} выставлено, {total_paid} оплачено, {unpaid} не оплачено, {overdue} просрочено."
+            },
+            "document": {
+                "search": "Вот найденные документы ({total} всего, страница {page} из {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Курс обмена: {rate}.",
+                "convert": "Сконвертированная сумма: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Вот текущие позиции транспортных средств ({total_results} машин).",
+                "get_vehicle_history": "История позиций транспортного средства {vehicle_id}: {total_results} точек."
+            },
+            "analytics": {
+                "query": "Вот запрошенная аналитическая сводка."
             }
         },
         "world_model": {

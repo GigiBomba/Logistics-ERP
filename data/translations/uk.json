@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Ось відповідь на ваше запитання.",
+                "guide_workflow": "Ось покрокова інструкція."
+            },
+            "error": "Вибачте, не вдалося виконати запит. Спробуйте ще раз.",
+            "vehicle": {
+                "search": "Ось транспортні засоби, що відповідають вашому запиту ({total_results} усього).",
+                "health_score": "Оцінка стану транспортного засобу {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} доступно {available_hours_today} годин сьогодні ({hours_worked_today} відпрацьовано)."
+            },
+            "route": {
+                "calculate": "Маршрут — {distance_km} км, приблизно {duration_min} хвилин.",
+                "estimate_cost": "Орієнтовна вартість: {total_cost} {currency} ({cost_per_km} за км).",
+                "plan_multistop": "Спланований маршрут із {ordered_stops_count} зупинками: {total_distance_km} км, приблизно {total_duration_min} хвилин.",
+                "list": "Ось ваші збережені маршрути ({total} усього).",
+                "get": "Ось деталі запитуваного маршруту."
+            },
+            "trip": {
+                "calculate_profitability": "Орієнтовний прибуток: {net_profit} (маржа {margin_percent}%).",
+                "list": "Ось ваші поїздки ({total} усього).",
+                "get": "Ось деталі запитуваної поїздки."
+            },
+            "conversation": {
+                "recall_recent": "Ось про що ми нещодавно говорили ({total} тем)."
+            },
+            "client": {
+                "payment_summary": "Зведення платежів клієнта: {total_billed} виставлено, {total_paid} оплачено, {unpaid} не оплачено, {overdue} прострочено."
+            },
+            "document": {
+                "search": "Ось знайдені документи ({total} усього, сторінка {page} з {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Курс обміну: {rate}.",
+                "convert": "Сконвертована сума: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Ось поточні позиції транспортних засобів ({total_results} машин).",
+                "get_vehicle_history": "Історія позицій транспортного засобу {vehicle_id}: {total_results} точок."
+            },
+            "analytics": {
+                "query": "Ось запитувана аналітична зведення."
             }
         },
         "world_model": {

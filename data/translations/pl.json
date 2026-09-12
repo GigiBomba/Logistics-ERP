@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Oto odpowiedź na Twoje pytanie.",
+                "guide_workflow": "Oto przewodnik krok po kroku."
+            },
+            "error": "Przepraszam, nie udało mi się zrealizować żądania. Spróbuj ponownie.",
+            "vehicle": {
+                "search": "Oto pojazdy pasujące do Twojego wyszukiwania ({total_results} łącznie).",
+                "health_score": "Wynik stanu pojazdu {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} ma dziś {available_hours_today} godzin dostępnych ({hours_worked_today} przepracowanych)."
+            },
+            "route": {
+                "calculate": "Trasa ma {distance_km} km i zajmie około {duration_min} minut.",
+                "estimate_cost": "Szacunkowy koszt: {total_cost} {currency} ({cost_per_km} za km).",
+                "plan_multistop": "Zaplanowana trasa z {ordered_stops_count} przystankami: {total_distance_km} km, około {total_duration_min} minut.",
+                "list": "Oto Twoje zapisane trasy ({total} łącznie).",
+                "get": "Oto szczegóły żądanej trasy."
+            },
+            "trip": {
+                "calculate_profitability": "Szacunkowy zysk: {net_profit} (marża {margin_percent}%).",
+                "list": "Oto Twoje kursy ({total} łącznie).",
+                "get": "Oto szczegóły żądanego kursu."
+            },
+            "conversation": {
+                "recall_recent": "Oto, o czym rozmawialiśmy ostatnio ({total} tematów)."
+            },
+            "client": {
+                "payment_summary": "Podsumowanie płatności klienta: {total_billed} wystawiono, {total_paid} zapłacono, {unpaid} niezapłacone, {overdue} przeterminowane."
+            },
+            "document": {
+                "search": "Oto znalezione dokumenty ({total} łącznie, strona {page} z {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Kurs wymiany wynosi {rate}.",
+                "convert": "Przeliczona kwota: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Oto aktualne pozycje pojazdów ({total_results} pojazdów).",
+                "get_vehicle_history": "Historia pozycji pojazdu {vehicle_id}: {total_results} punktów."
+            },
+            "analytics": {
+                "query": "Oto żądane podsumowanie analityczne."
             }
         },
         "world_model": {

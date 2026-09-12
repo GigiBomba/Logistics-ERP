@@ -27,6 +27,7 @@ from services.operations.event_bus import TRIP_ASSIGNED, VALID_TRANSITIONS
 from ui.widgets.assignment_dropdown import QtAssignmentDropdown
 from ui.widgets.toast import Toast
 from ui.widgets.trip_card import QtTripCard
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -110,13 +111,45 @@ class BoardActionsMixin:
             self._on_assign_both(card)
 
     def _on_resolve_alert_refresh(self) -> None:
-        self._alerts_panel.refresh(self._all_card_data)
-        self._preload_alerts()
-        for col in self._columns.values():
-            for card in col._cards:
-                trip_id = card.trip_data.get("trip_id_num")
-                if trip_id:
-                    card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
+        """Refresh the alerts panel and card alert counts after a resolve.
+
+        The ops read (``_preload_alerts``) runs on the WorkerPool so the
+        API/DB I/O never blocks the GUI thread; the panel refresh and the
+        per-card alert counts are applied on the GUI thread once the fetch
+        completes.
+        """
+
+        def _fetch():
+            self._preload_alerts()
+
+        def _apply(_result):
+            if getattr(self, '_destroyed', False):
+                return
+            try:
+                self._alerts_panel.refresh(self._all_card_data)
+            except Exception:
+                logger.warning("Failed to refresh alerts panel after resolve", exc_info=True)
+            for col in self._columns.values():
+                for card in col._cards:
+                    trip_id = card.trip_data.get("trip_id_num")
+                    if trip_id:
+                        card.trip_data["alerts_count"] = self._get_alert_count(trip_id, 0)
+
+        def _fail(msg):
+            logger.debug("Could not preload alerts after resolve: %s", msg)
+            if getattr(self, '_destroyed', False):
+                return
+            try:
+                self._alerts_panel.refresh(self._all_card_data)
+            except Exception:
+                logger.warning("Failed to refresh alerts panel after resolve", exc_info=True)
+            for col in self._columns.values():
+                for card in col._cards:
+                    trip_id = card.trip_data.get("trip_id_num")
+                    if trip_id:
+                        card.trip_data["alerts_count"] = self._get_alert_count(trip_id, 0)
+
+        WorkerPool.run(fn=_fetch, on_result=_apply, on_error=_fail)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Bulk Selection
@@ -1412,32 +1445,61 @@ class BoardActionsMixin:
             return
         if self._dispatch_service is None:
             return
-        for col in self._columns.values():
-            for card in col._cards:
-                card_data = card.trip_data
-                if self._db is None:
-                    # Remote mode: delay evaluation runs server-side
-                    # (GET /dispatch/trips/{id}/delay).  The remote service
-                    # returns the delay evaluation result (dict-like, also
-                    # unpackable as a tuple); the delay indicator is set from
-                    # it and the alert creation call is fired for late trips.
-                    trip_id = card_data.get("trip_id_num") or card_data.get("trip_id")
-                    if trip_id is None:
-                        continue
-                    result = self._dispatch_service.evaluate_trip_delay(trip_id)
-                    if isinstance(result, dict):
-                        is_delayed = bool(result.get("delayed", False))
-                        minutes = int(round((result.get("delay_hours") or 0.0) * 60))
-                    else:
-                        is_delayed, minutes = False, 0
+
+        if self._db is not None:
+            # Local mode: evaluate synchronously (local DB reads — no remote
+            # API, so no retry backoff to keep off the GUI thread).
+            for col in self._columns.values():
+                for card in col._cards:
+                    card_data = card.trip_data
+                    is_delayed, minutes = self._dispatch_service.evaluate_trip_delay(card_data)
                     card.set_delayed(is_delayed, minutes)
                     if is_delayed:
-                        self._dispatch_service.create_delay_alert(trip_id)
+                        self._dispatch_service.create_delay_alert(card_data, minutes)
+            return
+
+        # Remote mode: delay evaluation runs server-side per trip
+        # (GET /dispatch/trips/{id}/delay).  The remote service returns the
+        # delay evaluation result (dict-like, also unpackable as a tuple);
+        # the delay indicator is set from it and the alert creation call is
+        # fired for late trips.  The per-trip API calls run on the
+        # WorkerPool so the retry/sleep backoff never blocks the GUI
+        # thread; only the card indicator updates are applied back on the
+        # GUI thread.
+        cards = [
+            card
+            for col in self._columns.values()
+            for card in col._cards
+        ]
+
+        def _fetch():
+            results = []
+            for card in cards:
+                trip_id = card.trip_data.get("trip_id_num") or card.trip_data.get("trip_id")
+                if trip_id is None:
                     continue
-                is_delayed, minutes = self._dispatch_service.evaluate_trip_delay(card_data)
-                card.set_delayed(is_delayed, minutes)
+                result = self._dispatch_service.evaluate_trip_delay(trip_id)
+                if isinstance(result, dict):
+                    is_delayed = bool(result.get("delayed", False))
+                    minutes = int(round((result.get("delay_hours") or 0.0) * 60))
+                else:
+                    is_delayed, minutes = False, 0
                 if is_delayed:
-                    self._dispatch_service.create_delay_alert(card_data, minutes)
+                    self._dispatch_service.create_delay_alert(trip_id)
+                results.append((card, is_delayed, minutes))
+            return results
+
+        def _apply(results):
+            if getattr(self, '_destroyed', False):
+                return
+            for card, is_delayed, minutes in results:
+                with contextlib.suppress(Exception):
+                    card.set_delayed(is_delayed, minutes)
+
+        def _fail(msg):
+            logger.warning("Remote delay evaluation failed: %s", msg)
+
+        WorkerPool.run(fn=_fetch, on_result=_apply, on_error=_fail)
 
     def _is_trip_delayed(self, trip_data: dict, now: datetime):
         status = trip_data.get("status", "")

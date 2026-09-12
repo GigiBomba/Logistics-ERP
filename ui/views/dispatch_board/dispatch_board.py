@@ -18,6 +18,7 @@ from PySide6.QtCore import (
     Property,
     QPoint,
     QPropertyAnimation,
+    QMutex,
     Qt,
     QTimer,
     Signal,
@@ -197,6 +198,9 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._driver_cache: dict[int, dict | None] = {}
         self._route_cache: dict[str, dict | None] = {}
         self._alert_counts: dict[int, int] = {}
+        # Cross-thread guard for ``_alert_counts``: background load/refresh
+        # threads and GUI-thread alert event handlers both touch the dict.
+        self._alert_counts_lock = QMutex()
         self._event_handlers: dict[str, Any] = {}
         self._all_card_data: list[dict[str, Any]] = []
         self._search_query = ""
@@ -767,10 +771,10 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             tid = int(trip_id)
         except (ValueError, TypeError):
             return
-        self._alert_counts[tid] = self._alert_counts.get(tid, 0) + 1
+        new_count = self._bump_alert_count(tid, +1)
         card = self._find_card_by_trip_id(tid)
         if card:
-            card.update_alert_count(self._alert_counts[tid])
+            card.update_alert_count(new_count)
 
     def _handle_alert_resolved(self, ev) -> None:
         data = ev.get("data", {})
@@ -782,11 +786,10 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             tid = int(trip_id)
         except (ValueError, TypeError):
             return
-        current = self._alert_counts.get(tid, 0)
-        self._alert_counts[tid] = max(0, current - 1)
+        new_count = self._bump_alert_count(tid, -1)
         card = self._find_card_by_trip_id(tid)
         if card:
-            card.update_alert_count(self._alert_counts.get(tid, 0))
+            card.update_alert_count(new_count)
 
     CANCELLED_MAX = 3
 
@@ -875,7 +878,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             card.trip_data["promised_date"] = trip.get("promised_date", "")
             card.update_truck(trip.get("truck_number", ""), trip.get("truck_id"))
             card.update_driver(trip.get("driver_name", ""), trip.get("driver_id"))
-            card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
+            card.trip_data["alerts_count"] = self._get_alert_count(trip_id)
 
             # Update route label
             if card._route_lbl is not None:

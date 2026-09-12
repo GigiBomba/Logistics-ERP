@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Här är svaret på din fråga.",
+                "guide_workflow": "Här är en steg-för-steg-guide."
+            },
+            "error": "Tyvärr, jag kunde inte slutföra begäran. Försök igen.",
+            "vehicle": {
+                "search": "Här är fordonen som matchar din sökning ({total_results} totalt).",
+                "health_score": "Hälsopoäng för fordon {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} har {available_hours_today} timmar tillgängliga idag ({hours_worked_today} arbetade)."
+            },
+            "route": {
+                "calculate": "Rutten är {distance_km} km och tar cirka {duration_min} minuter.",
+                "estimate_cost": "Uppskattad kostnad: {total_cost} {currency} ({cost_per_km} per km).",
+                "plan_multistop": "Planerad rutt med {ordered_stops_count} stopp: {total_distance_km} km, cirka {total_duration_min} minuter.",
+                "list": "Här är dina sparade rutter ({total} totalt).",
+                "get": "Här är detaljerna för den begärda rutten."
+            },
+            "trip": {
+                "calculate_profitability": "Uppskattad vinst: {net_profit} (marginal {margin_percent}%).",
+                "list": "Här är dina resor ({total} totalt).",
+                "get": "Här är detaljerna för den begärda resan."
+            },
+            "conversation": {
+                "recall_recent": "Här är vad vi diskuterade nyligen ({total} ämnen)."
+            },
+            "client": {
+                "payment_summary": "Betalningssammanfattning kund: {total_billed} fakturerat, {total_paid} betalt, {unpaid} obetalt, {overdue} förfallet."
+            },
+            "document": {
+                "search": "Här är de hittade dokumenten ({total} totalt, sida {page} av {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Växelkursen är {rate}.",
+                "convert": "Konverterat belopp: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Här är fordonens livepositioner ({total_results} fordon).",
+                "get_vehicle_history": "Positionshistorik för fordon {vehicle_id}: {total_results} punkter."
+            },
+            "analytics": {
+                "query": "Här är den begärda analyssammanfattningen."
             }
         },
         "world_model": {

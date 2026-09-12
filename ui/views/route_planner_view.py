@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -39,7 +40,7 @@ from services.operations.event_bus import (
     TRUCK_CREATED,
     TRUCK_DELETED,
     TRUCK_UPDATED,
-    EventBus,
+    shared_event_bus,
 )
 from services.route_history_service import RouteHistoryRecord, RouteHistoryService
 from services.route_persistence import RoutePersistenceService
@@ -101,6 +102,9 @@ from utils.labels import GRAPHHOPPER_PROFILES
 logger = logging.getLogger(__name__)
 
 
+# Typography is owned by the theme "section-label" role
+# (10px/600/COLOR_TEXT_TERTIARY — theme_engine.py); the plan doc's
+# 11px comment is stale. Doc TASK 2.
 def make_section_header(text: str) -> QWidget:
     container = QWidget()
     layout = QHBoxLayout(container)
@@ -129,7 +133,7 @@ def make_toggle_row(label_text: str, checked: bool = False) -> QCheckBox:
     return cb
 
 
-def make_result_pill(value: str, label: str) -> QFrame:
+def make_result_pill(icon_name: str, value: str, label: str) -> QFrame:
     pill = QFrame()
     pill.setFixedHeight(SPACE_12)
     pill.setProperty("role", "option-row")
@@ -137,13 +141,26 @@ def make_result_pill(value: str, label: str) -> QFrame:
     pl.setContentsMargins(12, 8, 12, 8)
     pl.setSpacing(2)
 
+    # Top row: 12px icon + value side by side.
+    top_row = QHBoxLayout()
+    top_row.setSpacing(4)
+
+    icon_lbl = QLabel()
+    icon_lbl.setPixmap(
+        get_icon(icon_name, color=COLOR_TEXT_TERTIARY, size=12).pixmap(12, 12)
+    )
+    top_row.addWidget(icon_lbl)
+
     val_lbl = StateLabel(pill, value, role="pill-value")
+    top_row.addWidget(val_lbl, 1)
+
     lbl_w = QLabel(label)
     lbl_w.setProperty("fontRole", "xs-muted")
 
-    pl.addWidget(val_lbl)
+    pl.addLayout(top_row)
     pl.addWidget(lbl_w)
     pill.value_label = val_lbl
+    pill.icon_label = icon_lbl
     return pill
 
 
@@ -196,7 +213,9 @@ class WaypointConnector(QWidget):
         painter.end()
 
 
-from ui.widgets.flow_layout import FlowLayout  # noqa: F401
+from ui.widgets.flow_layout import FlowLayout
+
+
 def make_country_chip(country_code: str) -> QWidget:
     chip = QWidget()
     chip.setFixedHeight(22)
@@ -263,7 +282,8 @@ LEAFLET_DARK_CSS = f"""
 class QtRoutePlannerView(QWidget):
     """Route planner with sidebar controls and an interactive map."""
 
-    SIDEBAR_MIN_WIDTH = 300
+    # Doc TASK 1: panel is fixed-width, never flexible.
+    SIDEBAR_WIDTH = 300
 
     # Emitted from the route runner's worker thread when the calculation
     # completes.  ``Signal.emit`` is thread-safe — Qt queues the slot call
@@ -370,10 +390,11 @@ class QtRoutePlannerView(QWidget):
         # Subscribe to truck events so changes in the Fleet Manager
         # (or anywhere else) refresh this view's dropdown without an
         # app restart.  We unsubscribe in ``shutdown``.
-        self._event_bus = EventBus()
-        self._event_bus.subscribe(TRUCK_CREATED, self._on_truck_event)
-        self._event_bus.subscribe(TRUCK_UPDATED, self._on_truck_event)
-        self._event_bus.subscribe(TRUCK_DELETED, self._on_truck_event)
+        self._event_bus = shared_event_bus
+        self._subs: list = []
+        self._subscribe(TRUCK_CREATED, self._on_truck_event)
+        self._subscribe(TRUCK_UPDATED, self._on_truck_event)
+        self._subscribe(TRUCK_DELETED, self._on_truck_event)
         self._event_subscribed = True
 
         # Defer MapWidget construction so the view switch is instant.
@@ -397,6 +418,11 @@ class QtRoutePlannerView(QWidget):
         self._map_init_timer.setInterval(0)
         self._map_init_timer.timeout.connect(self._lazy_init_map)
         self._map_init_timer.start()
+
+    def _subscribe(self, event: str, callback: Any) -> None:
+        """Subscribe to an event-bus event and track it for shutdown."""
+        self._event_bus.subscribe(event, callback)
+        self._subs.append((event, callback))
 
     def _on_truck_event(self, _event_data: Any) -> None:
         """Refresh the truck dropdown when a truck is created,
@@ -443,7 +469,7 @@ class QtRoutePlannerView(QWidget):
 
         # ── Left Panel (TASK 1) ──
         panel = QFrame()
-        panel.setMinimumWidth(320)
+        panel.setFixedWidth(QtRoutePlannerView.SIDEBAR_WIDTH)
         panel.setObjectName("route_panel")
         # Side-panel surface via the global theme (elevated + right divider).
         panel.setProperty("role", "side-panel")
@@ -786,9 +812,9 @@ class QtRoutePlannerView(QWidget):
         constraints_layout.addWidget(countries_label)
 
         self._chips_container = QWidget()
-        self._chips_container_layout = QVBoxLayout(self._chips_container)
-        self._chips_container_layout.setContentsMargins(0, 0, 0, 0)
-        self._chips_container_layout.setSpacing(4)
+        self._chips_container_layout = FlowLayout(
+            self._chips_container, margin=0, spacing=4
+        )
         constraints_layout.addWidget(self._chips_container)
 
         add_country_btn = QPushButton(f"+ {t('route.add_country')}")
@@ -886,10 +912,10 @@ class QtRoutePlannerView(QWidget):
         pills_grid = QGridLayout()
         pills_grid.setSpacing(6)
 
-        self.pill_distance = make_result_pill("\u2014", t("route.result.distance"))
-        self.pill_duration = make_result_pill("\u2014", t("route.result.duration"))
-        self.pill_fuel_cost = make_result_pill("\u2014", t("route.result.fuel_cost", default="Cost combustibil"))
-        self.pill_rate = make_result_pill("\u2014", t("route.result.cost_per_km", default="Cost/km"))
+        self.pill_distance = make_result_pill("fa5s.route", "\u2014", t("route.result.distance"))
+        self.pill_duration = make_result_pill("fa5s.clock", "\u2014", t("route.result.duration"))
+        self.pill_fuel_cost = make_result_pill("fa5s.gas-pump", "\u2014", t("route.result.fuel_cost", default="Cost combustibil"))
+        self.pill_rate = make_result_pill("fa5s.money-bill-wave", "\u2014", t("route.result.cost_per_km", default="Cost/km"))
 
         pills_grid.addWidget(self.pill_distance, 0, 0)
         pills_grid.addWidget(self.pill_duration, 0, 1)
@@ -956,7 +982,10 @@ class QtRoutePlannerView(QWidget):
         self.calc_btn.setFixedHeight(36)
         self.calc_btn.setObjectName("calc_route_btn")
         self.calc_btn.setCursor(Qt.PointingHandCursor)
-        self.calc_btn.setEnabled(False)
+        # TASK 8: dim the disabled Calculate button via QGraphicsOpacityEffect.
+        self._calc_opacity = QGraphicsOpacityEffect(self.calc_btn)
+        self.calc_btn.setGraphicsEffect(self._calc_opacity)
+        self._set_calc_enabled(False)
         # Compact primary action button via the global theme (incl. disabled state).
         self.calc_btn.setProperty("compact", True)
         self.calc_btn.style().unpolish(self.calc_btn)
@@ -1190,18 +1219,12 @@ class QtRoutePlannerView(QWidget):
         if self._core is None:
             return
         codes = self._core.get_excluded_countries()
-        chips_per_row = 5
-        for i in range(0, len(codes), chips_per_row):
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(4)
-            for code in codes[i:i + chips_per_row]:
-                chip = make_country_chip(code)
-                chip.remove_btn.clicked.connect(lambda checked, c=code: self._remove_excluded_country(c))
-                row_layout.addWidget(chip)
-            row_layout.addStretch()
-            self._chips_container_layout.addWidget(row)
+        for code in codes:
+            chip = make_country_chip(code)
+            chip.remove_btn.clicked.connect(
+                lambda checked=False, c=code: self._remove_excluded_country(c)
+            )
+            self._chips_container_layout.addWidget(chip)
 
     def _remove_excluded_country(self, code: str) -> None:
         self._core.country_avoidance.toggle(code)
@@ -1218,6 +1241,16 @@ class QtRoutePlannerView(QWidget):
             self._refresh_chips()
             self._on_exclusions_changed()
 
+    def _set_calc_enabled(self, enabled: bool) -> None:
+        """Enable/disable the pinned Calculate button (TASK 8).
+
+        ``setEnabled`` is kept so the button stays fully accessible /
+        semantic (screen readers, keyboard).  The visual 0.4 dim of the
+        disabled state is provided by the QGraphicsOpacityEffect.
+        """
+        self.calc_btn.setEnabled(enabled)
+        self._calc_opacity.setOpacity(1.0 if enabled else 0.4)
+
     def _update_calc_button_state(self) -> None:
         if not hasattr(self, "stops_state") or len(self.stops_state) < 2:
             return
@@ -1228,7 +1261,7 @@ class QtRoutePlannerView(QWidget):
         start_filled = bool(start_val.strip())
         dest_filled = bool(dest_val.strip())
         enabled = start_filled and dest_filled
-        self.calc_btn.setEnabled(enabled)
+        self._set_calc_enabled(enabled)
 
     def _inject_map_styles(self, ok: bool) -> None:
         if not ok or getattr(QtRoutePlannerView, "LEAFLET_CSS_INJECTED", False):
@@ -1326,7 +1359,7 @@ class QtRoutePlannerView(QWidget):
         token = self._calc_token
 
         # TASK 11: Show loading state
-        self.calc_btn.setEnabled(False)
+        self._set_calc_enabled(False)
         self._result_stack.setCurrentIndex(1)  # loading page
         self._dispatch_container.hide()
 
@@ -1339,7 +1372,10 @@ class QtRoutePlannerView(QWidget):
         if token != self._calc_token:
             return
 
-        self.calc_btn.setEnabled(True)
+        # Unconditional re-enable — deliberately NOT re-running the
+        # field-driven state logic so result delivery always restores the
+        # enabled/1.0 state (TASK 8).
+        self._set_calc_enabled(True)
 
         # Delegated to RoutePlannerController (process → RouteService internally)
         processed, err = self._core.process_calculation_result(
@@ -1872,12 +1908,12 @@ class QtRoutePlannerView(QWidget):
         # Unsubscribe from the event bus so a recreated view doesn't
         # get duplicate events from a dead instance.
         if getattr(self, "_event_subscribed", False):
-            try:
-                self._event_bus.unsubscribe(TRUCK_CREATED, self._on_truck_event)
-                self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_event)
-                self._event_bus.unsubscribe(TRUCK_DELETED, self._on_truck_event)
-            except Exception:
-                pass
+            for _event, _callback in self._subs:
+                try:
+                    self._event_bus.unsubscribe(_event, _callback)
+                except Exception:
+                    pass
+            self._subs.clear()
             self._event_subscribed = False
         # Cancel any pending deferred map-init timer so a shutdown view
         # never runs ``_lazy_init_map`` against destroyed C++ state.

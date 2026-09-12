@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Itt a válasz a kérdésére.",
+                "guide_workflow": "Itt egy lépésről lépésre útmutató."
+            },
+            "error": "Elnézést, nem sikerült teljesíteni a kérést. Próbálja újra.",
+            "vehicle": {
+                "search": "Itt vannak a keresésnek megfelelő járművek ({total_results} összesen).",
+                "health_score": "A(z) {vehicle_id} jármű állapotpontszáma: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} ma {available_hours_today} órát elérhető ({hours_worked_today} ledolgozott)."
+            },
+            "route": {
+                "calculate": "Az útvonal {distance_km} km, körülbelül {duration_min} perc.",
+                "estimate_cost": "Becsült költség: {total_cost} {currency} (km-enként {cost_per_km}).",
+                "plan_multistop": "Tervezett útvonal {ordered_stops_count} megállóval: {total_distance_km} km, körülbelül {total_duration_min} perc.",
+                "list": "Itt vannak a mentett útvonalak ({total} összesen).",
+                "get": "Itt vannak a kért útvonal részletei."
+            },
+            "trip": {
+                "calculate_profitability": "Becsült nyereség: {net_profit} ({margin_percent}% árrés).",
+                "list": "Itt vannak a fuvarjai ({total} összesen).",
+                "get": "Itt vannak a kért fuvar részletei."
+            },
+            "conversation": {
+                "recall_recent": "Íme, miről beszéltünk legutóbb ({total} téma)."
+            },
+            "client": {
+                "payment_summary": "Ügyfél fizetési összesítő: {total_billed} kiszámlázva, {total_paid} kifizetve, {unpaid} kifizetetlen, {overdue} lejárt."
+            },
+            "document": {
+                "search": "Itt vannak a talált dokumentumok ({total} összesen, {page}. oldal a(z) {total_pages} közül)."
+            },
+            "currency": {
+                "get_rate": "Az árfolyam: {rate}.",
+                "convert": "Átváltott összeg: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Itt vannak a járművek élő pozíciói ({total_results} jármű).",
+                "get_vehicle_history": "A(z) {vehicle_id} jármű pozíciótörténete: {total_results} pont."
+            },
+            "analytics": {
+                "query": "Itt van a kért elemzési összefoglaló."
             }
         },
         "world_model": {

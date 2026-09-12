@@ -304,7 +304,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Here is the answer to your question.",
+                "guide_workflow": "Here is a step-by-step guide."
+            },
+            "error": "Sorry, I couldn't complete that request. Please try again.",
+            "vehicle": {
+                "search": "Here are the vehicles matching your search ({total_results} total).",
+                "health_score": "Health score for vehicle {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} has {available_hours_today} hours available today ({hours_worked_today} worked)."
+            },
+            "route": {
+                "calculate": "The route is {distance_km} km and takes about {duration_min} minutes.",
+                "estimate_cost": "Estimated cost: {total_cost} {currency} ({cost_per_km} per km).",
+                "plan_multistop": "Planned route with {ordered_stops_count} stops: {total_distance_km} km, about {total_duration_min} minutes.",
+                "list": "Here are your saved routes ({total} total).",
+                "get": "Here are the details for the requested route."
+            },
+            "trip": {
+                "calculate_profitability": "Estimated profit: {net_profit} ({margin_percent}% margin).",
+                "list": "Here are your trips ({total} total).",
+                "get": "Here are the details for the requested trip."
+            },
+            "conversation": {
+                "recall_recent": "Here is what we discussed recently ({total} topics)."
+            },
+            "client": {
+                "payment_summary": "Client payment summary: {total_billed} billed, {total_paid} paid, {unpaid} unpaid, {overdue} overdue."
+            },
+            "document": {
+                "search": "Here are the documents found ({total} total, page {page} of {total_pages})."
+            },
+            "currency": {
+                "get_rate": "The exchange rate is {rate}.",
+                "convert": "Converted amount: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Here are the live vehicle positions ({total_results} vehicles).",
+                "get_vehicle_history": "Position history for vehicle {vehicle_id}: {total_results} points."
+            },
+            "analytics": {
+                "query": "Here is the analytics summary you asked for."
             }
         },
         "insight": {
@@ -2188,8 +2230,8 @@
         "vat": "VAT:",
         "terms_days": "Terms: {} days",
         "limit_eur": "Limit: €{:,}",
-        "phone": "",
-        "email_icon": "",
+        "phone": "📞",
+        "email_icon": "✉",
         "trip_timeline": "Trip: {} — {} / {} — {} km",
         "invoice_timeline": "Invoice: {} — {} — {} EUR ({})"
     },
@@ -2325,7 +2367,8 @@
         "cmr_generated_status": "generated",
         "cmr_trip_title": "CMR Trip #{}",
         "cmr_copy_title": "CMR Trip #{} - {} COPY",
-        "doc_receipt_title": "Receipt"
+        "doc_receipt_title": "Receipt",
+        "doc_proforma_title": "Proforma"
     },
     "invoice_editor": {
         "select_client": "Client:",
@@ -2498,6 +2541,11 @@
         "select_stamp": "Select Stamp Image",
         "export_json": "Export JSON",
         "number_format": "Number Format"
+    },
+    "proforma_pdf": {
+        "title": "PROFORMA INVOICE",
+        "watermark": "PROFORMA",
+        "disclaimer": "This is a proforma invoice and does not constitute a tax invoice."
     },
     "cmr": {
         "place_of_loading": "Place of Loading",
@@ -2771,6 +2819,7 @@
         "invoice_reference_label": "Invoice Reference",
         "related_trip_label": "Related Trip",
         "trip_placeholder": "Trip #",
+        "trip_list_format": "#{id} {truck_number} — {client_name} [{created_at}]",
         "pickup_label": "Pickup Location",
         "delivery_label": "Delivery Location",
         "route_label": "Route",

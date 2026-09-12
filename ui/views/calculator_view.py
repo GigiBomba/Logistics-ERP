@@ -34,7 +34,7 @@ from services.operations.event_bus import (
     TRUCK_CREATED,
     TRUCK_DELETED,
     TRUCK_UPDATED,
-    EventBus,
+    shared_event_bus,
 )
 from services.trip_context import (
     TripContextService,
@@ -139,12 +139,13 @@ class QtCalculatorView(QWidget):
 
         # Subscribe to truck / client events so changes elsewhere
         # refresh the dropdowns without an app restart.
-        self._event_bus = EventBus()
-        self._event_bus.subscribe(TRUCK_CREATED, self._on_truck_or_client_event)
-        self._event_bus.subscribe(TRUCK_UPDATED, self._on_truck_or_client_event)
-        self._event_bus.subscribe(TRUCK_DELETED, self._on_truck_or_client_event)
-        self._event_bus.subscribe(CLIENT_CREATED, self._on_truck_or_client_event)
-        self._event_bus.subscribe(CLIENT_UPDATED, self._on_truck_or_client_event)
+        self._event_bus = shared_event_bus
+        self._subs: list = []
+        self._subscribe(TRUCK_CREATED, self._on_truck_or_client_event)
+        self._subscribe(TRUCK_UPDATED, self._on_truck_or_client_event)
+        self._subscribe(TRUCK_DELETED, self._on_truck_or_client_event)
+        self._subscribe(CLIENT_CREATED, self._on_truck_or_client_event)
+        self._subscribe(CLIENT_UPDATED, self._on_truck_or_client_event)
         self._events_subscribed = True
         self._rebuild_timer: QTimer | None = None
 
@@ -526,6 +527,12 @@ class QtCalculatorView(QWidget):
         except Exception:
             self._selected_truck_fuel = 34.0
 
+    def _subscribe(self, event, callback) -> None:
+        """Subscribe to the shared event bus and track the subscription
+        locally so ``shutdown()`` can balance it exactly."""
+        self._event_bus.subscribe(event, callback)
+        self._subs.append((event, callback))
+
     def _on_truck_or_client_event(self, _event_data: Any) -> None:
         if not getattr(self, "_events_subscribed", False):
             return
@@ -796,11 +803,9 @@ class QtCalculatorView(QWidget):
             self._rebuild_timer = None
         if getattr(self, "_events_subscribed", False):
             try:
-                self._event_bus.unsubscribe(TRUCK_CREATED, self._on_truck_or_client_event)
-                self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_or_client_event)
-                self._event_bus.unsubscribe(TRUCK_DELETED, self._on_truck_or_client_event)
-                self._event_bus.unsubscribe(CLIENT_CREATED, self._on_truck_or_client_event)
-                self._event_bus.unsubscribe(CLIENT_UPDATED, self._on_truck_or_client_event)
+                for event, callback in self._subs:
+                    self._event_bus.unsubscribe(event, callback)
+                self._subs.clear()
             except Exception:
                 pass
             self._events_subscribed = False

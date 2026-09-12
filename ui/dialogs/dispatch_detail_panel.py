@@ -43,6 +43,10 @@ from ui.widgets import (
 )
 from ui.widgets.layout_utils import clear_layout
 
+# Kept local (not canonical STATUS_COLORS): keys are display-form status
+# strings ("In Transit", "Loading" — the latter has no canonical key) and the
+# values are chip-background tokens specific to the detail drawer header chip.
+# Values already derive from ui.design_tokens.
 STATUS_TO_COLUMN_UI = {
     "Planned": COLOR_NEUTRAL_SUBTLE,
     "Loading": COLOR_WARNING_SUBTLE,

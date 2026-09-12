@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Sorunuzun cevabı burada.",
+                "guide_workflow": "İşte adım adım bir rehber."
+            },
+            "error": "Üzgünüm, isteği tamamlayamadım. Lütfen tekrar deneyin.",
+            "vehicle": {
+                "search": "Aramanıza uyan araçlar burada ({total_results} toplam).",
+                "health_score": "{vehicle_id} numaralı aracın sağlık puanı: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} bugün {available_hours_today} saat müsait ({hours_worked_today} çalıştı)."
+            },
+            "route": {
+                "calculate": "Rota {distance_km} km ve yaklaşık {duration_min} dakika sürüyor.",
+                "estimate_cost": "Tahmini maliyet: {total_cost} {currency} (km başına {cost_per_km}).",
+                "plan_multistop": "{ordered_stops_count} duraklı planlanan rota: {total_distance_km} km, yaklaşık {total_duration_min} dakika.",
+                "list": "Kayıtlı rotalarınız burada ({total} toplam).",
+                "get": "İstenen rotanın detayları burada."
+            },
+            "trip": {
+                "calculate_profitability": "Tahmini kâr: {net_profit} ({margin_percent}% marj).",
+                "list": "Seferleriniz burada ({total} toplam).",
+                "get": "İstenen seferin detayları burada."
+            },
+            "conversation": {
+                "recall_recent": "Son konuştuklarımızın özeti ({total} konu)."
+            },
+            "client": {
+                "payment_summary": "Müşteri ödeme özeti: {total_billed} fatura edildi, {total_paid} ödendi, {unpaid} ödenmedi, {overdue} gecikti."
+            },
+            "document": {
+                "search": "Bulunan belgeler burada ({total} toplam, sayfa {page}/{total_pages})."
+            },
+            "currency": {
+                "get_rate": "Döviz kuru {rate}.",
+                "convert": "Çevrilen tutar: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Araçların canlı konumları burada ({total_results} araç).",
+                "get_vehicle_history": "{vehicle_id} numaralı aracın konum geçmişi: {total_results} nokta."
+            },
+            "analytics": {
+                "query": "İstediğiniz analiz özeti burada."
             }
         },
         "world_model": {

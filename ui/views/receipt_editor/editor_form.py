@@ -292,9 +292,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._related_trip_combo.clear()
         self._related_trip_combo.addItem("")
         for trip in trips:
-            # NOTE: Reusing invoice key "invoice.trip_list_format" because no
-            # receipt-specific key exists in translations yet.
-            label = t("invoice.trip_list_format").format(
+            label = t("receipt.trip_list_format").format(
                 id=trip["id"],
                 truck_number=trip.get("truck_number", ""),
                 client_name=trip.get("client_name", ""),

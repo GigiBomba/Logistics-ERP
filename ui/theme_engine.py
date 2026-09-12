@@ -2967,6 +2967,12 @@ class QtTheme:
             font-weight: 600;
             letter-spacing: 0.08em;
         }}
+        /* doc TASK 8 — the opacity effect provides the 0.4 dim; this rule keeps
+           the base colors full so effect + style do not double-dim. */
+        QPushButton#calc_route_btn:disabled {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+        }}
         /* Gate false-positive: ``role`` is set via StateLabel's variable setter
            (components.StateLabel(role=...)) — the string-literal inventory
            cannot see "pill-value". LIVE. */

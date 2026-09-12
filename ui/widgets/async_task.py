@@ -54,13 +54,23 @@ class AsyncTask(QObject):
         super().__init__(parent)
         self._thread: QThread | None = None
         self._worker: _Worker | None = None
+        # User callbacks of the task that most recently ran.  They are
+        # stored so ``cancel()`` can detach them from the worker's signals
+        # and guarantee a cancelled task never invokes them.
+        self._on_result_cb: Callable[[Any], None] | None = None
+        self._on_error_cb: Callable[[str], None] | None = None
+        # Every background thread that is still finishing, including ones
+        # that were cancelled (``cancel()`` is non-blocking, so a thread may
+        # outlive the task that started it).  ``_cleanup`` removes a thread
+        # once it has fully stopped.
+        self._active_threads: set[QThread] = set()
         # Strong self-reference taken while a task is running and released
-        # once the worker thread has fully finished.  The worker QThread is
-        # a child of this object; if the AsyncTask is garbage-collected while
-        # the native thread is still finishing, PySide6 aborts the whole
+        # once every worker thread has fully finished.  The worker QThreads
+        # are children of this object; if the AsyncTask is garbage-collected
+        # while a native thread is still finishing, PySide6 aborts the whole
         # process ("QThread: Destroyed while thread is still running").  The
         # self-reference guarantees the task — and therefore its QThread
-        # child — stays alive until ``_cleanup`` runs.
+        # children — stays alive until ``_cleanup`` runs.
         self._keep_alive: "AsyncTask | None" = None
 
     def run(
@@ -80,35 +90,78 @@ class AsyncTask(QObject):
         """
         self.cancel()
 
-        self._worker = _Worker(fn, args, kwargs)
-        self._thread = QThread(self)
-        self._worker.moveToThread(self._thread)
+        worker = _Worker(fn, args, kwargs)
+        thread = QThread(self)
+        worker.moveToThread(thread)
 
-        self._thread.started.connect(self._worker.run)
+        self._on_result_cb = on_result
+        self._on_error_cb = on_error
+        self._worker = worker
+        self._thread = thread
+
+        thread.started.connect(worker.run)
         if on_result:
-            self._worker.finished.connect(on_result)
+            worker.finished.connect(on_result)
         if on_error:
-            self._worker.error.connect(on_error)
-        self._worker.finished.connect(self._thread.quit)
-        self._worker.error.connect(self._thread.quit)
-        self._thread.finished.connect(self._cleanup)
+            worker.error.connect(on_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        # Capture the thread in the default argument so a later run() or
+        # cancel() cannot rebind this connection to a different thread.
+        thread.finished.connect(lambda t=thread: self._cleanup(t))
 
-        # Hold a self-reference until the thread finishes (see __init__).
+        # Hold a self-reference until every thread finishes (see __init__).
+        self._active_threads.add(thread)
         self._keep_alive = self
-        self._thread.start()
+        thread.start()
 
     def cancel(self) -> None:
-        """Cancel any running task (waits for thread to finish)."""
-        if self._thread is not None and self._thread.isRunning():
-            self._thread.quit()
-            self._thread.wait(2000)
+        """Cancel any running task without blocking the calling thread.
+
+        Detaches the task's state immediately and only requests the worker
+        thread to stop via ``quit()``.  ``wait()`` is never called, so the
+        GUI thread is never blocked; ``_cleanup`` runs from the thread's
+        ``finished`` signal once the thread actually stops.
+        """
+        worker = self._worker
+        thread = self._thread
+        # Detach immediately: from here on this task no longer owns the
+        # (possibly still running) thread and worker.
         self._worker = None
         self._thread = None
 
-    def _cleanup(self) -> None:
-        self._worker = None
-        self._thread = None
-        # Release the self-reference: the worker thread has finished, so the
-        # QThread child can now be destroyed safely even if the caller has
-        # already dropped the AsyncTask.
-        self._keep_alive = None
+        if worker is not None:
+            # A cancelled task must never invoke its user callbacks, even if
+            # the worker finishes afterwards — drop those connections.
+            for signal, callback in (
+                (worker.finished, self._on_result_cb),
+                (worker.error, self._on_error_cb),
+            ):
+                if callback is not None:
+                    try:
+                        signal.disconnect(callback)
+                    except (RuntimeError, TypeError):
+                        # Signal already disconnected / slot never connected.
+                        pass
+            self._on_result_cb = None
+            self._on_error_cb = None
+
+        if thread is not None and thread.isRunning():
+            thread.quit()
+
+    def _cleanup(self, thread: QThread | None = None) -> None:
+        """Release state once ``thread`` has fully finished.
+
+        ``thread`` is the QThread that just stopped.  With the default
+        ``None`` it also clears the current task state (used by tests and
+        safe because no specific thread is being tracked).
+        """
+        self._active_threads.discard(thread)
+        if self._thread is thread or thread is None:
+            self._worker = None
+            self._thread = None
+        # Release the self-reference once every worker thread has finished,
+        # so the QThread children can be destroyed safely even if the caller
+        # has already dropped the AsyncTask.
+        if not self._active_threads:
+            self._keep_alive = None

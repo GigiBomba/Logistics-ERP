@@ -30,6 +30,7 @@ from ui.design_tokens import (
     COLOR_ERROR_DEFAULT,
     COLOR_INFO_DEFAULT,
     COLOR_NEUTRAL_DEFAULT,
+    COLOR_TEXT_WHITE,
     COLOR_WARNING_DEFAULT,
     FONT_SIZE_XS,
     FONT_WEIGHT_MEDIUM,
@@ -39,15 +40,18 @@ from ui.design_tokens import (
     SPACE_3,
 )
 from ui.widgets import StyledComboBox
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
 # Colour map for severity badges
 _SEVERITY_STYLES: Dict[str, Dict[str, str]] = {
-    "critical": {"bg": COLOR_ERROR_DEFAULT, "fg": "#FFFFFF"},
+    "critical": {"bg": COLOR_ERROR_DEFAULT, "fg": COLOR_TEXT_WHITE},
+    # High-severity badge uses pure black text; no design token equals that
+    # value (COLOR_TEXT_INVERSE is #0C0C0E), so the literal is kept.
     "high":     {"bg": COLOR_WARNING_DEFAULT, "fg": "#000000"},
-    "medium":   {"bg": COLOR_INFO_DEFAULT,    "fg": "#FFFFFF"},
-    "low":      {"bg": COLOR_NEUTRAL_DEFAULT, "fg": "#FFFFFF"},
+    "medium":   {"bg": COLOR_INFO_DEFAULT,    "fg": COLOR_TEXT_WHITE},
+    "low":      {"bg": COLOR_NEUTRAL_DEFAULT, "fg": COLOR_TEXT_WHITE},
 }
 
 _TYPE_ICONS: Dict[str, str] = {
@@ -268,7 +272,12 @@ class InsightQueueWidget(QFrame):
     # ── Public API ──────────────────────────────────────────────────────
 
     def refresh(self) -> None:
-        """Fetch insights from the backend and rebuild the list."""
+        """Fetch insights from the backend and rebuild the list.
+
+        The endpoint fetch runs on the WorkerPool so the API retry/sleep
+        backoff never blocks the GUI thread; the list rebuild happens on the
+        GUI thread in the result callback.
+        """
         if self._api_client is None:
             logger.debug("InsightQueueWidget: no api_client, skipping refresh")
             # Still render the muted empty placeholder so the section never
@@ -276,24 +285,33 @@ class InsightQueueWidget(QFrame):
             self._insights = []
             self._rebuild_list()
             return
-        try:
-            if not hasattr(self._api_client, '_get') and not hasattr(self._api_client, 'get'):
-                logger.error("InsightQueueWidget: API client has no GET method")
-                resp = {"items": [], "limit": 50}
-            else:
-                get_method = getattr(self._api_client, '_get', None) or getattr(self._api_client, 'get')
-                resp = get_method(
-                    "/api/v1/copilot/insights",
-                    params={"limit": 50} if self._active_filter == self.FILTER_ALL
-                    else {"limit": 50, "status_filter": self._active_filter},
-                ) or {"items": [], "limit": 50}
-        except Exception as exc:
-            logger.warning("InsightQueueWidget: failed to fetch insights: %s", exc)
-            resp = {"items": [], "limit": 50}
 
-        raw_items: List[Dict[str, Any]] = resp.get("items", [])
-        self._insights = [Insight(**item) for item in raw_items]
-        self._rebuild_list()
+        if not hasattr(self._api_client, '_get') and not hasattr(self._api_client, 'get'):
+            logger.error("InsightQueueWidget: API client has no GET method")
+            self._insights = []
+            self._rebuild_list()
+            return
+
+        def _fetch() -> Dict[str, Any]:
+            get_method = getattr(self._api_client, '_get', None) or getattr(self._api_client, 'get')
+            resp = get_method(
+                "/api/v1/copilot/insights",
+                params={"limit": 50} if self._active_filter == self.FILTER_ALL
+                else {"limit": 50, "status_filter": self._active_filter},
+            )
+            return resp or {"items": [], "limit": 50}
+
+        def _apply(resp: Dict[str, Any]) -> None:
+            raw_items: List[Dict[str, Any]] = resp.get("items", [])
+            self._insights = [Insight(**item) for item in raw_items]
+            self._rebuild_list()
+
+        def _fail(msg: str) -> None:
+            logger.warning("InsightQueueWidget: failed to fetch insights: %s", msg)
+            self._insights = []
+            self._rebuild_list()
+
+        WorkerPool.run(fn=_fetch, on_result=_apply, on_error=_fail)
 
     def set_filter(self, filter_value: str) -> None:
         """Change the active status filter and refresh."""
@@ -376,12 +394,10 @@ class InsightQueueWidget(QFrame):
                 t("insight.empty", default="Insights will appear here as ARGO analyzes your operations")
             )
             self._empty_lbl.setVisible(True)
-            self.setVisible(True)
             return
 
         self._scroll_area.setVisible(True)
         self._empty_lbl.setVisible(False)
-        self.setVisible(True)
 
         for insight in self._insights:
             card = _InsightCard(self._list_content, insight)

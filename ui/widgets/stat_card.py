@@ -18,6 +18,7 @@ from ui.design_tokens import (
     FONT_WEIGHT_MEDIUM,
     SPACE_4,
     SPACE_5,
+    STATUS_COLORS,
 )
 
 # Status-dot size floor. Minimum + Fixed size policy keeps the decorative dot
@@ -27,15 +28,6 @@ _DOT_SIZE = 8
 
 class StatCard(QFrame):
     """Compact 88px KPI card with label, value, and optional status dot."""
-
-    STATUS_COLORS = {
-        "good": COLOR_SUCCESS_DEFAULT,
-        "warning": COLOR_WARNING_DEFAULT,
-        "critical": COLOR_ERROR_DEFAULT,
-        "neutral": COLOR_NEUTRAL_DEFAULT,
-        "grey": COLOR_NEUTRAL_DEFAULT,
-        "blue": COLOR_INFO_DEFAULT,
-    }
 
     def __init__(
         self,

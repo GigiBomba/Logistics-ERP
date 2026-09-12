@@ -25,6 +25,8 @@ Usage::
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import itertools
 import logging
 
@@ -598,12 +600,14 @@ class PlotlyChartWidget(QFrame):
         # Latest tag whose pixmap we accepted; used to dedupe
         # ``delivered`` signals when the worker pool coalesces runs.
         self._accepted_tag: object | None = None
-        # Per-instance LRU pixmap cache.  Bounded FIFO keyed by
-        # ``(id(fig), w, h)`` so a re-render of the same figure at the
-        # same size is a free hit.  Common case: re-entering a view
-        # that already rendered the chart — the cached pixmap is
-        # applied directly without a render call.
-        self._pixmap_cache: dict[tuple[int, int, int], QPixmap] = {}
+        # Per-instance true-LRU pixmap cache.  Bounded ``OrderedDict``
+        # keyed by ``(id(fig), w, h)`` so a re-render of the same figure
+        # at the same size is a free hit.  Every hit refreshes recency
+        # via ``move_to_end``; on overflow the least-recently-used entry
+        # is evicted.  Common case: re-entering a view that already
+        # rendered the chart — the cached pixmap is applied directly
+        # without a render call.
+        self._pixmap_cache: OrderedDict = OrderedDict()
 
         self.setObjectName("plotly-chart-card")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -755,8 +759,10 @@ class PlotlyChartWidget(QFrame):
 
         # LRU cache hit — apply directly.  This is the fast path for
         # re-entering a view whose chart was already rendered.
-        cached = self._pixmap_cache.get((new_fig_id, w, h))
+        cache_key = (new_fig_id, w, h)
+        cached = self._pixmap_cache.get(cache_key)
         if cached is not None and not cached.isNull():
+            self._pixmap_cache.move_to_end(cache_key)
             self._width = w
             self._height = h
             self._fig_id = new_fig_id
@@ -794,11 +800,11 @@ class PlotlyChartWidget(QFrame):
             return
         fig.update_xaxes(showgrid=self._grid_visible)
         fig.update_yaxes(showgrid=self._grid_visible)
-        self._pixmap_cache = {
-            key: pixmap
+        self._pixmap_cache = OrderedDict(
+            (key, pixmap)
             for key, pixmap in self._pixmap_cache.items()
             if key[0] != id(fig)
-        }
+        )
         self.set_figure(fig)
 
     def set_min_height(self, px: int) -> None:
@@ -895,31 +901,21 @@ class PlotlyChartWidget(QFrame):
     CACHE_MAX_ENTRIES = 4
 
     def _cache_pixmap(self, fig_id: int, w: int, h: int, pixmap: QPixmap) -> None:
-        """Store a delivered pixmap in the per-widget LRU cache.
+        """Store a delivered pixmap in the per-widget true-LRU cache.
 
-        Uses a simple bounded FIFO (the latest entry wins; the
-        oldest is evicted on overflow).  A real LRU could be done
-        with ``OrderedDict.move_to_end`` but the win is marginal at
-        this size and FIFO is far simpler.
+        Bounded ``OrderedDict`` ordered from least- to most-recently
+        used: on overflow the least-recently-used entry is evicted via
+        ``popitem(last=False)`` (not the oldest-inserted).  Every insert
+        and every cache hit refreshes recency with ``move_to_end``.
         """
-        if pixmap is None or pixmap.isNull():
+        if pixmap is None or pixmap.isNull() or w <= 0 or h <= 0:
             return
-        if w <= 0 or h <= 0:
-            return
-        # Drop the oldest entry if the cache is full.  We track
-        # insertion order via a parallel list; for our small size
-        # this is cheap and keeps the implementation local.
+        key = (fig_id, w, h)
         if len(self._pixmap_cache) >= self.CACHE_MAX_ENTRIES:
-            # Find any key whose fig_id is not the most recent one.
-            # (Picking the lexicographically smallest ``id`` is good
-            # enough — id() values monotonically increase within a
-            # process for live objects.)
-            evict_key = min(
-                self._pixmap_cache.keys(),
-                key=lambda k: k[0],
-            )
-            self._pixmap_cache.pop(evict_key, None)
-        self._pixmap_cache[(fig_id, w, h)] = pixmap
+            if key not in self._pixmap_cache:
+                self._pixmap_cache.popitem(last=False)
+        self._pixmap_cache[key] = pixmap
+        self._pixmap_cache.move_to_end(key)
 
     @Slot(object, object)
     def _on_render_delivered(self, tag: object, payload: QByteArray) -> None:
@@ -1029,8 +1025,10 @@ class PlotlyChartWidget(QFrame):
         h_delta = abs(new_h - self._height)
         if w_delta <= self.RESIZE_THRESHOLD_PX and h_delta <= self.RESIZE_THRESHOLD_PX:
             return  # tiny change; Qt re-stretch is enough
-        cached = self._pixmap_cache.get((self._fig_id, new_w, new_h))
+        cache_key = (self._fig_id, new_w, new_h)
+        cached = self._pixmap_cache.get(cache_key)
         if cached is not None and not cached.isNull():
+            self._pixmap_cache.move_to_end(cache_key)
             self._width = new_w
             self._height = new_h
             self._pending_tag = None
@@ -1070,8 +1068,10 @@ class PlotlyChartWidget(QFrame):
         h = max(self.MIN_HEIGHT, self._label.height())
         if self._min_height > 0:
             h = max(h, self._min_height)
-        cached = self._pixmap_cache.get((id(self._fig), w, h))
+        cache_key = (id(self._fig), w, h)
+        cached = self._pixmap_cache.get(cache_key)
         if cached is not None and not cached.isNull():
+            self._pixmap_cache.move_to_end(cache_key)
             self._width = w
             self._height = h
             self._fig_id = id(self._fig)

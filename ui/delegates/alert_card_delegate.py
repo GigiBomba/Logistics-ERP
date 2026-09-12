@@ -23,6 +23,9 @@ from ui.design_tokens import (
     BG_OVERLAY,
     BORDER_DEFAULT,
     DANGER,
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_WARNING_DEFAULT,
     FONT_MONO,
     INFO,
     TEXT_MUTED,
@@ -45,9 +48,9 @@ _COLORS = {
 
 # Per-severity accent colors
 _SEV_COLORS = {
-    Severity.CRITICAL: QColor("#ef4444"),
-    Severity.WARNING: QColor("#f59e0b"),
-    Severity.INFO: QColor("#3b82f6"),
+    Severity.CRITICAL: QColor(COLOR_ERROR_DEFAULT),
+    Severity.WARNING: QColor(COLOR_WARNING_DEFAULT),
+    Severity.INFO: QColor(COLOR_INFO_DEFAULT),
 }
 
 # Alert type → icon character
@@ -94,7 +97,7 @@ class AlertCardDelegate(QStyledItemDelegate):
             self._font_mono.setPointSize(10)
 
     def sizeHint(self, option, index):
-        return QSize(option.rect.width(), _CARD_HEIGHT)
+        return QSize(max(option.rect.width(), 300), _CARD_HEIGHT)
 
     def paint(self, painter: QPainter, option, index):
         alert: Alert | None = index.data(AlertListModel.AlertRole)

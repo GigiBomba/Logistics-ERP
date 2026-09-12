@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Ето отговора на вашия въпрос.",
+                "guide_workflow": "Ето ръководство стъпка по стъпка."
+            },
+            "error": "Съжалявам, не успях да изпълня заявката. Опитайте отново.",
+            "vehicle": {
+                "search": "Ето превозните средства, които отговарят на вашето търсене ({total_results} общо).",
+                "health_score": "Оценка на състоянието на превозното средство {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} разполага с {available_hours_today} свободни часа днес ({hours_worked_today} отработени)."
+            },
+            "route": {
+                "calculate": "Маршрутът е {distance_km} км и отнема около {duration_min} минути.",
+                "estimate_cost": "Ориентировъчна цена: {total_cost} {currency} ({cost_per_km} за км).",
+                "plan_multistop": "Планиран маршрут с {ordered_stops_count} спирки: {total_distance_km} км, около {total_duration_min} минути.",
+                "list": "Ето вашите запазени маршрути ({total} общо).",
+                "get": "Ето подробностите за заявения маршрут."
+            },
+            "trip": {
+                "calculate_profitability": "Ориентировъчна печалба: {net_profit} (марж {margin_percent}%).",
+                "list": "Ето вашите курсове ({total} общо).",
+                "get": "Ето подробностите за заявения курс."
+            },
+            "conversation": {
+                "recall_recent": "Ето какво обсъждахме наскоро ({total} теми)."
+            },
+            "client": {
+                "payment_summary": "Резюме на плащанията на клиента: {total_billed} фактурирани, {total_paid} платени, {unpaid} неплатени, {overdue} просрочени."
+            },
+            "document": {
+                "search": "Ето намерените документи ({total} общо, страница {page} от {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Обменният курс е {rate}.",
+                "convert": "Конвертирана сума: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Ето текущите позиции на превозните средства ({total_results} превозни средства).",
+                "get_vehicle_history": "История на позициите на превозното средство {vehicle_id}: {total_results} точки."
+            },
+            "analytics": {
+                "query": "Ето заявеното аналитично резюме."
             }
         },
         "world_model": {

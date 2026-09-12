@@ -6,6 +6,7 @@ Replaces ui/widgets/top_bar.py. Provides clock, alert bell, fuel status, and nav
 from __future__ import annotations
 
 import contextlib
+import logging
 from datetime import datetime
 from typing import Any, Callable
 
@@ -35,6 +36,9 @@ from ui.design_tokens import (
     TEXT_MUTED,
     TOPBAR_HEIGHT,
 )
+from ui.worker_pool import WorkerPool
+
+logger = logging.getLogger(__name__)
 
 # Fuel-status dot diameter. KEPT fixed on purpose: it is a tiny decorative
 # 8px circle (border-radius 4 = half of 8) next to the fuel-status label.
@@ -271,12 +275,25 @@ class TopBar(QFrame):
 
         def _clear_all():
             ops = self._ops
-            if ops is not None:
-                active = ops.get_active_alerts(limit=500)
-                for a in active:
+            if ops is None:
+                self._alert_dialog = None
+                return
+
+            def _fetch():
+                # DB/network read runs off the GUI thread (B1).
+                return ops.get_active_alerts(limit=500)
+
+            def _resolve(alerts):
+                for a in alerts:
                     with contextlib.suppress(Exception):
                         ops.resolve_alert(a.id)
-            self._alert_dialog = None
+                self._alert_dialog = None
+
+            def _fail(msg):
+                logger.warning("Clear-all alert fetch failed: %s", msg)
+                self._alert_dialog = None
+
+            WorkerPool.run(fn=_fetch, on_result=_resolve, on_error=_fail)
 
         panel = QtAlertPanel(self, alerts, on_navigate=self._on_navigate, on_clear_all=_clear_all)
         self._alert_dialog = panel

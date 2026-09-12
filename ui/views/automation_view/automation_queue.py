@@ -53,6 +53,34 @@ class QueueManagementMixin:
         self._batch_for_run: dict[int, int] = {}  # run_id -> batch_id
         self._current_batch_id: int = 0
         self._refresh_pending: bool = False
+        # Wire the detail panel's ``link_requested`` signal exactly once.
+        # ``self._detail`` is created by the concrete view during UI
+        # construction (after this init runs), so if it is not available
+        # yet the connection is deferred until the event loop starts.
+        self._detail_link_wired: bool = False
+        self._ensure_link_requested_wired()
+
+    def _ensure_link_requested_wired(self) -> None:
+        """Connect the detail panel's ``link_requested`` exactly once.
+
+        The concrete view builds ``self._detail`` (a ``_RunDetailPanel``)
+        during ``_build_ui``, which runs *after* ``_init_queue_management``,
+        so the panel is not available at init time here.  When it is missing,
+        the connection is deferred to the start of the event loop — by then
+        construction has finished and no user interaction (and therefore no
+        link request) can have happened yet.  The guard flag makes repeated
+        calls a no-op, so the slot is connected once and
+        ``_on_link_requested`` fires exactly once per request no matter how
+        many workers or batches are started.
+        """
+        if self._detail_link_wired:
+            return
+        detail = getattr(self, "_detail", None)
+        if detail is None:
+            QTimer.singleShot(0, self._ensure_link_requested_wired)
+            return
+        detail.link_requested.connect(self._on_link_requested)
+        self._detail_link_wired = True
 
     # ------------------------------------------------------------------
     # File drop handling  (queue management)
@@ -104,6 +132,10 @@ class QueueManagementMixin:
 
     def _drain_pending_files(self) -> None:
         """Start workers for queued files up to the concurrency cap."""
+        # Safety net: make sure the detail panel's linker is wired before any
+        # worker is started (a no-op once ``_ensure_link_requested_wired``
+        # has already connected it).
+        self._ensure_link_requested_wired()
         if not self._queue:
             return
         active = sum(
@@ -120,6 +152,8 @@ class QueueManagementMixin:
         worker = PipelineWorker(
             self.db, [path], prefs=self.prefs, mode=self._mode,
         )
+        # Connect every worker signal in one contiguous block, before the
+        # worker is started, so no signal can fire before its slot is wired.
         worker.stage_changed.connect(self._on_stage_changed)
         worker.ocr_extracted.connect(self._on_ocr_extracted)
         worker.match_ready.connect(self._on_match_ready)
@@ -127,12 +161,10 @@ class QueueManagementMixin:
         worker.processing_done.connect(self._on_processing_done)
         worker.finished.connect(self._on_worker_finished)
         worker.log.connect(self._on_worker_log)
+        worker.worker_ready.connect(self._on_worker_ready)
         worker.finished.connect(worker.deleteLater)
-        # Wire the detail panel's manual selection to the standalone linker.
-        self._detail.link_requested.connect(self._on_link_requested)
         # Hold a reference so the worker is not GC'd before ``worker_ready`` fires.
         self._pending_workers.append(worker)
-        worker.worker_ready.connect(self._on_worker_ready)
         worker.start()
         self._refresh_from_db()
 

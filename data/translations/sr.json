@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Ево одговора на ваше питање.",
+                "guide_workflow": "Ево водича корак по корак."
+            },
+            "error": "Извините, нисам успео да завршим захтев. Покушајте поново.",
+            "vehicle": {
+                "search": "Ево возила која одговарају вашој претрази ({total_results} укупно).",
+                "health_score": "Оцена стања возила {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} данас има {available_hours_today} слободних сати ({hours_worked_today} одрађено)."
+            },
+            "route": {
+                "calculate": "Рута је дуга {distance_km} км и траје око {duration_min} минута.",
+                "estimate_cost": "Процењени трошкови: {total_cost} {currency} ({cost_per_km} по км).",
+                "plan_multistop": "Планирана рута са {ordered_stops_count} стајалишта: {total_distance_km} км, око {total_duration_min} минута.",
+                "list": "Ево ваших сачуваних рута ({total} укупно).",
+                "get": "Ево детаља за тражену руту."
+            },
+            "trip": {
+                "calculate_profitability": "Процењена добит: {net_profit} (маржа {margin_percent}%).",
+                "list": "Ево ваших вожњи ({total} укупно).",
+                "get": "Ево детаља за тражену вожњу."
+            },
+            "conversation": {
+                "recall_recent": "Ево шта смо недавно разговарали ({total} тема)."
+            },
+            "client": {
+                "payment_summary": "Преглед плаћања клијента: {total_billed} фактурисано, {total_paid} плаћено, {unpaid} неплаћено, {overdue} закаснело."
+            },
+            "document": {
+                "search": "Ево пронађених докумената ({total} укупно, страна {page} од {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Курс је {rate}.",
+                "convert": "Конвертовани износ: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Ево тренутних позиција возила ({total_results} возила).",
+                "get_vehicle_history": "Историја позиција возила {vehicle_id}: {total_results} тачака."
+            },
+            "analytics": {
+                "query": "Ево траженог аналитичког прегледа."
             }
         },
         "world_model": {

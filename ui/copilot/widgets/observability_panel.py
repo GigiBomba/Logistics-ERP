@@ -72,6 +72,7 @@ from ui.design_tokens import (
     SPACE_2,
     SPACE_3,
 )
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -722,23 +723,43 @@ class ObservabilityPanel(QFrame):
     def _refresh_remote_section(self) -> None:
         """Fetch backend observability aggregates via the injected ApiClient.
 
-        On success renders KPIs, confidence distribution, phase timings and
-        circuit-breaker state from the endpoint payload.  On any error the
-        panel shows honest empty states (no silent local fallback).
+        The endpoint fetch runs on the WorkerPool so the API retry/sleep
+        backoff never blocks the GUI thread; KPIs, confidence distribution,
+        phase timings and circuit-breaker state are rendered on the GUI
+        thread in the result callback.  On any error the panel shows honest
+        empty states (no silent local fallback).
         """
         client = self._get_api_client()
-        data = None
-        try:
-            get_method = getattr(client, "get_copilot_observability", None)
-            if get_method is None:
-                generic_get = getattr(client, "_get", None) or getattr(client, "get", None)
-                data = generic_get("/api/v1/copilot/observability") if generic_get else None
-            else:
-                data = get_method()
-        except Exception as exc:
-            logger.warning("ObservabilityPanel: remote observability fetch failed: %s", exc)
-            data = None
 
+        def _fetch():
+            data = None
+            try:
+                get_method = getattr(client, "get_copilot_observability", None)
+                if get_method is None:
+                    generic_get = getattr(client, "_get", None) or getattr(client, "get", None)
+                    data = generic_get("/api/v1/copilot/observability") if generic_get else None
+                else:
+                    data = get_method()
+            except Exception as exc:
+                logger.warning("ObservabilityPanel: remote observability fetch failed: %s", exc)
+                data = None
+            return data
+
+        def _apply(data):
+            self._render_remote_data(data)
+
+        def _fail(msg):
+            logger.warning("ObservabilityPanel: remote observability fetch failed: %s", msg)
+            self._render_remote_data(None)
+
+        WorkerPool.run(fn=_fetch, on_result=_apply, on_error=_fail)
+
+    def _render_remote_data(self, data) -> None:
+        """Render the remote observability payload (or the empty state).
+
+        Runs on the GUI thread; called from the WorkerPool result/error
+        callbacks of ``_refresh_remote_section``.
+        """
         if not isinstance(data, dict):
             self._kpi_failure.set_value("—")
             self._kpi_abandonment.set_value("—")
@@ -953,6 +974,7 @@ class ObservabilityPanel(QFrame):
 if __name__ == "__main__":  # pragma: no cover — standalone smoke test
     import os
     import sys
+    import time as _time
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -985,6 +1007,15 @@ if __name__ == "__main__":  # pragma: no cover — standalone smoke test
 
     app = QApplication.instance() or QApplication(sys.argv)
 
+    def _process_until(predicate, timeout_ms=3000):
+        """Pump the event loop until *predicate* is true (async WorkerPool)."""
+        deadline = _time.time() + timeout_ms / 1000.0
+        while _time.time() < deadline:
+            app.processEvents()
+            if predicate():
+                return True
+        return False
+
     # LOCAL mode (no api_client) — sections constructed and refreshed.
     panel = ObservabilityPanel()
     panel.resize(560, 640)
@@ -996,7 +1027,7 @@ if __name__ == "__main__":  # pragma: no cover — standalone smoke test
     # REMOTE mode with a fake client — endpoint payload rendered.
     remote_panel = ObservabilityPanel(api_client=_FakeRemoteClient())
     remote_panel.refresh()
-    assert remote_panel._kpi_failure._value_lbl.text() == "20.0%", (
+    assert _process_until(lambda: remote_panel._kpi_failure._value_lbl.text() == "20.0%"), (
         remote_panel._kpi_failure._value_lbl.text()
     )
     assert remote_panel._kpi_trips._value_lbl.text() == "1"
@@ -1006,7 +1037,9 @@ if __name__ == "__main__":  # pragma: no cover — standalone smoke test
     # REMOTE mode with a failing client — honest empty states.
     failing_panel = ObservabilityPanel(api_client=_FailingRemoteClient())
     failing_panel.refresh()
-    assert failing_panel._kpi_failure._value_lbl.text() == "—"
+    assert _process_until(lambda: failing_panel._kpi_failure._value_lbl.text() == "—"), (
+        failing_panel._kpi_failure._value_lbl.text()
+    )
     print("ObservabilityPanel smoke test (REMOTE error) passed — empty state on failure.")
 
     panel.close()

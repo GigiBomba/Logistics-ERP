@@ -362,6 +362,9 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._subscribe(INVOICE_CREATED, self._on_document_event)
         self._subscribe(PROFORMA_CREATED, self._on_document_event)
         self._subscribe(RECEIPT_CREATED, self._on_document_event)
+        # Mirrors route_planner_view; without this the guard in
+        # _on_document_event makes every subscription a no-op.
+        self._event_subscribed = True
 
         # ── Build UI ──────────────────────────────────────────────────────
         self._build_ui()

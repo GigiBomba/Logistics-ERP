@@ -304,7 +304,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Salut! Sunt asistentul tău AI Co-Pilot. Te pot ajuta cu vehicule, șoferi, rute, curse, clienți, documente, valută, urmărirea flotei și analize, și te pot ghida pas cu pas prin fluxurile de lucru. Încearcă să întrebi, de exemplu, 'găsește camioane disponibile' sau 'verifică orele șoferului'."
+                "greeting": "Salut! Sunt asistentul tău AI Co-Pilot. Te pot ajuta cu vehicule, șoferi, rute, curse, clienți, documente, valută, urmărirea flotei și analize, și te pot ghida pas cu pas prin fluxurile de lucru. Încearcă să întrebi, de exemplu, 'găsește camioane disponibile' sau 'verifică orele șoferului'.",
+                "answer_question": "Iată răspunsul la întrebarea ta.",
+                "guide_workflow": "Iată un ghid pas cu pas."
+            },
+            "error": "Îmi pare rău, nu am putut finaliza solicitarea. Încearcă din nou.",
+            "vehicle": {
+                "search": "Iată vehiculele care corespund căutării tale ({total_results} în total).",
+                "health_score": "Scorul de sănătate pentru vehiculul {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} are {available_hours_today} ore disponibile astăzi ({hours_worked_today} lucrate)."
+            },
+            "route": {
+                "calculate": "Ruta este de {distance_km} km și durează aproximativ {duration_min} minute.",
+                "estimate_cost": "Cost estimat: {total_cost} {currency} ({cost_per_km} per km).",
+                "plan_multistop": "Rută planificată cu {ordered_stops_count} opriri: {total_distance_km} km, aproximativ {total_duration_min} minute.",
+                "list": "Iată rutele tale salvate ({total} în total).",
+                "get": "Iată detaliile pentru ruta solicitată."
+            },
+            "trip": {
+                "calculate_profitability": "Profit estimat: {net_profit} (marjă de {margin_percent}%).",
+                "list": "Iată cursele tale ({total} în total).",
+                "get": "Iată detaliile pentru cursa solicitată."
+            },
+            "conversation": {
+                "recall_recent": "Iată ce am discutat recent ({total} subiecte)."
+            },
+            "client": {
+                "payment_summary": "Sumar plăți client: {total_billed} facturat, {total_paid} plătit, {unpaid} neplătit, {overdue} restant."
+            },
+            "document": {
+                "search": "Iată documentele găsite ({total} în total, pagina {page} din {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Cursul de schimb este {rate}.",
+                "convert": "Suma convertită: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Iată pozițiile live ale vehiculelor ({total_results} vehicule).",
+                "get_vehicle_history": "Istoricul pozițiilor pentru vehiculul {vehicle_id}: {total_results} puncte."
+            },
+            "analytics": {
+                "query": "Iată rezumatul de analiză solicitat."
             }
         },
         "world_model": {
@@ -2325,7 +2367,8 @@
         "cmr_generated_status": "generate",
         "cmr_trip_title": "Cursa CMR #{}",
         "cmr_copy_title": "Cursa CMR #{} - {} COPIE",
-        "doc_receipt_title": "Chitanță"
+        "doc_receipt_title": "Chitanță",
+        "doc_proforma_title": "Proformă"
     },
     "invoice_editor": {
         "select_client": "Client:",
@@ -2498,6 +2541,11 @@
         "select_stamp": "Selectează Imagine Ștampilă",
         "export_json": "Exportă JSON",
         "number_format": "Format Număr"
+    },
+    "proforma_pdf": {
+        "title": "FACTURĂ PROFORMĂ",
+        "watermark": "PROFORMĂ",
+        "disclaimer": "Aceasta este o factură proformă și nu constituie o factură fiscală."
     },
     "cmr": {
         "place_of_loading": "Locul Încărcării",

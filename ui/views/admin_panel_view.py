@@ -36,9 +36,12 @@ from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_NEUTRAL_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
     SP,
 )
 from ui.widgets import SectionHeader, StyledComboBox
@@ -51,9 +54,9 @@ logger = logging.getLogger(__name__)
 
 _STATUS_COLORS = {
     "ok": COLOR_SUCCESS_DEFAULT,
-    "error": "#ef4444",
-    "unavailable": "#6b7280",
-    "warning": "#f59e0b",
+    "error": COLOR_ERROR_DEFAULT,
+    "unavailable": COLOR_NEUTRAL_DEFAULT,
+    "warning": COLOR_WARNING_DEFAULT,
 }
 
 

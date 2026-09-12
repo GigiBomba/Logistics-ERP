@@ -1247,8 +1247,31 @@ class QtDriverManager(BaseView):
 
         try:
             from_date = datetime.now().date() - timedelta(days=28)
-            records = self._tacho_activity_repo.get_by_driver(driver_id, from_date)
+            repo = self._tacho_activity_repo
+            if repo is None and self.db is not None:
+                # Local fallback: build the tacho driver activity repo from db.
+                from repositories.tacho_driver_activity_repository import (
+                    TachoDriverActivityRepository,
+                )
+                records = TachoDriverActivityRepository(self.db).get_by_driver(
+                    driver_id, from_date
+                )
+            elif repo is None and (
+                self._dta_service is not None
+                and hasattr(self._dta_service, "get_tacho_activity")
+            ):
+                # Remote fallback: RemoteDriverService.get_tacho_activity takes an
+                # isoformat date string (backed by GET /drivers/{id}/tacho-activity).
+                records = self._dta_service.get_tacho_activity(
+                    driver_id, from_date.isoformat()
+                )
+            else:
+                records = repo.get_by_driver(driver_id, from_date)
         except Exception:
+            records = []
+
+        # Guard against non-list returns (e.g. MagicMock services in tests).
+        if not isinstance(records, list):
             records = []
 
         if not records:

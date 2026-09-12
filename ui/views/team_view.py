@@ -34,6 +34,7 @@ from ui.widgets import (
     StyledTableWidget,
     field,
 )
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,6 @@ class QtTeamView(BaseView):
 
         self._add_user(email, password, role, driver_plate)
         self._clear_form()
-        self._load_users()
 
     def _on_deactivate_user(self, row_data: dict[str, Any]) -> None:
         """Deactivate a user after user confirmation."""
@@ -319,50 +319,65 @@ class QtTeamView(BaseView):
             return
 
         self._deactivate_user(row_data)
-        self._load_users()
 
     # ── Placeholder API methods ───────────────────────────────────────────────
 
     def _load_users(self) -> None:
         """Fetch users from the API and populate the table.
 
-        Always hides the skeleton loading overlay (shown by ``BaseView.wakeup``)
-        on every exit path — otherwise the page stays stuck on the flat grey
-        skeleton forever.
+        The API/DB fetch runs on the WorkerPool so the retry/sleep backoff
+        never blocks the GUI thread; table population happens in the result
+        callback.  Always hides the skeleton loading overlay (shown by
+        ``BaseView.wakeup``) on every exit path — otherwise the page stays
+        stuck on the flat grey skeleton forever.
         """
-        rows: list[dict[str, Any]] = []
-        try:
-            try:
-                if self._api_client is not None:
-                    result = self._api_client.list_users()
-                    rows = result.get("items", [])
-                elif self._user_service is not None:
-                    rows = self._user_service.list_users()
-            except Exception as exc:
-                logger.error("Failed to load users: %s", exc)
 
-            has_rows = bool(rows)
-            self._table.setVisible(has_rows)
-            self._empty_state.setVisible(not has_rows)
-            if not has_rows:
+        def _fetch() -> list[dict[str, Any]]:
+            if self._api_client is not None:
+                result = self._api_client.list_users()
+                return result.get("items", [])
+            if self._user_service is not None:
+                return self._user_service.list_users()
+            return []
+
+        def _apply(rows: list[dict[str, Any]]) -> None:
+            if getattr(self, "_shutdown_flag", False):
                 return
+            try:
+                has_rows = bool(rows)
+                self._table.setVisible(has_rows)
+                self._empty_state.setVisible(not has_rows)
+                if not has_rows:
+                    return
 
-            self._table.set_data(rows)
-            self._table.restore_column_widths()
+                self._table.set_data(rows)
+                self._table.restore_column_widths()
 
-            # Add Deactivate buttons to each row's Actions column
-            actions_col = len(self._table._column_ids) - 1
-            for r in range(self._table.rowCount()):
-                row_data: dict[str, Any] = {}
-                if hasattr(self._table, '_data') and r < len(self._table._data):
-                    row_data = self._table._data[r]
-                deactivate_btn = Btn(self._table, t("team.deactivate"), variant="ghost", size="sm")
-                deactivate_btn.clicked.connect(
-                    lambda checked=False, rd=row_data: self._on_deactivate_user(rd)
-                )
-                self._table.setCellWidget(r, actions_col, deactivate_btn)
-        finally:
-            self._hide_loading()
+                # Add Deactivate buttons to each row's Actions column
+                actions_col = len(self._table._column_ids) - 1
+                for r in range(self._table.rowCount()):
+                    row_data: dict[str, Any] = {}
+                    if hasattr(self._table, '_data') and r < len(self._table._data):
+                        row_data = self._table._data[r]
+                    deactivate_btn = Btn(self._table, t("team.deactivate"), variant="ghost", size="sm")
+                    deactivate_btn.clicked.connect(
+                        lambda checked=False, rd=row_data: self._on_deactivate_user(rd)
+                    )
+                    self._table.setCellWidget(r, actions_col, deactivate_btn)
+            finally:
+                self._hide_loading()
+
+        def _fail(msg: str) -> None:
+            logger.error("Failed to load users: %s", msg)
+            if getattr(self, "_shutdown_flag", False):
+                return
+            try:
+                self._table.setVisible(False)
+                self._empty_state.setVisible(True)
+            finally:
+                self._hide_loading()
+
+        WorkerPool.run(fn=_fetch, on_result=_apply, on_error=_fail)
 
     def _add_user(
         self,
@@ -371,39 +386,93 @@ class QtTeamView(BaseView):
         role: str,
         driver_plate: str | None = None,
     ) -> None:
-        """Add a new user via the API or local database."""
-        try:
-            if self._api_client is not None:
-                display_name = email.split("@")[0]
+        """Add a new user via the API or local database.
+
+        The create call runs on the WorkerPool (remote) so the API
+        retry/sleep backoff never blocks the GUI thread; the success/error
+        message box and the follow-up user reload run on the GUI thread in
+        the completion callbacks.
+        """
+        if self._api_client is not None:
+            display_name = email.split("@")[0]
+
+            def _create():
                 self._api_client.create_user(
                     email=email.strip().lower(),
                     password=password,
                     role=role.lower(),
                     display_name=display_name,
                 )
-            elif self._user_service is not None:
+
+            def _done(_result):
+                if getattr(self, "_shutdown_flag", False):
+                    return
+                QMessageBox.information(self, t("team.success_title", "Success"), t("team.success_user_added"))
+                self._load_users()
+
+            def _fail(msg: str) -> None:
+                exc_text = msg.splitlines()[0] if msg else msg
+                logger.error("Failed to add user: %s", exc_text)
+                if getattr(self, "_shutdown_flag", False):
+                    return
+                QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_add", "Failed to add user: {}", exc_text))
+                self._load_users()
+
+            WorkerPool.run(fn=_create, on_result=_done, on_error=_fail)
+            return
+
+        if self._user_service is not None:
+            try:
                 display_name = email.split("@")[0]
                 self._user_service.create_user(
                     email.strip().lower(), password, role.lower(), display_name,
                 )
-            QMessageBox.information(self, t("team.success_title", "Success"), t("team.success_user_added"))
-        except Exception as exc:
-            logger.error("Failed to add user: %s", exc)
-            QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_add", "Failed to add user: {}", exc))
+                QMessageBox.information(self, t("team.success_title", "Success"), t("team.success_user_added"))
+            except Exception as exc:
+                logger.error("Failed to add user: %s", exc)
+                QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_add", "Failed to add user: {}", exc))
+            finally:
+                self._load_users()
+            return
+
+        self._load_users()
 
     def _deactivate_user(self, row_data: dict[str, Any]) -> None:
         """Deactivate a user via the API or local database."""
         user_id = row_data.get("id")
         if not user_id:
+            self._load_users()
             return
-        try:
-            if self._api_client is not None:
+        if self._api_client is not None:
+
+            def _deactivate():
                 self._api_client.deactivate_user(user_id)
-            elif self._user_service is not None:
+
+            def _done(_result):
+                self._load_users()
+
+            def _fail(msg: str) -> None:
+                exc_text = msg.splitlines()[0] if msg else msg
+                logger.error("Failed to deactivate user: %s", exc_text)
+                if getattr(self, "_shutdown_flag", False):
+                    return
+                QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_deactivate", "Failed to deactivate user: {}", exc_text))
+                self._load_users()
+
+            WorkerPool.run(fn=_deactivate, on_result=_done, on_error=_fail)
+            return
+
+        if self._user_service is not None:
+            try:
                 self._user_service.deactivate_user(user_id)
-        except Exception as exc:
-            logger.error("Failed to deactivate user: %s", exc)
-            QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_deactivate", "Failed to deactivate user: {}", exc))
+            except Exception as exc:
+                logger.error("Failed to deactivate user: %s", exc)
+                QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_deactivate", "Failed to deactivate user: {}", exc))
+            finally:
+                self._load_users()
+            return
+
+        self._load_users()
 
     # ── Form helpers ──────────────────────────────────────────────────────────
 

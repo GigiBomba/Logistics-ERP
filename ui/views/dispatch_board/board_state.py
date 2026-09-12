@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QMutex, QMutexLocker, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from services.i18n import t
@@ -59,11 +60,74 @@ DELIVERED_INITIAL_MAX = 4
 TRIP_LOAD_LIMIT = 500
 TRIP_LOAD_LIMIT_SHOW_ALL = 2000
 
+# Full active-alert re-fetch cadence (seconds).  Per-card badge counts are
+# maintained incrementally from ALERT_CREATED / ALERT_RESOLVED events (both
+# carry the alert's trip_id); the 2000-alert ``ops.get_active_alerts`` fetch
+# is issued only on the first load and every ``ALERT_FULL_REFRESH_SECONDS``
+# thereafter (~5 min at the 30s board auto-refresh cadence) to bound
+# staleness without re-fetching the whole set every 30s cycle.
+ALERT_FULL_REFRESH_SECONDS = 300
+
 
 class BoardStateMixin:
     """Mixin providing data loading, filtering, search, and cache logic."""
 
     _delivered_show_all: bool = False
+
+    # ── Thread-safe alert-count accessors ────────────────────────────────────
+    #
+    # ``_alert_counts`` is shared between the GUI thread (alert event
+    # handlers, card rendering) and background workers (board load,
+    # post-resolve alert refresh on the WorkerPool).  Every read-modify-write
+    # or dict swap below happens under ``self._alert_lock()``; the expensive
+    # alert fetches themselves run *before* the lock is taken.
+
+    def _alert_lock(self):
+        """Return the ``QMutex`` guarding ``_alert_counts``.
+
+        ``QtDispatchBoardView.__init__`` creates ``_alert_counts_lock``
+        eagerly; lighter mixin-only instances (test widgets, bare harnesses)
+        rely on this lazy helper to create it on first access and stash it on
+        ``self``.
+        """
+        lock = getattr(self, "_alert_counts_lock", None)
+        if lock is None:
+            lock = QMutex()
+            self._alert_counts_lock = lock
+        return lock
+
+    def _get_alert_count(self, trip_id: int, default: int = 0) -> int:
+        """Locked read of the current alert count for ``trip_id``."""
+        with QMutexLocker(self._alert_lock()):
+            return int(getattr(self, "_alert_counts", {}).get(trip_id, default))
+
+    def _replace_alert_counts(self, counts: dict[int, int]) -> None:
+        """Atomically swap in a freshly-built alert-count dict.
+
+        Callers must build ``counts`` *before* calling — the full alert fetch
+        happens outside the lock; only the dict-reference swap is guarded, so
+        incremental ALERT_CREATED / ALERT_RESOLVED bumps can never be lost or
+        double-counted against the rebuilt set.
+        """
+        with QMutexLocker(self._alert_lock()):
+            self._alert_counts = counts
+
+    def _bump_alert_count(self, trip_id: int, delta: int) -> int:
+        """Apply ``delta`` to the alert count for ``trip_id`` and return the
+        new value (never below zero).
+
+        The read-modify-write runs atomically under the lock, so concurrent
+        GUI-thread event handlers and background refreshes never lose an
+        increment/decrement.
+        """
+        with QMutexLocker(self._alert_lock()):
+            counts = getattr(self, "_alert_counts", None)
+            if counts is None:
+                counts = {}
+                self._alert_counts = counts
+            new_count = max(0, int(counts.get(trip_id, 0)) + delta)
+            counts[trip_id] = new_count
+            return new_count
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -72,7 +136,13 @@ class BoardStateMixin:
             if self._loading:
                 return
             self._loading = True
-            self._alert_counts.clear()
+            # ``_alert_counts`` is deliberately NOT cleared here: the per-card
+            # badge counts are maintained incrementally via the ALERT_CREATED /
+            # ALERT_RESOLVED event handlers and only rebuilt from a full fetch
+            # on a slow cadence (see ``_maybe_refresh_alert_counts``).
+            # ``_cycle_trips`` is reset so a stale trip list can never be
+            # reused by a conflict scan if this load fails before populating it.
+            self._cycle_trips = None
             if self.ops:
                 pass  # Keep undo stack intact across refreshes
             self._show_dispatch_skeleton()
@@ -158,7 +228,7 @@ class BoardStateMixin:
     def _load_data_background(self) -> None:
         with PerfTimer("dispatch_board.load_data"):
             try:
-                self._preload_alerts()
+                self._maybe_refresh_alert_counts()
 
                 # Remote mode: no local TripService — board data comes from
                 # the injected remote dispatch service instead.
@@ -177,7 +247,17 @@ class BoardStateMixin:
                         if self._delivered_show_all
                         else TRIP_LOAD_LIMIT
                     )
-                    all_trips = self._trip_service.get_by_statuses(all_statuses, limit=limit)
+                    # One fetch per cycle (B4): ``get_all`` returns the same
+                    # created_at-DESC ordering ``get_by_statuses`` used, so the
+                    # board columns are derived by filtering to the known
+                    # statuses and slicing to the per-load cap — the displayed
+                    # board is unchanged.  The full result is cached on
+                    # ``self._cycle_trips`` and reused by the conflict scan,
+                    # which previously issued a second ``get_all(limit=2000)``
+                    # right after this load's own fetch.
+                    fetched = self._trip_service.get_all(limit=TRIP_LOAD_LIMIT_SHOW_ALL)
+                    self._cycle_trips = fetched
+                    all_trips = [t for t in fetched if t.get("status") in all_statuses][:limit]
 
                 # Batch-resolve driver names and route stops into the caches so
                 # ``_build_card_data`` performs zero per-card DB queries (N+1
@@ -298,10 +378,18 @@ class BoardStateMixin:
         return card
 
     def _preload_alerts(self) -> None:
+        """Rebuild ``_alert_counts`` from the full active-alert set.
+
+        Called on the slow cadence (see ``_maybe_refresh_alert_counts``) and
+        after a user resolves an alert.  The dict is replaced (not
+        accumulated) so callers never double-count when the fetch runs on
+        top of incremental ALERT_CREATED / ALERT_RESOLVED event updates.
+        """
         if not self.ops:
             return
         try:
             alerts = self.ops.get_active_alerts(limit=2000)
+            counts: dict[int, int] = {}
             for alert in alerts:
                 trip_id = getattr(alert, "trip_id", None)
                 if trip_id is not None:
@@ -309,9 +397,28 @@ class BoardStateMixin:
                         tid = int(trip_id)
                     except (ValueError, TypeError):
                         continue
-                    self._alert_counts[tid] = self._alert_counts.get(tid, 0) + 1
+                    counts[tid] = counts.get(tid, 0) + 1
+            self._replace_alert_counts(counts)
         except Exception:
             logger.debug("Could not preload alerts", exc_info=True)
+
+    def _maybe_refresh_alert_counts(self) -> None:
+        """Rebuild per-trip badge counts from a full fetch on a slow cadence only.
+
+        ``_alert_counts`` is otherwise maintained incrementally by the
+        ALERT_CREATED / ALERT_RESOLVED event handlers (both events carry the
+        alert's ``trip_id``), so the 2000-alert fetch is issued only on the
+        first load and every ``ALERT_FULL_REFRESH_SECONDS`` thereafter instead
+        of on every 30s board cycle.
+        """
+        if not self.ops:
+            return
+        now = time.time()
+        last = getattr(self, "_last_alert_full_fetch_ts", 0.0)
+        if last and (now - last) < ALERT_FULL_REFRESH_SECONDS:
+            return
+        self._last_alert_full_fetch_ts = now
+        self._preload_alerts()
 
     def _build_card_data(self, trip: dict[str, Any]) -> dict[str, Any]:
         trip_id = trip.get("id", 0)
@@ -330,7 +437,7 @@ class BoardStateMixin:
         eta = trip.get("end_date", "") or ""
         promised_date = trip.get("promised_date", "") or ""
 
-        alerts_count = self._alert_counts.get(trip_id, 0)
+        alerts_count = self._get_alert_count(trip_id)
 
         return {
             "trip_id": f"{t('dispatch_board.trip_id_prefix')}{trip_id}",
@@ -482,11 +589,23 @@ class BoardStateMixin:
             self._all_card_data = all_cards
             self._update_status_counts(column_trips)
 
-            QTimer.singleShot(100, self._evaluate_all_delays)
-            QTimer.singleShot(200, self._refresh_live_indicators)
-            QTimer.singleShot(500, self._run_conflict_scan)
-            QTimer.singleShot(600, self._refresh_side_panels)
-            QTimer.singleShot(700, self._apply_filters)
+            QTimer.singleShot(100, self._run_post_load_tasks)
+
+    def _run_post_load_tasks(self) -> None:
+        """Run the post-load board updates in their canonical order.
+
+        Consolidates the previous five staggered ``QTimer.singleShot``
+        calls (100/200/500/600/700 ms) into a single timer.  The methods
+        have no data dependency on each other — each reads ``_all_card_data``
+        and the card widgets already populated by ``_populate_columns`` —
+        so running them back-to-back preserves behavior with one timer
+        instead of five.
+        """
+        self._evaluate_all_delays()
+        self._refresh_live_indicators()
+        self._run_conflict_scan()
+        self._refresh_side_panels()
+        self._apply_filters()
 
     def _update_status_counts(self, column_trips: dict[str, list[dict[str, Any]]]) -> None:
         # TODO: _status_cards is never populated — the status count summary
@@ -637,7 +756,14 @@ class BoardStateMixin:
         trip_conflict_map: dict[int, list] = {}
         conflict_found = False
         try:
-            all_trips = self._trip_service.get_all(limit=2000)
+            # B4: reuse the trips fetched by the board load for this cycle
+            # (cached on ``self._cycle_trips``) instead of issuing a second
+            # full ``get_all(limit=2000)`` right after the load's own fetch.
+            # Falls back to a fresh fetch only when no load cycle populated
+            # the cache (e.g. the scan is invoked outside a load cycle).
+            all_trips = getattr(self, "_cycle_trips", None)
+            if all_trips is None:
+                all_trips = self._trip_service.get_all(limit=2000)
             active_trips = [
                 t for t in all_trips
                 if t.get("status", "") not in (

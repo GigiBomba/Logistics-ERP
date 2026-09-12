@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import IntEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 
 class ConfirmationLevel(IntEnum):
@@ -42,7 +42,7 @@ class ExecutionStep:
     parameters: Dict[str, Any] = field(default_factory=dict)
     depends_on: List[str] = field(default_factory=list)
     confirmation_level: ConfirmationLevel = ConfirmationLevel.SAFE
-    status: str = "pending"
+    status: Literal["pending", "running", "paused", "succeeded", "failed", "skipped", "stopped", "awaiting_confirmation"] = "pending"
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     started_at: Optional[datetime] = None

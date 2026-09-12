@@ -15,6 +15,7 @@ large fleets this is bounded by the ``limit`` argument.
 from __future__ import annotations
 
 import logging
+from functools import partial
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -34,8 +35,20 @@ from ui.components import EmptyState
 
 from services.i18n import t
 from ui.design_tokens import SP
+from ui.dialogs._trip_format_helpers import _format_trip as _format_trip_shared
 
 logger = logging.getLogger(__name__)
+
+# Picker-dialog variant of the shared row formatter: shows only
+# ``truck_plate`` (no truck-number fallback) and the full
+# ``departure_date``.  Kept as a module-level ``_format_trip`` so the
+# existing call site stays unchanged.
+_format_trip = partial(
+    _format_trip_shared,
+    include_truck_number=False,
+    date_key="departure_date",
+    date_slice=None,
+)
 
 
 class QtTripPickerDialog(QDialog):
@@ -224,23 +237,3 @@ def _trip_search_blob(t: dict[str, Any]) -> str:
         if v is not None and v != "":
             parts.append(str(v))
     return " ".join(parts)
-
-
-def _format_trip(t: dict[str, Any]) -> tuple:
-    """Return ``(primary_label, sublabel)`` for a trip row."""
-    tid = t.get("id", "?")
-    origin = t.get("origin") or t.get("origin_city") or ""
-    destination = t.get("destination") or t.get("destination_city") or ""
-    primary = f"#{tid}  {origin} → {destination}" if origin and destination else f"#{tid}"
-    sub_bits: list[str] = []
-    if t.get("truck_plate"):
-        sub_bits.append(str(t["truck_plate"]))
-    if t.get("driver_name"):
-        sub_bits.append(str(t["driver_name"]))
-    if t.get("client_name"):
-        sub_bits.append(str(t["client_name"]))
-    if t.get("status"):
-        sub_bits.append(str(t["status"]))
-    if t.get("departure_date"):
-        sub_bits.append(str(t["departure_date"]))
-    return primary, "  •  ".join(sub_bits)

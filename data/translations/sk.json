@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Tu je odpoveď na vašu otázku.",
+                "guide_workflow": "Tu je návod krok za krokom."
+            },
+            "error": "Ospravedlňujem sa, nepodarilo sa mi dokončiť požiadavku. Skúste to znova.",
+            "vehicle": {
+                "search": "Tu sú vozidlá, ktoré zodpovedajú vášmu vyhľadávaniu ({total_results} celkovo).",
+                "health_score": "Skóre stavu vozidla {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} má dnes {available_hours_today} hodín k dispozícii ({hours_worked_today} odpracovaných)."
+            },
+            "route": {
+                "calculate": "Trasa má {distance_km} km a trvá približne {duration_min} minút.",
+                "estimate_cost": "Odhadované náklady: {total_cost} {currency} ({cost_per_km} za km).",
+                "plan_multistop": "Naplánovaná trasa s {ordered_stops_count} zastávkami: {total_distance_km} km, približne {total_duration_min} minút.",
+                "list": "Tu sú vaše uložené trasy ({total} celkovo).",
+                "get": "Tu sú podrobnosti požadovanej trasy."
+            },
+            "trip": {
+                "calculate_profitability": "Odhadovaný zisk: {net_profit} (marža {margin_percent}%).",
+                "list": "Tu sú vaše jazdy ({total} celkovo).",
+                "get": "Tu sú podrobnosti požadovanej jazdy."
+            },
+            "conversation": {
+                "recall_recent": "Tu je zhrnutie našej nedávnej konverzácie ({total} tém)."
+            },
+            "client": {
+                "payment_summary": "Súhrn platieb klienta: {total_billed} fakturované, {total_paid} zaplatené, {unpaid} nezaplatené, {overdue} po splatnosti."
+            },
+            "document": {
+                "search": "Tu sú nájdené dokumenty ({total} celkovo, strana {page} z {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Výmenný kurz je {rate}.",
+                "convert": "Prevedená suma: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Tu sú živé polohy vozidiel ({total_results} vozidiel).",
+                "get_vehicle_history": "História polôh vozidla {vehicle_id}: {total_results} bodov."
+            },
+            "analytics": {
+                "query": "Tu je požadované analytické zhrnutie."
             }
         },
         "world_model": {

@@ -113,6 +113,23 @@ class FinancialAnalyticsTab(BaseTab):
             (unpaid / max(total_rev, 1)) * max(self._days(), 30)
         ) if total_rev > 0 else 0
 
+        # DSO trend sparkline: recompute the estimator per month over the
+        # trailing 12-month series (months with no revenue -> 0 days).
+        dso_series: list[int] = []
+        for _row in spark_monthly:
+            _row_rev = self._safe_float(_row.get("revenue", 0))
+            _row_unpaid = max(
+                int(_row.get("invoiced_count", 0) or 0)
+                - int(_row.get("paid_count", 0) or 0),
+                0,
+            )
+            if _row_rev > 0:
+                dso_series.append(round(
+                    (_row_unpaid / max(_row_rev, 1)) * max(self._days(), 30)
+                ))
+            else:
+                dso_series.append(0)
+
         # Margin progress bar: fill = current margin / 30% target
         margin_pct_clamped = min(max(last_margin, 0), 30)
 
@@ -142,7 +159,7 @@ class FinancialAnalyticsTab(BaseTab):
                  COLOR_SUCCESS_DEFAULT if dso_days <= 30 else COLOR_INFO_DEFAULT
              ),
              "subtitle": t("analytics.kpi_dso_subtitle", default="Avg collection period"),
-             "sparkline_values": [],
+             "sparkline_values": dso_series,
              "sparkline_color": CHART_INFO},
          ])
 

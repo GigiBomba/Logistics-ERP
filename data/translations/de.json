@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Hier ist die Antwort auf Ihre Frage.",
+                "guide_workflow": "Hier ist eine Schritt-für-Schritt-Anleitung."
+            },
+            "error": "Entschuldigung, ich konnte die Anfrage nicht abschließen. Bitte versuchen Sie es erneut.",
+            "vehicle": {
+                "search": "Hier sind die Fahrzeuge, die zu Ihrer Suche passen ({total_results} insgesamt).",
+                "health_score": "Gesundheitswert für Fahrzeug {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} hat heute {available_hours_today} Stunden verfügbar ({hours_worked_today} gearbeitet)."
+            },
+            "route": {
+                "calculate": "Die Route ist {distance_km} km lang und dauert etwa {duration_min} Minuten.",
+                "estimate_cost": "Geschätzte Kosten: {total_cost} {currency} ({cost_per_km} pro km).",
+                "plan_multistop": "Geplante Route mit {ordered_stops_count} Stopps: {total_distance_km} km, etwa {total_duration_min} Minuten.",
+                "list": "Hier sind Ihre gespeicherten Routen ({total} insgesamt).",
+                "get": "Hier sind die Details der angefragten Route."
+            },
+            "trip": {
+                "calculate_profitability": "Geschätzter Gewinn: {net_profit} (Marge {margin_percent}%).",
+                "list": "Hier sind Ihre Touren ({total} insgesamt).",
+                "get": "Hier sind die Details der angefragten Tour."
+            },
+            "conversation": {
+                "recall_recent": "Hier ist, was wir zuletzt besprochen haben ({total} Themen)."
+            },
+            "client": {
+                "payment_summary": "Zahlungsübersicht Kunde: {total_billed} berechnet, {total_paid} bezahlt, {unpaid} offen, {overdue} überfällig."
+            },
+            "document": {
+                "search": "Hier sind die gefundenen Dokumente ({total} insgesamt, Seite {page} von {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Der Wechselkurs ist {rate}.",
+                "convert": "Umgerechneter Betrag: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Hier sind die Live-Positionen der Fahrzeuge ({total_results} Fahrzeuge).",
+                "get_vehicle_history": "Positionsverlauf für Fahrzeug {vehicle_id}: {total_results} Punkte."
+            },
+            "analytics": {
+                "query": "Hier ist die angeforderte Analyse-Zusammenfassung."
             }
         },
         "world_model": {

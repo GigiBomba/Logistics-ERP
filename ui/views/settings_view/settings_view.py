@@ -78,6 +78,13 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         super().__init__(parent)
         self.db = db
         self._api_client = api_client
+        self._remote_settings = None
+        if self._api_client is not None:
+            try:
+                from client.remote_settings import RemoteSettingsService
+                self._remote_settings = RemoteSettingsService(self._api_client)
+            except Exception:
+                self._remote_settings = None
         self.prefs = prefs or PreferencesManager(db)
         self.ops = ops
         if self._api_client is not None:
@@ -125,6 +132,24 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         # ── Build UI ─────────────────────────────────────────────────────
         self._build_ui()
         self._register_i18n(self._language_callback)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Company config loading
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _load_company_config_cached(self) -> dict:
+        """Load the initial company/branding config for the settings form.
+
+        Overrides ``SettingsFieldsMixin._load_company_config_cached`` so the
+        module-level cache is only used in local mode.  In remote mode the
+        fields are populated from the server config instead.
+        """
+        if self._remote_settings is not None:
+            try:
+                return self._remote_settings.get_company_config()
+            except Exception:
+                return {}
+        return super()._load_company_config_cached()
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Lifecycle
@@ -291,7 +316,18 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         }
         for k, e in self.branding_inputs.items():
             company_data[k] = e.text()
-        save_company_config(company_data)
+        if self._remote_settings is not None:
+            try:
+                self._remote_settings.save_company_config(company_data)
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    t("common.error"),
+                    str(exc),
+                )
+                return
+        else:
+            save_company_config(company_data)
 
         # ── Preferences ─────────────────────────────────────────────────
         if self._lang_combo is not None:
@@ -474,7 +510,13 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
     def _reset(self) -> None:
         """Reload all field values from persisted config (discard edits)."""
         # Company
-        conf = load_company_config()
+        if self._remote_settings is not None:
+            try:
+                conf = self._remote_settings.get_company_config()
+            except Exception:
+                conf = {}
+        else:
+            conf = load_company_config()
         for key, entry in self.company_inputs.items():
             entry.setText(conf.get(key, ""))
 

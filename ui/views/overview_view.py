@@ -215,6 +215,12 @@ class QtOverviewView(BaseView):
         self._selected_chart: dict[str, str] | None = None
         self._pick_random_content()
 
+        # Single-shot debounce timer reused by data-change events (A7) so
+        # each event doesn't allocate a fresh QTimer.
+        self._data_change_timer = QTimer(self)
+        self._data_change_timer.setSingleShot(True)
+        self._data_change_timer.timeout.connect(self.refresh)
+
         self._build_ui()
         self._subscribe_events()
         self.refresh()
@@ -719,11 +725,21 @@ class QtOverviewView(BaseView):
     def _refresh_alerts(self):
         self._clear_layout(self._alerts_layout)
 
-        alerts = []
-        if self.ops:
-            with contextlib.suppress(Exception):
-                alerts = self.ops.get_active_alerts(limit=5)
+        if not self.ops:
+            self._render_alerts([])
+            return
 
+        def _fetch():
+            # DB/network read runs off the GUI thread (B1).
+            return self.ops.get_active_alerts(limit=5)
+
+        WorkerPool.run(
+            fn=_fetch,
+            on_result=self._render_alerts,
+            on_error=lambda msg: self._render_alerts([]),
+        )
+
+    def _render_alerts(self, alerts):
         if not alerts:
             empty = EmptyState(
                 None,
@@ -1285,10 +1301,7 @@ class QtOverviewView(BaseView):
                 self._handlers[ev_type] = handler
 
     def _on_data_changed(self, ev):
-        _timer = QTimer(self)
-        _timer.setSingleShot(True)
-        _timer.timeout.connect(self.refresh)
-        _timer.start(0)
+        self._data_change_timer.start(0)
 
     def _on_language_changed(self, lang: str):
         _timer = QTimer(self)

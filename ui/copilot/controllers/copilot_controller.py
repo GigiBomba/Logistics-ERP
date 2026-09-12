@@ -496,8 +496,8 @@ class CoPilotController(QObject):
                 pass
             try:
                 self._ws.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("CoPilot WebSocket close failed: %s", exc)
             self._ws = None
 
     def _on_ws_connected(self) -> None:
@@ -581,8 +581,8 @@ class CoPilotController(QObject):
             try:
                 self._ws_reconnect_task.stop()
                 self._ws_reconnect_task.deleteLater()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("CoPilot WebSocket reconnect task teardown failed: %s", exc)
             self._ws_reconnect_task = None
 
     # ── Insights ─────────────────────────────────────────────────────
@@ -746,7 +746,8 @@ class CoPilotController(QObject):
         try:
             state = player._player.playbackState()
             return int(state) == 1  # QMediaPlayer.PlaybackState.PlayingState
-        except Exception:
+        except Exception as exc:
+            logger.warning("TTS playback state check failed: %s", exc)
             return False
 
     # ── Wake-word monitoring (Enterprise hands-free voice) ────────────

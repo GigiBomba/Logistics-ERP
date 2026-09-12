@@ -35,6 +35,7 @@ class CoPilotView(QWidget):
         self._controller = controller
         self._i18n_callback = self._on_language_changed
         self._panel: CoPilotPanel | None = None
+        self._queue_widget: QWidget | None = None
 
         self._build_ui()
 
@@ -49,6 +50,20 @@ class CoPilotView(QWidget):
         """Forward an 'Ask AI' question to the Co-Pilot panel (§34.12)."""
         if self._panel is not None:
             self._panel.ask_about_element(question, active_screen)
+
+    def mount_insight_queue(self, queue: QWidget) -> None:
+        """Attach the insight queue widget below the chat panel.
+
+        The queue is hidden by default and shown only when the user toggles
+        it via the panel header button.
+        """
+        self._queue_widget = queue
+        layout = self.layout()
+        if layout is not None:
+            layout.addWidget(queue)
+        queue.setVisible(False)
+        if self._panel is not None:
+            self._panel.insights_toggled.connect(queue.setVisible)
 
     def wakeup(self) -> None:
         """Called when the view becomes active."""

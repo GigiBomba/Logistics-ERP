@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -36,11 +37,23 @@ from ui.components import EmptyState
 from services.i18n import t
 from services.trip_service import TripService
 from ui.design_tokens import SP
+from ui.dialogs._trip_format_helpers import _format_trip as _format_trip_shared
 
 logger = logging.getLogger(__name__)
 
 SEARCH_LIMIT = 200
 DEFAULT_RANGE_DAYS = 90
+
+# Search-dialog variant of the shared row formatter: falls back to
+# ``truck_number`` when the plate is empty and shows the (date-sliced)
+# ``start_date``.  Kept as a module-level ``_format_trip`` so call sites
+# and tests that import it stay unchanged.
+_format_trip = partial(
+    _format_trip_shared,
+    include_truck_number=True,
+    date_key="start_date",
+    date_slice=10,
+)
 
 
 class QtTripSearchDialog(QDialog):
@@ -295,23 +308,3 @@ def _trip_date_in_range(t: dict[str, Any], from_date: str, to_date: str) -> bool
         return True  # no date → include
     trip_date = sd[:10]
     return from_date <= trip_date <= to_date
-
-
-def _format_trip(t: dict[str, Any]) -> tuple:
-    """Return ``(primary_label, sublabel)`` for a trip row."""
-    tid = t.get("id", "?")
-    origin = t.get("origin") or t.get("origin_city") or ""
-    destination = t.get("destination") or t.get("destination_city") or ""
-    primary = f"#{tid}  {origin} → {destination}" if origin and destination else f"#{tid}"
-    sub_bits: list[str] = []
-    if t.get("truck_plate") or t.get("truck_number"):
-        sub_bits.append(str(t.get("truck_plate") or t.get("truck_number")))
-    if t.get("driver_name"):
-        sub_bits.append(str(t["driver_name"]))
-    if t.get("client_name"):
-        sub_bits.append(str(t["client_name"]))
-    if t.get("status"):
-        sub_bits.append(str(t["status"]))
-    if t.get("start_date"):
-        sub_bits.append(str(t["start_date"])[:10])
-    return primary, "  •  ".join(sub_bits)

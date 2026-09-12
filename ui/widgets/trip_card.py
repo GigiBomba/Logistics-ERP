@@ -90,6 +90,10 @@ class QtTripCard(QFrame):
     CARD_BORDER_HOVER = COLOR_ACCENT_PRIMARY
     LEFT_ACCENT_WIDTH = 4
 
+    # Kept local (not canonical STATUS_COLORS): keys are display-form status
+    # strings ("In Transit", "Loading" — the latter has no canonical key) and
+    # values are SUBTLE chip-background tokens, which canonical STATUS_COLORS
+    # does not provide.  Values already derive from ui.design_tokens.
     STATUS_COLORS = {
         "Planned": COLOR_ACCENT_SUBTLE,
         "Loading": COLOR_WARNING_SUBTLE,

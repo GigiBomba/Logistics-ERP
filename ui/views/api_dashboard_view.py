@@ -20,7 +20,12 @@ from PySide6.QtWidgets import (
 from client.api_client import ApiClient
 from services.i18n import t
 from ui.components import Btn
-from ui.design_tokens import COLOR_SUCCESS_DEFAULT, SP
+from ui.design_tokens import (
+    COLOR_ERROR_DEFAULT,
+    COLOR_NEUTRAL_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    SP,
+)
 from ui.widgets import SectionHeader
 from ui.worker_pool import WorkerPool
 
@@ -29,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 _STATUS_STYLES = {
     "online": f"color: {COLOR_SUCCESS_DEFAULT}; font-weight: bold;",
-    "offline": "color: #ef4444; font-weight: bold;",
-    "unknown": "color: #6b7280; font-style: italic;",
+    "offline": f"color: {COLOR_ERROR_DEFAULT}; font-weight: bold;",
+    "unknown": f"color: {COLOR_NEUTRAL_DEFAULT}; font-style: italic;",
 }
 
 
@@ -82,7 +87,7 @@ class QtApiDashboardView(QWidget):
         self._build_ui()
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_status)
-        self._refresh_timer.start(5000)
+        self._refresh_timer.start(30_000)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)

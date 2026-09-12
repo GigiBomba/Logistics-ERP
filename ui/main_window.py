@@ -31,6 +31,7 @@ from ui.design_tokens import (
     WINDOW_MIN_WIDTH,
 )
 from ui.mode_guard import ConnectionMode, detect_mode
+from ui.worker_pool import WorkerPool
 from services.fleet_service import FleetService
 from services.exchange_rate_service import ExchangeRateService
 from services.fuel_price_service import FuelPriceService
@@ -804,9 +805,7 @@ class MainWindow(QMainWindow):
                 api_client=self._api_client,
                 controller=controller,
             )
-            layout = view.layout()
-            if layout is not None:
-                layout.addWidget(queue)
+            view.mount_insight_queue(queue)
             # Load the queue's data off the creation path.
             QTimer.singleShot(0, queue.refresh)
         except Exception:
@@ -1085,15 +1084,35 @@ class MainWindow(QMainWindow):
         _timer.start(0)
 
     def _refresh_alerts(self):
-        """Query OperationsEngine for active alerts and push to top bar."""
-        try:
-            if self.ops is not None:
-                alerts = self.ops.get_active_alerts(limit=50)
-                count = self.ops.get_active_alert_count()
+        """Query OperationsEngine for active alerts and push to top bar.
+
+        The two ops reads (alerts list + count) run on the WorkerPool so the
+        DB/network I/O never blocks the GUI thread; the count is kept as a
+        separate call because ``get_active_alerts(limit=50)`` is capped at 50
+        while ``get_active_alert_count`` reflects the true total (badge
+        semantics differ when more than 50 alerts are active).
+        """
+        if self.ops is None:
+            return
+
+        def _fetch():
+            alerts = self.ops.get_active_alerts(limit=50)
+            count = self.ops.get_active_alert_count()
+            return alerts, count
+
+        def _apply(result):
+            try:
+                alerts, count = result
                 self.app_shell.set_alert_count(count)
                 self.app_shell.top_bar.set_alerts(alerts)
-        except Exception:
-            logger.debug("Could not refresh alerts", exc_info=True)
+            except Exception:
+                logger.debug("Could not refresh alerts", exc_info=True)
+
+        WorkerPool.run(
+            fn=_fetch,
+            on_result=_apply,
+            on_error=lambda msg: logger.debug("Could not refresh alerts: %s", msg),
+        )
 
     def closeEvent(self, event):
         if self._page_anim is not None:

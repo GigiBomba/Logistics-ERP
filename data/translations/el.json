@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Ορίστε η απάντηση στην ερώτησή σας.",
+                "guide_workflow": "Ορίστε ένας οδηγός βήμα προς βήμα."
+            },
+            "error": "Λυπάμαι, δεν μπόρεσα να ολοκληρώσω το αίτημα. Δοκιμάστε ξανά.",
+            "vehicle": {
+                "search": "Ορίστε τα οχήματα που ταιριάζουν στην αναζήτησή σας ({total_results} συνολικά).",
+                "health_score": "Βαθμολογία κατάστασης οχήματος {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "Ο/Η {driver_name} έχει {available_hours_today} διαθέσιμες ώρες σήμερα ({hours_worked_today} εργασθείσες)."
+            },
+            "route": {
+                "calculate": "Η διαδρομή είναι {distance_km} χλμ και διαρκεί περίπου {duration_min} λεπτά.",
+                "estimate_cost": "Εκτιμώμενο κόστος: {total_cost} {currency} ({cost_per_km} ανά χλμ).",
+                "plan_multistop": "Προγραμματισμένη διαδρομή με {ordered_stops_count} στάσεις: {total_distance_km} χλμ, περίπου {total_duration_min} λεπτά.",
+                "list": "Ορίστε οι αποθηκευμένες διαδρομές σας ({total} συνολικά).",
+                "get": "Ορίστε οι λεπτομέρειες της ζητούμενης διαδρομής."
+            },
+            "trip": {
+                "calculate_profitability": "Εκτιμώμενο κέρδος: {net_profit} (περιθώριο {margin_percent}%).",
+                "list": "Ορίστε τα δρομολόγιά σας ({total} συνολικά).",
+                "get": "Ορίστε οι λεπτομέρειες του ζητούμενου δρομολογίου."
+            },
+            "conversation": {
+                "recall_recent": "Ορίστε τι συζητήσαμε πρόσφατα ({total} θέματα)."
+            },
+            "client": {
+                "payment_summary": "Σύνοψη πληρωμών πελάτη: {total_billed} τιμολογήθηκαν, {total_paid} πληρώθηκαν, {unpaid} απλήρωτα, {overdue} εκπρόθεσμα."
+            },
+            "document": {
+                "search": "Ορίστε τα έγγραφα που βρέθηκαν ({total} συνολικά, σελίδα {page} από {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Η ισοτιμία είναι {rate}.",
+                "convert": "Μετατρεπόμενο ποσό: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Ορίστε οι ζωντανές θέσεις των οχημάτων ({total_results} οχήματα).",
+                "get_vehicle_history": "Ιστορικό θέσεων οχήματος {vehicle_id}: {total_results} σημεία."
+            },
+            "analytics": {
+                "query": "Ορίστε η ζητούμενη αναλυτική σύνοψη."
             }
         },
         "world_model": {

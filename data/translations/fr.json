@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Voici la réponse à votre question.",
+                "guide_workflow": "Voici un guide étape par étape."
+            },
+            "error": "Désolé, je n'ai pas pu terminer cette demande. Veuillez réessayer.",
+            "vehicle": {
+                "search": "Voici les véhicules correspondant à votre recherche ({total_results} au total).",
+                "health_score": "Score de santé du véhicule {vehicle_id} : {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} a {available_hours_today} heures disponibles aujourd'hui ({hours_worked_today} travaillées)."
+            },
+            "route": {
+                "calculate": "L'itinéraire fait {distance_km} km et dure environ {duration_min} minutes.",
+                "estimate_cost": "Coût estimé : {total_cost} {currency} ({cost_per_km} par km).",
+                "plan_multistop": "Itinéraire planifié avec {ordered_stops_count} arrêts : {total_distance_km} km, environ {total_duration_min} minutes.",
+                "list": "Voici vos itinéraires enregistrés ({total} au total).",
+                "get": "Voici les détails de l'itinéraire demandé."
+            },
+            "trip": {
+                "calculate_profitability": "Bénéfice estimé : {net_profit} (marge de {margin_percent}%).",
+                "list": "Voici vos trajets ({total} au total).",
+                "get": "Voici les détails du trajet demandé."
+            },
+            "conversation": {
+                "recall_recent": "Voici ce dont nous avons parlé récemment ({total} sujets)."
+            },
+            "client": {
+                "payment_summary": "Résumé des paiements du client : {total_billed} facturé, {total_paid} payé, {unpaid} impayé, {overdue} en retard."
+            },
+            "document": {
+                "search": "Voici les documents trouvés ({total} au total, page {page} sur {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Le taux de change est de {rate}.",
+                "convert": "Montant converti : {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Voici les positions en direct des véhicules ({total_results} véhicules).",
+                "get_vehicle_history": "Historique des positions du véhicule {vehicle_id} : {total_results} points."
+            },
+            "analytics": {
+                "query": "Voici le résumé analytique demandé."
             }
         },
         "world_model": {

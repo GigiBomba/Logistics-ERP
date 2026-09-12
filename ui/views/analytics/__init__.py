@@ -294,9 +294,15 @@ class QtAnalyticsView(QWidget):
         self._shutting_down = True
         with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
+            # Stop the refresh-button spin animation (hasattr-guarded; no-op
+            # when the spin was never started) so no live timers survive.
+            self._stop_refresh_spin()
         for tab in self._tabs.values():
             if hasattr(tab, "cleanup"):
-                tab.cleanup()
+                # force=True: remove rendered chart widgets so the widgets and
+                # their QPixmap objects are torn down on shutdown (cleanup()
+                # with no args is a documented no-op).
+                tab.cleanup(force=True)
         self._tabs.clear()
 
     def _on_explicit_refresh(self):

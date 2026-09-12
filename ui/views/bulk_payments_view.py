@@ -51,6 +51,7 @@ from ui.widgets import (
     field,
 )
 from ui.widgets.debounced_line_edit import DebouncedLineEdit
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -852,13 +853,26 @@ class QtBulkPaymentsView(BaseView):
     def _on_save_profile(self, data: dict[str, Any]) -> None:
         """Callback after a profile is saved via the dialog.
 
-        Optionally syncs to the API client if one is configured.
+        Optionally syncs to the API client if one is configured.  The remote
+        sync runs on the WorkerPool so the API retry/sleep backoff never
+        blocks the GUI thread; the local data reload follows on the GUI
+        thread in the completion callbacks.
         """
         if self._api_client is not None and hasattr(self._api_client, "save_payment_profile"):
-            try:
+
+            def _sync():
                 self._api_client.save_payment_profile(data)
-            except Exception:
-                logger.exception("API client save payment profile failed")
+
+            def _after(_result):
+                self._load_data()
+
+            def _fail(msg):
+                logger.exception("API client save payment profile failed: %s", msg)
+                self._load_data()
+
+            WorkerPool.run(fn=_sync, on_result=_after, on_error=_fail)
+            return
+
         self._load_data()
 
     # ── CSV export ─────────────────────────────────────────────────────────

@@ -58,6 +58,24 @@ from ui.widgets import (
 _logger = logging.getLogger(__name__)
 
 
+# Draft discount_type round-trip.
+#
+# The PDF payload carries the *display* string ("Discount %"/"Discount Fixed"/""),
+# but drafts are internal JSON and store the canonical token ("percentage"/"fixed"/"").
+# Older drafts stored the display string too, so restore normalizes both forms.
+def _normalize_draft_discount_type(value: Any) -> str:
+    """Map a draft ``discount_type`` value to the canonical percentage/fixed token."""
+    if value == "percentage":
+        return "percentage"
+    if value == "fixed":
+        return "fixed"
+    text = str(value or "")
+    # Legacy drafts stored the display text ("Discount %"/"Percentage"/...).
+    if text == "Discount %" or "Percentage" in text:
+        return "percentage"
+    return "fixed"
+
+
 class QtProformaEditor(BaseView, LineItemsMixin):
     """Professional proforma invoice editor.
 
@@ -98,7 +116,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._payment_terms: str = "Net 30"
         self._notes: str = ""
         self._tax_rate: str = "19"
-        self._discount_type: str = ""
+        self._discount_type: str = "percentage"  # matches combo default index 0
         self._discount_value: str = "0"
         self._currency: str = self.prefs.get_currency() if self.prefs else "EUR"
 
@@ -1161,8 +1179,10 @@ class QtProformaEditor(BaseView, LineItemsMixin):
             disc_val = 0
         if self._discount_type == "percentage" and disc_val > 0:
             discount_amount = subtotal * (disc_val / 100)
+        elif self._discount_type == "fixed":
+            discount_amount = disc_val
         else:
-            discount_amount = disc_val if self._discount_type == "fixed" else 0
+            discount_amount = 0
         if discount_amount > subtotal:
             discount_amount = subtotal
         after_discount = subtotal - discount_amount
@@ -1174,11 +1194,12 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         tax_amount = after_discount * (tax_rate / 100)
         grand_total = after_discount + tax_amount
 
-        discount_type_display = ""
         if self._discount_type == "percentage":
             discount_type_display = "Discount %"
         elif self._discount_type == "fixed":
             discount_type_display = "Discount Fixed"
+        else:
+            discount_type_display = ""
 
         return {
             "proforma_number": pf_number,
@@ -1223,6 +1244,19 @@ class QtProformaEditor(BaseView, LineItemsMixin):
             # Proforma-specific
             "document_type": "proforma",
         }
+
+    def _collect_draft_data(self) -> dict[str, Any]:
+        """Collect the payload to persist as a draft.
+
+        Drafts are internal JSON, so ``discount_type`` stores the canonical
+        token (``"percentage"``/``"fixed"``/``""``) instead of the user-visible
+        display string the PDF payload carries. This keeps save/restore
+        round-tripping consistent with ``_restore_from_draft``.
+        """
+        data = self._collect_proforma_data()
+        draft = dict(data)
+        draft["discount_type"] = self._discount_type or ""
+        return draft
 
     def _preview_pdf(self) -> None:
         """Generate and open the PDF in the system viewer silently."""
@@ -1358,7 +1392,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         )
         if not ok or not name:
             return
-        data = self._collect_proforma_data()
+        data = self._collect_draft_data()
         svc = self._get_proforma_service()
         if svc.save_draft(data, name):
             QMessageBox.information(
@@ -1444,7 +1478,9 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._notes = str(draft.get("notes", ""))
         self._description = str(draft.get("description", ""))
         self._tax_rate = str(draft.get("tax_rate", 19) or 19)
-        self._discount_type = "percentage" if "Percentage" in (draft.get("discount_type") or "") else "fixed"
+        # Drafts store the canonical discount_type token; legacy drafts may
+        # still hold the old display string, which the helper also normalizes.
+        self._discount_type = _normalize_draft_discount_type(draft.get("discount_type"))
         if self._discount_type == "percentage":
             self._disc_type_combo.setCurrentIndex(0)
         else:
@@ -1497,10 +1533,10 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._payment_terms_combo.setCurrentText(self._payment_terms)
         self._branch_entry.setText(self._branch)
         self._notes_edit.blockSignals(True)
-        self._notes_edit.setText(self._notes)
+        self._notes_edit.setPlainText(self._notes)
         self._notes_edit.blockSignals(False)
         self._desc_text_edit.blockSignals(True)
-        self._desc_text_edit.setText(self._description)
+        self._desc_text_edit.setPlainText(self._description)
         self._desc_text_edit.blockSignals(False)
         self._tax_combo.setCurrentText(self._tax_rate)
         self._logo_entry.setText(self._logo_path)

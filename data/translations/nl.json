@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Hier is het antwoord op uw vraag.",
+                "guide_workflow": "Hier is een stapsgewijze handleiding."
+            },
+            "error": "Sorry, ik kon het verzoek niet voltooien. Probeer het opnieuw.",
+            "vehicle": {
+                "search": "Hier zijn de voertuigen die overeenkomen met uw zoekopdracht ({total_results} in totaal).",
+                "health_score": "Gezondheidsscore voor voertuig {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} heeft vandaag {available_hours_today} uur beschikbaar ({hours_worked_today} gewerkt)."
+            },
+            "route": {
+                "calculate": "De route is {distance_km} km en duurt ongeveer {duration_min} minuten.",
+                "estimate_cost": "Geschatte kosten: {total_cost} {currency} ({cost_per_km} per km).",
+                "plan_multistop": "Geplande route met {ordered_stops_count} stops: {total_distance_km} km, ongeveer {total_duration_min} minuten.",
+                "list": "Hier zijn uw opgeslagen routes ({total} in totaal).",
+                "get": "Hier zijn de details van de gevraagde route."
+            },
+            "trip": {
+                "calculate_profitability": "Geschatte winst: {net_profit} (marge van {margin_percent}%).",
+                "list": "Hier zijn uw ritten ({total} in totaal).",
+                "get": "Hier zijn de details van de gevraagde rit."
+            },
+            "conversation": {
+                "recall_recent": "Hier is wat we onlangs bespraken ({total} onderwerpen)."
+            },
+            "client": {
+                "payment_summary": "Betalingssamenvatting klant: {total_billed} gefactureerd, {total_paid} betaald, {unpaid} onbetaald, {overdue} achterstallig."
+            },
+            "document": {
+                "search": "Hier zijn de gevonden documenten ({total} in totaal, pagina {page} van {total_pages})."
+            },
+            "currency": {
+                "get_rate": "De wisselkoers is {rate}.",
+                "convert": "Omgezet bedrag: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Hier zijn de live posities van de voertuigen ({total_results} voertuigen).",
+                "get_vehicle_history": "Positiegeschiedenis voor voertuig {vehicle_id}: {total_results} punten."
+            },
+            "analytics": {
+                "query": "Hier is het gevraagde analyseoverzicht."
             }
         },
         "world_model": {

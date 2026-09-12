@@ -183,5 +183,5 @@ class QtRouteMapRenderer:
         try:
             lat, lon = geometry[0]
             self.map_widget.set_view(lat, lon, zoom)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("center_on_geometry failed: %s", exc)

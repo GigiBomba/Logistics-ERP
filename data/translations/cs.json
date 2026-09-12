@@ -268,7 +268,49 @@
         "summary": {
             "llm_chat": "{answer}",
             "help": {
-                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'."
+                "greeting": "Hello! I'm your AI Co-Pilot. I can help you with vehicles, drivers, routes, trips, clients, documents, currency, tracking, and analytics, and guide you through workflows step by step. Try asking something like 'find available trucks' or 'check driver hours'.",
+                "answer_question": "Zde je odpověď na vaši otázku.",
+                "guide_workflow": "Zde je návod krok za krokem."
+            },
+            "error": "Omlouvám se, nepodařilo se mi dokončit požadavek. Zkuste to prosím znovu.",
+            "vehicle": {
+                "search": "Zde jsou vozidla odpovídající vašemu vyhledávání ({total_results} celkem).",
+                "health_score": "Skóre stavu vozidla {vehicle_id}: {overall_score}/100."
+            },
+            "driver": {
+                "check_hours": "{driver_name} má dnes {available_hours_today} hodin k dispozici ({hours_worked_today} odpracováno)."
+            },
+            "route": {
+                "calculate": "Trasa má {distance_km} km a trvá přibližně {duration_min} minut.",
+                "estimate_cost": "Odhadované náklady: {total_cost} {currency} ({cost_per_km} za km).",
+                "plan_multistop": "Naplánovaná trasa s {ordered_stops_count} zastávkami: {total_distance_km} km, přibližně {total_duration_min} minut.",
+                "list": "Zde jsou vaše uložené trasy ({total} celkem).",
+                "get": "Zde jsou podrobnosti požadované trasy."
+            },
+            "trip": {
+                "calculate_profitability": "Odhadovaný zisk: {net_profit} (marže {margin_percent}%).",
+                "list": "Zde jsou vaše jízdy ({total} celkem).",
+                "get": "Zde jsou podrobnosti požadované jízdy."
+            },
+            "conversation": {
+                "recall_recent": "Zde je shrnutí naší nedávné konverzace ({total} témat)."
+            },
+            "client": {
+                "payment_summary": "Souhrn plateb klienta: {total_billed} fakturováno, {total_paid} zaplaceno, {unpaid} nezaplaceno, {overdue} po splatnosti."
+            },
+            "document": {
+                "search": "Zde jsou nalezené dokumenty ({total} celkem, strana {page} z {total_pages})."
+            },
+            "currency": {
+                "get_rate": "Směnný kurz je {rate}.",
+                "convert": "Převedená částka: {converted_amount}."
+            },
+            "tracking": {
+                "get_live_positions": "Zde jsou živé polohy vozidel ({total_results} vozidel).",
+                "get_vehicle_history": "Historie poloh vozidla {vehicle_id}: {total_results} bodů."
+            },
+            "analytics": {
+                "query": "Zde je požadované analytické shrnutí."
             }
         },
         "world_model": {
