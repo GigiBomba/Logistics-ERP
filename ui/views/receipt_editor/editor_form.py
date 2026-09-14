@@ -54,7 +54,7 @@ from ui.widgets import (
 from ui.widgets.layout_utils import clear_layout
 
 from ui.dialogs.share_receipt_dialog import ShareReceiptDialog
-from ui.views.receipt_editor.autofill import (
+from ui.utils.autofill import (
     fill_combo_if_empty,
     fill_entry_if_empty,
 )

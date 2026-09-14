@@ -73,7 +73,7 @@ from ui.design_tokens import (
 from ui.views.cmr_form_view import QtCmrFormView
 from ui.views.invoice_editor import QtInvoiceEditor
 from ui.views.receipt_editor import QtReceiptEditor
-from ui.views.receipt_editor.autofill import (
+from ui.utils.autofill import (
     fill_combo_if_empty,
     fill_entry_if_empty,
 )
