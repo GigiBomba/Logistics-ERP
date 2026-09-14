@@ -30,6 +30,7 @@ from ui.design_tokens import (
     COLOR_ERROR_DEFAULT,
     COLOR_INFO_DEFAULT,
     COLOR_WARNING_DEFAULT,
+    RADIUS_SM,
     SP,
 )
 
@@ -205,7 +206,7 @@ class QtAlertPanel(QFrame):
         chip.setAlignment(Qt.AlignCenter)
         chip.setStyleSheet(
             f"background-color: {sev_color}; color: {TEXT_WHITE};"
-            f"border-radius: 4px; font-size: 11px; font-weight: bold;"
+            f"border-radius: {RADIUS_SM}px; font-size: 11px; font-weight: bold;"
         )
         row_layout.addWidget(chip)
 

@@ -827,7 +827,7 @@ class _QtClientDetailsTab(QWidget):
                 chip.setStyleSheet(
                 f"background-color: {COLOR_ACCENT_SUBTLE}; "
                 f"color: {COLOR_ACCENT_PRIMARY}; "
-                    f"border-radius: 4px; padding: 2px 4px;"
+                    f"border-radius: {RADIUS_SM}px; padding: 2px 4px;"
                 )
                 chips_layout.addWidget(chip)
             cl.addWidget(chips_row)

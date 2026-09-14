@@ -22,6 +22,7 @@ from ui.design_tokens import (
     COLOR_NEUTRAL_SUBTLE,
     COLOR_SUCCESS_SUBTLE,
     COLOR_WARNING_SUBTLE,
+    RADIUS_SM,
     SP,
 )
 from ui.widgets import ActionButton, StyledCheckBox
@@ -118,7 +119,7 @@ class QtDispatchSearchBar(QFrame):
             dot.setFixedSize(_DOT_SIZE, _DOT_SIZE)
             dot.setStyleSheet(
                 f"background-color: {_STATUS_COLORS[status]};"
-                f" border-radius: 4px; border: none;"
+                f" border-radius: {RADIUS_SM}px; border: none;"
             )
             item_layout.addWidget(dot)
 

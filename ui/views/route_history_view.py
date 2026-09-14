@@ -41,7 +41,7 @@ from ui.components import (
     Label,
     PageTitle,
 )
-from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_BG_OVERLAY, SP
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_BG_OVERLAY, RADIUS_LG, SP
 from ui.widgets import (
     StyledCheckBox,
     StyledTableWidget,
@@ -441,7 +441,7 @@ class QtRouteHistoryView(QWidget):
 
         panel = QFrame(self)
         panel.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; border-radius: 8px;"
+            f"background: {COLOR_BG_OVERLAY}; border-radius: {RADIUS_LG}px;"
         )
         panel_layout = QVBoxLayout(panel)
         panel_layout.setAlignment(Qt.AlignCenter)
@@ -483,7 +483,7 @@ class QtRouteHistoryView(QWidget):
 
         err = QFrame(parent if parent is not None else self)
         err.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; border-radius: 8px;"
+            f"background: {COLOR_BG_OVERLAY}; border-radius: {RADIUS_LG}px;"
         )
         el = QVBoxLayout(err)
         el.setAlignment(Qt.AlignCenter)

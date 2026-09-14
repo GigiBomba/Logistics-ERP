@@ -33,6 +33,7 @@ from ui.design_tokens import (
     COLOR_TEXT_TERTIARY,
     FONT_SIZE_SM,
     FONT_WEIGHT_SEMIBOLD,
+    RADIUS_SM,
     SP,
 )
 from ui.widgets import StyledComboBox, StyledLineEdit
@@ -345,7 +346,7 @@ class SettingsFieldsMixin:
         swatch.setStyleSheet(
             f"QFrame[role=\"colour-swatch\"] {{"
             f"  background-color: {conf.get('company_color', DEFAULT_BRAND_COLOR)};"
-            f"  border-radius: 4px;"
+            f"  border-radius: {RADIUS_SM}px;"
             f"}}"
         )
         colour_hlyt.addWidget(swatch)

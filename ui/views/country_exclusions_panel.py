@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.country_avoidance import CountryAvoidanceManager
 from services.i18n import t
-from ui.design_tokens import BG_ELEVATED
+from ui.design_tokens import BG_ELEVATED, RADIUS_LG
 from ui.widgets import StyledCheckBox
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class CountryExclusionsPanel(QWidget):
         self._count_label.style().polish(self._count_label)
         self._count_label.setStyleSheet(
             f"background-color: {BG_ELEVATED};"
-            " border-radius: 8px; padding: 2px 8px;"
+            f" border-radius: {RADIUS_LG}px; padding: 2px 8px;"
         )
         header_layout.addWidget(self._count_label)
 

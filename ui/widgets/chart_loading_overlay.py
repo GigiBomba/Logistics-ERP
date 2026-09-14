@@ -40,6 +40,8 @@ from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     FONT_FAMILY,
     FONT_SIZE_3XL,
+    RADIUS_LG,
+    RADIUS_MD,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
@@ -142,7 +144,7 @@ class ChartLoadingOverlay(QFrame):
             bar.setGraphicsEffect(effect)
             bar.setStyleSheet(
                 f"background: {TEXT_PRIMARY}44;"
-                f" border-radius: 6px;"
+                f" border-radius: {RADIUS_MD}px;"
             )
             outer.addWidget(bar, 0, Qt.AlignmentFlag.AlignCenter)
             self._skeleton_bars.append(bar)
@@ -161,7 +163,7 @@ class ChartLoadingOverlay(QFrame):
             "#chart-loading-overlay {"
             " background: rgba(10, 10, 15, 170);"
             f" border: 1px solid {BORDER_DEFAULT};"
-            " border-radius: 12px;"
+             f" border-radius: {RADIUS_LG}px;"
             "}"
         )
 

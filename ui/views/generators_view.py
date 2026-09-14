@@ -67,6 +67,7 @@ from ui.design_tokens import (
     FONT_MONO,
     FONT_SIZE_LG,
     FONT_SIZE_SM,
+    RADIUS_SM,
     SP,
 )
 
@@ -437,11 +438,11 @@ class QtGeneratorsView(QWidget):
             QProgressBar {{
                 background: {COLOR_BORDER_SUBTLE};
                 border: none;
-                border-radius: 2px;
+                border-radius: {RADIUS_SM}px;
             }}
             QProgressBar::chunk {{
                 background: {COLOR_ACCENT_PRIMARY};
-                border-radius: 2px;
+                border-radius: {RADIUS_SM}px;
             }}
         """)
         card.layout().addWidget(self._cmr_progress_bar)
@@ -520,7 +521,7 @@ class QtGeneratorsView(QWidget):
             accent_bar = QFrame()
             accent_bar.setFixedWidth(3)
             accent_bar.setStyleSheet(
-                f"background-color: {accent_color}; border: none; border-radius: 2px;"
+                f"background-color: {accent_color}; border: none; border-radius: {RADIUS_SM}px;"
             )
             row_lyt.addWidget(accent_bar)
 

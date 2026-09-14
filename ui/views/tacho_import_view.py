@@ -46,6 +46,7 @@ from ui.design_tokens import (
     COLOR_INFO_DEFAULT,
     COLOR_TEXT_PRIMARY,
     DANGER_TEXT,
+    RADIUS_LG,
     SP,
     SUCCESS_TEXT,
     WARNING_TEXT,
@@ -226,7 +227,7 @@ class QtTachoImportView(QWidget):
             f"QFrame{{"
             f"  background: {COLOR_BG_ELEVATED};"
             f"  border: 1px dashed {border};"
-            f"  border-radius: 8px;"
+            f"  border-radius: {RADIUS_LG}px;"
             f"}}"
             f"QFrame:hover{{"
             f"  border-color: {COLOR_INFO_DEFAULT};"

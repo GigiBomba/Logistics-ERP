@@ -43,7 +43,7 @@ from services.invoicing.service import InvoiceService
 from services.operations.event_bus import SETTINGS_UPDATED
 from services.preferences import PreferencesManager
 from ui.components import Btn, Card, CardHeader, Divider, EmptyState, Label, PageTitle, SectionTitle
-from ui.design_tokens import SP
+from ui.design_tokens import RADIUS_SM, SP
 from ui.widgets import (
     ScrollableFormContainer,
     StyledCheckBox,
@@ -1555,7 +1555,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
     max-width: 680px; margin: 0 auto;
     background: #fff; padding: 32px 28px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-    border-radius: 4px;
+    border-radius: {RADIUS_SM}px;
   }}
   .accent-bar {{
     height: 3px; background: #6366f1; margin: 8px 0 16px 0;
@@ -1573,7 +1573,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
   .section {{ margin: 10px 0; }}
   .section-title {{ font-size: 10px; color: #6366f1; font-weight: bold; margin: 0 0 4px 0; }}
   .parties {{ display: flex; gap: 12px; margin: 8px 0; }}
-  .party {{ flex: 1; border: 1px solid #ddd; border-radius: 4px; padding: 8px; }}
+  .party {{ flex: 1; border: 1px solid #ddd; border-radius: {RADIUS_SM}px; padding: 8px; }}
   .party b {{ font-size: 10px; color: #6366f1; }}
   .party p {{ margin: 2px 0; font-size: 10px; line-height: 1.4; }}
   table.financial {{ width: 100%; border-collapse: collapse; margin: 8px 0; }}

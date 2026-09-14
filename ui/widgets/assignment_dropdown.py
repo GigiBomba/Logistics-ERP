@@ -36,6 +36,7 @@ from ui.design_tokens import (
     COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
+    RADIUS_SM,
     SP,
 )
 
@@ -83,12 +84,12 @@ class _ItemRow(QFrame):
         if available:
             dot.setStyleSheet(
                 f"background-color: {COLOR_SUCCESS_DEFAULT};"
-                f"border-radius: 4px;"
+                f"border-radius: {RADIUS_SM}px;"
             )
         else:
             dot.setStyleSheet(
                 f"background-color: {COLOR_TEXT_TERTIARY};"
-                f"border-radius: 4px;"
+                f"border-radius: {RADIUS_SM}px;"
             )
         layout.addWidget(dot, 0)
 

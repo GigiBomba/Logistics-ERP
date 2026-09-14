@@ -236,7 +236,7 @@ class _StepStatusDot(QLabel):
             bg = colors[0]
 
         self.setStyleSheet(
-            f"background-color: {bg}; border-radius: 4px;"
+            f"background-color: {bg}; border-radius: {RADIUS_SM}px;"
         )
 
     def detach(self) -> None:

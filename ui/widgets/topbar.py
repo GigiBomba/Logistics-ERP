@@ -31,6 +31,7 @@ from ui.design_tokens import (
     COLOR_BORDER_SUBTLE,
     COLOR_TEXT_SECONDARY,
     DANGER,
+    RADIUS_SM,
     SP,
     SUCCESS,
     TEXT_MUTED,
@@ -143,7 +144,7 @@ class TopBar(QFrame):
         self._fuel_dot = QLabel()
         self._fuel_dot.setFixedSize(FUEL_DOT_SIZE, FUEL_DOT_SIZE)
         self._fuel_dot.setStyleSheet(
-            f"background: {DANGER}; border-radius: 4px;"
+            f"background: {DANGER}; border-radius: {RADIUS_SM}px;"
         )
         self._fuel_dot.setToolTip(t("fuel.updated_tooltip", default="Fuel prices updated ? ago"))
         row_layout.addWidget(self._fuel_dot)
@@ -220,9 +221,9 @@ class TopBar(QFrame):
         # Simple heuristic: if text contains "offline" or "?", show red, else green
         lower = text.lower()
         if "offline" in lower or "?" in lower:
-            self._fuel_dot.setStyleSheet(f"background: {DANGER}; border-radius: 4px;")
+            self._fuel_dot.setStyleSheet(f"background: {DANGER}; border-radius: {RADIUS_SM}px;")
         else:
-            self._fuel_dot.setStyleSheet(f"background: {SUCCESS}; border-radius: 4px;")
+            self._fuel_dot.setStyleSheet(f"background: {SUCCESS}; border-radius: {RADIUS_SM}px;")
 
     def set_sync_status(self, status: str, conflicts: int = 0) -> None:
         """Update the sync status indicator from a sync engine status."""

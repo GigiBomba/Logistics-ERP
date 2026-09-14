@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import EmptyState
-from ui.design_tokens import COLOR_ACCENT_SUBTLE, COLOR_WARNING_SUBTLE, SP
+from ui.design_tokens import COLOR_ACCENT_SUBTLE, COLOR_WARNING_SUBTLE, RADIUS_SM, SP
 from ui.widgets import ActionButton
 from utils.dates import parse_date
 
@@ -235,7 +235,7 @@ class QtDispatchTimeline(QWidget):
         bar = QFrame()
         bar.setFixedHeight(24)
         bar.setStyleSheet(
-            f"background-color: {bar_color}; border-radius: 4px;"
+            f"background-color: {bar_color}; border-radius: {RADIUS_SM}px;"
         )
 
         bar_bar_layout = QHBoxLayout(bar)

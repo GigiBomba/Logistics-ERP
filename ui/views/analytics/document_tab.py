@@ -21,6 +21,7 @@ from ui.design_tokens import (
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_TEXT,
     FONT_FAMILY,
+    RADIUS_SM,
     SP,
     WARNING_TEXT,
 )
@@ -239,7 +240,7 @@ class DocumentAnalyticsTab(BaseTab):
                 f"color: {_expiry_text_color(days)}; font-size: 11px; font-weight: 600;"
                 f" font-family: '{FONT_FAMILY}';"
                 f" background: {_expiry_color(days)}22;"
-                f" border-radius: 4px; padding: 2px 6px;"
+                f" border-radius: {RADIUS_SM}px; padding: 2px 6px;"
             )
             row_layout.addWidget(urgency)
 

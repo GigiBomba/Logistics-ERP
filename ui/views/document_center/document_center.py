@@ -56,6 +56,7 @@ from ui.design_tokens import (
     COLOR_BORDER_MEDIUM,
     COLOR_BORDER_SUBTLE,
     COLOR_TEXT_PRIMARY,
+    RADIUS_MD,
     SP,
 )
 from ui.widgets import (
@@ -148,7 +149,7 @@ class _DocRow(QFrame):
         self.setStyleSheet(f"""
             _DocRow {{
                 border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 6px;
+                border-radius: {RADIUS_MD}px;
                 background: {COLOR_BG_OVERLAY};
             }}
             _DocRow:hover {{

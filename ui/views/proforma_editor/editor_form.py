@@ -45,7 +45,7 @@ from services.invoicing.proforma_service import ProformaService
 from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.preferences import PreferencesManager
 from ui.components import Btn, Card, EmptyState, Label, PageTitle, SectionTitle
-from ui.design_tokens import COLOR_ACCENT_PRIMARY, SP
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, RADIUS_SM, SP
 from ui.views.proforma_editor.line_items import LineItemsMixin
 from ui.widgets import (
     ScrollableFormContainer,
@@ -652,7 +652,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         color_layout.addWidget(self._color_label)
         self._color_swatch = QFrame(color_row)
         self._color_swatch.setFixedSize(24, 24)
-        self._color_swatch.setStyleSheet(f"background-color: {self._company_color}; border-radius: 4px;")
+        self._color_swatch.setStyleSheet(f"background-color: {self._company_color}; border-radius: {RADIUS_SM}px;")
         color_layout.addWidget(self._color_swatch)
         self._color_btn = Btn(color_row, t("proforma_editor.pick_color"), variant="ghost")
         self._color_btn.clicked.connect(self._pick_color)
@@ -958,7 +958,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         if color.isValid():
             self._company_color = color.name()
             self._color_swatch.setStyleSheet(
-                f"background-color: {self._company_color}; border-radius: 4px;")
+                f"background-color: {self._company_color}; border-radius: {RADIUS_SM}px;")
 
     def _open_company_editor(self) -> None:
         dlg = CompanyEditorQtDialog(self, db=self.db, prefs=self.prefs)

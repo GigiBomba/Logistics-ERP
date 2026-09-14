@@ -39,6 +39,7 @@ from ui.design_tokens import (
     COLOR_WARNING_TEXT,
     FONT_SIZE_XS,
     INPUT_HEIGHT,
+    RADIUS_SM,
     ROW_HEIGHT,
     SPACE_1,
     SPACE_2,
@@ -149,7 +150,7 @@ class FreightSearchView(QWidget):
             dot = QLabel()
             dot.setFixedSize(8, 8)
             dot.setStyleSheet(
-                f"background: {dot_color}; border-radius: 4px;"
+                f"background: {dot_color}; border-radius: {RADIUS_SM}px;"
             )
             self._health_container.addWidget(dot)
             self._health_container.addSpacing(SPACE_1)

@@ -33,6 +33,7 @@ from ui.design_tokens import (
     COLOR_INFO_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_WARNING_DEFAULT,
+    RADIUS_MD,
     SP,
 )
 from ui.icons import iconed
@@ -207,10 +208,10 @@ class QtMaintenanceAnalyticsView(QWidget):
         # Placeholder frames — real PlotlyChartWidget created lazily in _render_charts
         self._chart_placeholder_a = QFrame()
         self._chart_placeholder_a.setMinimumHeight(300)
-        self._chart_placeholder_a.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: 6px;")
+        self._chart_placeholder_a.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: {RADIUS_MD}px;")
         self._chart_placeholder_b = QFrame()
         self._chart_placeholder_b.setMinimumHeight(300)
-        self._chart_placeholder_b.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: 6px;")
+        self._chart_placeholder_b.setStyleSheet(f"background: {COLOR_BG_OVERLAY}; border-radius: {RADIUS_MD}px;")
         cl.addWidget(self._chart_placeholder_a, 1)
         cl.addWidget(self._chart_placeholder_b, 1)
 

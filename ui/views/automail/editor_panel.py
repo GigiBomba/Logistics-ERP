@@ -40,6 +40,7 @@ from services.invoicing.config_manager import load_company_config
 from services.operations.notification_center import NotificationCenter
 from ui.components import Btn
 from ui.design_tokens import (
+    RADIUS_MD,
     SPACE_2,
     SPACE_3,
     SPACE_4,
@@ -488,7 +489,7 @@ class EditorPanel(QFrame):
 
             watermark = (
                 '<div style="padding:8px;margin-bottom:12px;border:1px dashed #555;'
-                'border-radius:6px;color:#888;font-style:italic;font-size:11px;'
+                f'border-radius:{RADIUS_MD}px;color:#888;font-style:italic;font-size:11px;'
                 'text-align:center;">Preview with sample data</div>'
             )
             self._preview_widget.setHtml(watermark + body_rendered)
@@ -497,7 +498,7 @@ class EditorPanel(QFrame):
             body_rendered = render_template(body_rendered, ctx)
             self._preview_widget.setHtml(
                 '<div style="padding:8px;margin-bottom:12px;border:1px dashed #555;'
-                'border-radius:6px;color:#888;font-style:italic;font-size:11px;'
+                f'border-radius:{RADIUS_MD}px;color:#888;font-style:italic;font-size:11px;'
                 'text-align:center;">Live preview (variables resolved with sample data)</div>'
                 + body_rendered
             )

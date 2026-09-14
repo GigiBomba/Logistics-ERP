@@ -111,7 +111,7 @@ class SkeletonWidget(QFrame):
         b = int(b1 + (b2 - b1) * t)
         self.setStyleSheet(
             f"background: rgb({r}, {g}, {b});"
-            " border-radius: 4px; border: none;"
+            f" border-radius: {RADIUS_SM}px; border: none;"
         )
 
     pulse_opacity = Property(float, get_pulse_opacity, set_pulse_opacity)

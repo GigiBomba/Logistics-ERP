@@ -36,7 +36,7 @@ from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.operations.notification_center import NotificationCenter
 from services.preferences import PreferencesManager
 from ui.components import Btn, Divider, Label, PageTitle, SectionTitle
-from ui.design_tokens import SP
+from ui.design_tokens import RADIUS_SM, SP
 from ui.widgets import (
     ActionButton,
     ScrollableFormContainer,
@@ -582,7 +582,7 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
             swatch.setStyleSheet(
                 f"QFrame[role=\"colour-swatch\"] {{"
                 f"  background-color: {hex_color};"
-                f"  border-radius: 4px;"
+                f"  border-radius: {RADIUS_SM}px;"
                 f"}}"
             )
 

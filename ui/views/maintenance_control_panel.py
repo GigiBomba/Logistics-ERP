@@ -50,6 +50,7 @@ from ui.design_tokens import (
     COLOR_SUCCESS_DEFAULT,
     COLOR_WARNING_DEFAULT,
     INFO,
+    RADIUS_SM,
     SP,
 )
 from ui.icons import iconed
@@ -229,8 +230,8 @@ class QtMaintenanceControlPanel(QWidget):
                 pb.setTextVisible(False)
                 pb.setFixedHeight(4)
                 pb.setStyleSheet(f"""
-                    QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: 2px; }}
-                    QProgressBar::chunk {{ background: {COLOR_SUCCESS_DEFAULT}; border-radius: 2px; }}
+                    QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: {RADIUS_SM}px; }}
+                    QProgressBar::chunk {{ background: {COLOR_SUCCESS_DEFAULT}; border-radius: {RADIUS_SM}px; }}
                 """)
                 card.layout().addWidget(pb, 2, 0, 1, 2)
                 self._health_progress = pb
@@ -474,8 +475,8 @@ class QtMaintenanceControlPanel(QWidget):
                 if hasattr(self, "_health_progress"):
                     self._health_progress.setValue(int(val))
                     self._health_progress.setStyleSheet(f"""
-                        QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: 2px; }}
-                        QProgressBar::chunk {{ background: {color}; border-radius: 2px; }}
+                        QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: {RADIUS_SM}px; }}
+                        QProgressBar::chunk {{ background: {color}; border-radius: {RADIUS_SM}px; }}
                     """)
             elif key == "overdue_schedules":
                 color = COLOR_ERROR_DEFAULT if val > 0 else COLOR_SUCCESS_DEFAULT

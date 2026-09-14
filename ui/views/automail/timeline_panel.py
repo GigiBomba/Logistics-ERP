@@ -43,6 +43,7 @@ from ui.design_tokens import (
     COLOR_WARNING_TEXT,
     FONT_SIZE_XS,
     FONT_WEIGHT_MEDIUM,
+    RADIUS_SM,
     SPACE_2,
     SPACE_3,
     SPACE_4,
@@ -71,7 +72,7 @@ class _StatusBadge(QLabel):
         self.setText(label)
         self.setStyleSheet(
             f"color: {text_color}; background: {bg}; "
-            f"border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};"
+            f"border-radius: {RADIUS_SM}px; padding: 2px 8px; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};"
         )
 
 
@@ -122,14 +123,14 @@ class _InvoiceTimelineCard(QFrame):
             badge = QLabel(f"{days_past} day(s) overdue", self)
             badge.setStyleSheet(
                 f"color: {COLOR_ERROR_TEXT}; background: rgba(239,68,68,0.1); "
-                f"border-radius: 4px; padding: 1px 6px; font-size: 10px;"
+                f"border-radius: {RADIUS_SM}px; padding: 1px 6px; font-size: 10px;"
             )
             due_row.addWidget(badge)
         elif not days_past:
             badge = QLabel(t("automail.due_today", "Due today"), self)
             badge.setStyleSheet(
                 f"color: {COLOR_WARNING_TEXT}; background: rgba(245,158,11,0.1); "
-                f"border-radius: 4px; padding: 1px 6px; font-size: 10px;"
+                f"border-radius: {RADIUS_SM}px; padding: 1px 6px; font-size: 10px;"
             )
             due_row.addWidget(badge)
         due_row.addStretch()

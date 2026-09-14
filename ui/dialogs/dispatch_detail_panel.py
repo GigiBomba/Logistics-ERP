@@ -33,6 +33,7 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_SUBTLE,
+    RADIUS_SM,
     SP,
 )
 from ui.widgets import (
@@ -182,7 +183,7 @@ class QtDispatchDetailPanel(QFrame):
         chip.setStyleSheet(
             f"background-color: {chip_color};"
             f" color: {COLOR_TEXT_PRIMARY};"
-            f" padding: 2px 8px; border-radius: 4px;"
+            f" padding: 2px 8px; border-radius: {RADIUS_SM}px;"
         )
         chip.setFixedHeight(24)
         chip.setSizePolicy(

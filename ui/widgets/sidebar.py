@@ -30,6 +30,7 @@ from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_BG_HOVER,
     COLOR_TEXT_TERTIARY,
+    RADIUS_PILL,
     SIDEBAR_COLLAPSED,
     SIDEBAR_EXPANDED,
     SP,
@@ -173,7 +174,7 @@ class Sidebar(QFrame):
         self._monogram.setFixedSize(MONOGRAM_SIZE, MONOGRAM_SIZE)
         self._monogram.setAccessibleName("Operion home")
         self._monogram.setStyleSheet(
-            f"background: {ACCENT}; border-radius: 16px;"
+            f"background: {ACCENT}; border-radius: {RADIUS_PILL}px;"
         )
         self._monogram.setProperty("is-monogram", True)
         self._monogram.setCursor(Qt.PointingHandCursor)

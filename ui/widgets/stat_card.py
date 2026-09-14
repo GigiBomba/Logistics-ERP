@@ -16,6 +16,7 @@ from ui.design_tokens import (
     FONT_SIZE_3XL,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_MEDIUM,
+    RADIUS_SM,
     SPACE_4,
     SPACE_5,
     STATUS_COLORS,
@@ -78,7 +79,7 @@ class StatCard(QFrame):
             dot = QLabel(self)
             dot.setMinimumSize(_DOT_SIZE, _DOT_SIZE)
             dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            dot.setStyleSheet(f"background: {dot_color}; border-radius: 4px;")
+            dot.setStyleSheet(f"background: {dot_color}; border-radius: {RADIUS_SM}px;")
             layout.addWidget(dot, 0, 1, Qt.AlignRight | Qt.AlignTop)
             self._dot = dot
 
@@ -110,7 +111,7 @@ class StatCard(QFrame):
                 dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 self._grid.addWidget(dot, 0, 1, Qt.AlignRight | Qt.AlignTop)
                 self._dot = dot
-            dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
+            dot.setStyleSheet(f"background: {color}; border-radius: {RADIUS_SM}px;")
             dot.show()
         elif dot is not None:
             dot.hide()

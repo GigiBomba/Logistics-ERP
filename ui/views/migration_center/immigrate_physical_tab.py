@@ -45,6 +45,7 @@ from ui.design_tokens import (
     FONT_SIZE_SM,
     FONT_WEIGHT_MEDIUM,
     FONT_WEIGHT_SEMIBOLD,
+    RADIUS_LG,
     SP,
     SUCCESS_TEXT,
     WARNING_TEXT,
@@ -131,7 +132,7 @@ class ImmigratePhysicalTab(QWidget):
             f"QFrame{{"
             f"  background: {COLOR_BG_ELEVATED};"
             f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
-            f"  border-radius: 8px;"
+            f"  border-radius: {RADIUS_LG}px;"
             f"}}"
             f"QFrame:hover{{"
             f"  border-color: {COLOR_INFO_DEFAULT};"
@@ -311,7 +312,7 @@ class ImmigratePhysicalTab(QWidget):
                 f"QFrame{{"
                 f"  background: {COLOR_BG_ELEVATED};"
                 f"  border: 1px dashed {COLOR_INFO_DEFAULT};"
-                f"  border-radius: 8px;"
+                f"  border-radius: {RADIUS_LG}px;"
                 f"}}"
             )
 
@@ -320,7 +321,7 @@ class ImmigratePhysicalTab(QWidget):
             f"QFrame{{"
             f"  background: {COLOR_BG_ELEVATED};"
             f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
-            f"  border-radius: 8px;"
+            f"  border-radius: {RADIUS_LG}px;"
             f"}}"
             f"QFrame:hover{{"
             f"  border-color: {COLOR_INFO_DEFAULT};"
@@ -332,7 +333,7 @@ class ImmigratePhysicalTab(QWidget):
             f"QFrame{{"
             f"  background: {COLOR_BG_ELEVATED};"
             f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
-            f"  border-radius: 8px;"
+            f"  border-radius: {RADIUS_LG}px;"
             f"}}"
             f"QFrame:hover{{"
             f"  border-color: {COLOR_INFO_DEFAULT};"

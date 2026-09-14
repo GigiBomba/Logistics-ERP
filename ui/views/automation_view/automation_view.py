@@ -39,6 +39,8 @@ from ui.design_tokens import (
     BORDER_FAINT,
     DANGER_TEXT,
     INFO,
+    RADIUS_LG,
+    RADIUS_MD,
     SP,
     SUCCESS_TEXT,
     TEXT_MUTED,
@@ -138,7 +140,7 @@ class DropZone(QFrame):
         border = f"2px solid {ACCENT}" if active else f"2px dashed {BORDER_DEFAULT}"
         self.setStyleSheet(
             f"QFrame#automationDropZone {{ border: {border}; "
-            f"border-radius: 8px; background: {BG_SURFACE}; }}"
+            f"border-radius: {RADIUS_LG}px; background: {BG_SURFACE}; }}"
         )
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
@@ -968,7 +970,7 @@ class QtAutomationView(QueueManagementMixin, QWidget):
             card.setStyleSheet(
                 f"QFrame#automationRunCard {{ background: {BG_SURFACE}; "
                 f"border: 2px solid {ACCENT if rid == self._selected_run_id else BORDER_FAINT}; "
-                f"border-radius: 6px; }}"
+                f"border-radius: {RADIUS_MD}px; }}"
             )
         self._update_selected_run()
 

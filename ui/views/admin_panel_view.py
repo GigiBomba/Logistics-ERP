@@ -42,6 +42,7 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
+    RADIUS_SM,
     SP,
 )
 from ui.widgets import SectionHeader, StyledComboBox
@@ -386,7 +387,7 @@ class QtAdminPanelView(QWidget):
         self._sql_input.setMaximumHeight(80)
         self._sql_input.setStyleSheet(
             f"QTextEdit {{ padding: 4px; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: 4px; background: {COLOR_BG_OVERLAY}; "
+            f"border-radius: {RADIUS_SM}px; background: {COLOR_BG_OVERLAY}; "
             f"color: {COLOR_TEXT_PRIMARY}; font-family: monospace; }}"
         )
         layout.addWidget(self._sql_input)
@@ -582,7 +583,7 @@ class QtAdminPanelView(QWidget):
         self._log_text.setReadOnly(True)
         self._log_text.setStyleSheet(
             f"QTextEdit {{ padding: 4px; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: 4px; background: {COLOR_BG_OVERLAY}; "
+            f"border-radius: {RADIUS_SM}px; background: {COLOR_BG_OVERLAY}; "
             f"color: {COLOR_TEXT_PRIMARY}; font-family: monospace; font-size: 11px; }}"
         )
         layout.addWidget(self._log_text, 1)
