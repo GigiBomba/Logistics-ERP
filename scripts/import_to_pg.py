@@ -97,6 +97,47 @@ def _coerce(value, data_type: str):
     return value
 
 
+def _backfill_settings_company_id(db, rows: list) -> None:
+    """Mirror the native tenant backfill for legacy NULL settings.company_id.
+
+    ``schema_pg.sql`` declares ``settings`` with a composite PRIMARY KEY
+    ``(key, company_id)``; PostgreSQL makes PK columns implicitly NOT NULL.
+    Legacy SQLite databases (which permit NULLs in PK columns) carry global
+    settings rows with ``company_id`` NULL, so a plain import aborts the whole
+    table on the NOT NULL constraint.  The native PG path handles this in
+    ``DatabaseManager._apply_pg_extra_ddl`` by backfilling NULLs to the lowest
+    real company (``MIN(id) WHERE id > 0``, sentinel 0 excluded); do the same
+    here so the export/import path reaches parity.  Duplicate ``(key,
+    company_id)`` rows that result from the backfill are then dropped by the
+    ``ON CONFLICT DO NOTHING`` insert and counted by the caller.
+    """
+    if not any(row.get("company_id") is None for row in rows):
+        return
+    fallback = None
+    try:
+        cur = db.execute("SELECT MIN(id) AS min_id FROM companies WHERE id > 0")
+        row = cur.fetchone()
+        if row is not None:
+            fallback = row["min_id"] if isinstance(row, dict) else row[0]
+    except Exception as e:
+        print(f"  settings: company_id backfill lookup ERROR - {e}")
+    if fallback is None:
+        print(
+            "  settings: no company found for company_id backfill; "
+            "NULL company_id rows will fail the NOT NULL constraint"
+        )
+        return
+    nulls = 0
+    for row in rows:
+        if row.get("company_id") is None:
+            row["company_id"] = fallback
+            nulls += 1
+    print(
+        f"  settings: backfilled {nulls} NULL company_id -> {fallback} "
+        f"(mirrors native tenant backfill)"
+    )
+
+
 def _pg_schema_map(db) -> dict:
     """Return {table: {column: (data_type, is_generated)}} for tables on PG.
 
@@ -245,13 +286,34 @@ def import_from_json(input_path: str, dsn: str, sanitize_fks: bool = True) -> di
             continue
 
         try:
-            # Get column names from first row; exclude PG generated columns
-            # (e.g. trips.month — GENERATED ALWAYS) which reject explicit values.
-            columns = [c for c in rows[0].keys() if not col_types.get(c, ("", False))[1]]
+            # Only insert columns that actually exist on PG.  Legacy SQLite
+            # DBs carry columns the PG schema never received (e.g.
+            # clients.bank_name, trips.reference); passing them to INSERT
+            # aborts the whole table.  Drop them with a clear log instead.
+            # PG generated columns (e.g. trips.month) are excluded too — they
+            # reject explicit values.
+            columns = [
+                c for c in rows[0].keys()
+                if c in col_types and not col_types[c][1]
+            ]
+            dropped = [c for c in rows[0].keys() if c not in col_types]
+            if dropped:
+                stats.setdefault("dropped_columns", {})[table] = dropped
+                print(
+                    f"  {table}: {len(dropped)} column(s) not in PG schema, "
+                    f"dropped: {', '.join(dropped)}"
+                )
             if not columns:
                 stats["skipped"].append(table)
-                print(f"  {table}: only generated columns, skipped")
+                print(f"  {table}: no insertable columns, skipped")
                 continue
+
+            # Legacy SQLite settings rows carry NULL company_id (global
+            # settings) which the composite PG PK rejects; backfill them the
+            # same way the native migration does before inserting.
+            if table == "settings" and "company_id" in col_types:
+                _backfill_settings_company_id(db, rows)
+
             col_list = ", ".join(f'"{c}"' for c in columns)
             placeholders = ", ".join("%s" for _ in columns)
 
@@ -263,6 +325,7 @@ def import_from_json(input_path: str, dsn: str, sanitize_fks: bool = True) -> di
 
             # Batch insert in chunks of 500
             chunk = 0
+            inserted = 0
             for i in range(0, len(rows), 500):
                 batch = rows[i:i + 500]
                 values = []
@@ -274,16 +337,27 @@ def import_from_json(input_path: str, dsn: str, sanitize_fks: bool = True) -> di
                         for c in columns
                     )
 
-                db.execute(
+                cur = db.execute(
                     f"INSERT INTO \"{table}\" ({col_list}){overriding} "
                     f"VALUES {', '.join(values)} ON CONFLICT DO NOTHING",
                     tuple(params),
                 )
+                rowcount = getattr(cur, "rowcount", 0) or 0
+                if rowcount > 0:
+                    inserted += rowcount
                 chunk += 1
 
             db.commit()
             stats["total_rows"] += len(rows)
-            print(f"  {table}: {len(rows)} rows imported")
+            if 0 < inserted < len(rows):
+                skipped = len(rows) - inserted
+                stats["deduped_rows"] = stats.get("deduped_rows", 0) + skipped
+                print(
+                    f"  {table}: {len(rows)} rows read, {inserted} inserted, "
+                    f"{skipped} skipped (ON CONFLICT duplicate key)"
+                )
+            else:
+                print(f"  {table}: {len(rows)} rows imported")
         except Exception as e:
             stats["errors"] += 1
             db.rollback()
@@ -392,3 +466,7 @@ if __name__ == "__main__":
     stats = import_from_json(args.input, args.dsn, sanitize_fks=not args.skip_fk_sanitize)
     print(f"\nDone: {stats['total_rows']} rows in {stats['total_tables']} tables "
           f"({stats['errors']} errors, {len(stats['skipped'])} skipped)")
+    if stats.get("dropped_columns"):
+        print(f"Dropped columns not present in PG schema: {stats['dropped_columns']}")
+    if stats.get("deduped_rows"):
+        print(f"Rows skipped as duplicate keys: {stats['deduped_rows']}")

@@ -206,6 +206,9 @@ class _FakeDB:
             col = re.search(r"t\.(\w+)\s+IS\s+NOT\s+NULL", query, re.IGNORECASE)
             col = col.group(1) if col else "?"
             return _FakeCursor(rows=[(self.orphan_counts.get(col, 0),)])
+        # settings.company_id tenant backfill lookup (import phase).
+        if "min(id)" in low:
+            return _FakeCursor(rows=[(1,)])
         return _FakeCursor()
 
     def commit(self):
@@ -322,6 +325,81 @@ def test_sanitize_step_skippable(tmp_path, monkeypatch):
     assert not any(sql.startswith("UPDATE trips SET") for sql, _ in fake.calls)
     assert not any("VALIDATE CONSTRAINT" in sql for sql, _ in fake.calls)
     assert "trips_fk_orphans" not in stats
+
+
+def test_unknown_columns_dropped_not_error(tmp_path, monkeypatch):
+    """SQLite-only columns absent from the PG schema are dropped, not fatal.
+
+    The rehearsal surfaced ``clients.bank_name`` / ``trips.reference`` —
+    columns the PG schema never received.  Before the fix the importer passed
+    them to INSERT and the whole table aborted (``column ... does not exist``).
+    """
+    import scripts.import_to_pg as mod
+
+    tables = {
+        "clients": [
+            {"id": 1, "name": "C1", "bank_name": "BANK", "bank_bic": "BIC"},
+        ],
+    }
+    schema = [
+        {"table_name": "clients", "column_name": "id", "data_type": "bigint",
+         "is_generated": "NEVER"},
+        {"table_name": "clients", "column_name": "name", "data_type": "text",
+         "is_generated": "NEVER"},
+    ]
+    fake = _FakeDB(schema_rows=schema)
+    monkeypatch.setattr(mod, "DatabaseManager", lambda dsn, **kw: fake)
+    stats = import_from_json(_write_dump(tmp_path, tables), "postgresql://fake")
+
+    assert stats["errors"] == 0
+    assert stats["total_rows"] == 1
+    assert stats["dropped_columns"] == {"clients": ["bank_name", "bank_bic"]}
+    inserts = [sql for sql, _ in fake.calls if sql.startswith("INSERT INTO")]
+    assert len(inserts) == 1
+    assert "bank_name" not in inserts[0]
+    assert "bank_bic" not in inserts[0]
+
+
+def test_settings_null_company_id_backfilled(tmp_path, monkeypatch):
+    """Legacy NULL settings.company_id is backfilled like the native path.
+
+    schema_pg.sql's composite PK (key, company_id) makes company_id implicitly
+    NOT NULL; legacy SQLite global settings (company_id NULL) must be mapped to
+    the lowest real company before the insert (mirrors
+    ``DatabaseManager._apply_pg_extra_ddl``).
+    """
+    import scripts.import_to_pg as mod
+
+    tables = {
+        "companies": [{"id": 1}],
+        "settings": [
+            {"key": "smtp_server", "value": "smtp.gmail.com", "company_id": None},
+            {"key": "smtp_port", "value": "587", "company_id": None},
+        ],
+    }
+    schema = [
+        {"table_name": "companies", "column_name": "id", "data_type": "bigint",
+         "is_generated": "NEVER"},
+        {"table_name": "settings", "column_name": "key", "data_type": "text",
+         "is_generated": "NEVER"},
+        {"table_name": "settings", "column_name": "value", "data_type": "text",
+         "is_generated": "NEVER"},
+        {"table_name": "settings", "column_name": "company_id", "data_type": "integer",
+         "is_generated": "NEVER"},
+    ]
+    fake = _FakeDB(schema_rows=schema)
+    monkeypatch.setattr(mod, "DatabaseManager", lambda dsn, **kw: fake)
+    stats = import_from_json(_write_dump(tmp_path, tables), "postgresql://fake")
+
+    assert stats["errors"] == 0
+    assert stats["total_rows"] == 3  # 1 company + 2 settings
+    settings_insert = [
+        (sql, params) for sql, params in fake.calls
+        if sql.startswith("INSERT INTO") and "settings" in sql
+    ][0]
+    insert_sql, params = settings_insert
+    assert "company_id" in insert_sql
+    assert 1 in params  # the NULL company_id was backfilled to the lowest company
 
 
 # ── PostgreSQL integration (skip when unavailable) ─────────────────────────

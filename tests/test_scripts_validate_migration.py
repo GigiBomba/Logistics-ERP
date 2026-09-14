@@ -37,9 +37,20 @@ def _make_fk_count(cnt: int) -> list[dict[str, int]]:
     return [{"cnt": cnt}]
 
 
-def _make_money(sum_v, avg_v) -> list[dict]:
-    """Simulate rows_to_dicts output for a SUM/AVG money query."""
-    return [{"s": sum_v, "a": avg_v}]
+def _make_money(sum_v, avg_v, n=100, c=100) -> list[dict]:
+    """Simulate rows_to_dicts output for a SUM/AVG/count money query."""
+    return [{"s": sum_v, "a": avg_v, "n": n, "c": c}]
+
+
+def _make_col_types(*types) -> list[dict]:
+    """Simulate rows_to_dicts output for the PG information_schema type lookup.
+
+    *types* are ``(table, column, data_type)`` triples.
+    """
+    return [
+        {"table_name": t, "column_name": c, "data_type": d}
+        for t, c, d in types
+    ]
 
 
 def _make_ts_sample(*values) -> list[dict]:
@@ -409,6 +420,47 @@ class TestMonetaryRounding:
         table, col, *_ = check["failed"][0]
         assert (table, col) == ("invoices", "total_amount")
 
+    def test_row_count_divergence_reported_contextually(self):
+        # PG trips is empty because the import aborted; report the missing
+        # rows instead of a SUM/AVG numeric mismatch.
+        sqlite = _make_db([
+            _make_money(Decimal("8870.47"), Decimal("2956.82")),
+            _make_money(Decimal("19870.47"), Decimal("3974.09"), n=5, c=5),
+            _make_money(Decimal("750.75"), Decimal("75.08")),
+        ])
+        pg = _make_db([
+            _make_money(Decimal("8870.47"), Decimal("2956.82")),
+            _make_money(None, None, n=0, c=0),
+            _make_money(Decimal("750.75"), Decimal("75.08")),
+        ])
+        check = _mod._check_monetary_rounding(sqlite, pg)
+        assert len(check["passed"]) == 2
+        assert len(check["failed"]) == 1
+        entry = check["failed"][0]
+        assert (entry[0], entry[1]) == ("trips", "total_price_eur")
+        assert "row-count divergence" in entry[2]
+        assert entry[3] == 5
+        assert entry[4] == 0
+
+    def test_same_metric_used_on_both_engines(self):
+        # SUM and AVG are compared against their own kind (not SUM vs AVG).
+        sqlite = _make_db([
+            _make_money(Decimal("19870.47"), Decimal("3974.09")),
+            _make_money(Decimal("5000.50"), Decimal("500.05")),
+            _make_money(Decimal("750.75"), Decimal("75.08")),
+        ])
+        pg = _make_db([
+            _make_money(Decimal("19870.47"), Decimal("3974.09")),
+            _make_money(Decimal("5000.50"), Decimal("500.05")),
+            _make_money(Decimal("750.75"), Decimal("75.08")),
+        ])
+        check = _mod._check_monetary_rounding(sqlite, pg)
+        assert len(check["passed"]) == 3
+        assert check["failed"] == []
+        # The generated SQL selects both metrics and a row count.
+        sql_used = sqlite.execute.call_args_list[0].args[0]
+        assert "SUM(" in sql_used and "AVG(" in sql_used and "COUNT(*)" in sql_used
+
 
 # ── Tests: extended checks — timestamp formats ─────────────────────────────
 
@@ -420,6 +472,10 @@ class TestTimestampFormats:
             _make_ts_sample("2026-02-01T00:00:00Z"),
         ])
         pg = _make_db([
+            _make_col_types(
+                ("trips", "created_at", "timestamp with time zone"),
+                ("trips", "start_date", "timestamp with time zone"),
+            ),
             _make_ts_sample("2026-01-01T08:00:00Z", "2026-01-02T08:00:00Z"),
             _make_ts_sample("2026-02-01T00:00:00Z"),
         ])
@@ -429,12 +485,66 @@ class TestTimestampFormats:
         assert check["failed"] == []
         assert check["errors"] == []
 
+    def test_timestamp_column_uses_to_char(self):
+        sqlite = _make_db([
+            _make_ts_sample("2026-01-01T08:00:00Z"),
+            _make_ts_sample("2026-02-01T00:00:00Z"),
+        ])
+        pg = _make_db([
+            _make_col_types(
+                ("trips", "created_at", "timestamp with time zone"),
+                ("trips", "start_date", "timestamp without time zone"),
+            ),
+            _make_ts_sample("2026-01-01T08:00:00Z"),
+            _make_ts_sample("2026-02-01T00:00:00Z"),
+        ])
+        check = _mod._check_timestamp_formats(sqlite, pg, sample_size=200)
+        assert check["passed"]
+        pg_sqls = [c.args[0] for c in pg.execute.call_args_list]
+        assert all("AT TIME ZONE" in s for s in pg_sqls if s.startswith("SELECT to_char"))
+
+    def test_text_column_uses_raw_value_without_to_char(self):
+        # Legacy export/import path stores datetimes as TEXT; the raw value is
+        # matched directly (no to_char / AT TIME ZONE).
+        sqlite = _make_db([
+            _make_ts_sample("2026-01-01T08:00:00Z"),
+            _make_ts_sample("2026-01-01"),
+        ])
+        pg = _make_db([
+            _make_col_types(
+                ("trips", "created_at", "text"),
+                ("trips", "start_date", "text"),
+            ),
+            _make_ts_sample("2026-01-01T08:00:00Z"),
+            _make_ts_sample("2026-01-01"),
+        ])
+        check = _mod._check_timestamp_formats(sqlite, pg, sample_size=200)
+        assert len(check["passed"]) == 2
+        assert check["errors"] == []
+        pg_sqls = [c.args[0] for c in pg.execute.call_args_list]
+        assert not any("AT TIME ZONE" in s for s in pg_sqls)
+
+    def test_type_lookup_error_recorded_not_crash(self):
+        sqlite = _make_db([
+            _make_ts_sample("2026-01-01T08:00:00Z"),
+            _make_ts_sample("2026-02-01T00:00:00Z"),
+        ])
+        pg = _make_db([Exception("permission denied for information_schema")])
+        check = _mod._check_timestamp_formats(sqlite, pg, sample_size=200)
+        assert check["passed"] == []
+        assert len(check["errors"]) == 2
+        assert "permission denied" in check["errors"][0][-1]
+
     def test_format_discrepancy_reported(self):
         sqlite = _make_db([
             _make_ts_sample("2026-01-01 08:00:00", "not-a-date"),  # 0% iso
             _make_ts_sample("2026-02-01T00:00:00Z"),
         ])
         pg = _make_db([
+            _make_col_types(
+                ("trips", "created_at", "timestamp with time zone"),
+                ("trips", "start_date", "timestamp with time zone"),
+            ),
             _make_ts_sample("2026-01-01T08:00:00Z", "2026-01-02T08:00:00Z"),  # 100%
             _make_ts_sample("2026-02-01T00:00:00Z"),
         ])
@@ -451,6 +561,10 @@ class TestTimestampFormats:
             _make_ts_sample("2026-01-01T08:00:00Z"),
         ])
         pg = _make_db([
+            _make_col_types(
+                ("trips", "created_at", "timestamp with time zone"),
+                ("trips", "start_date", "timestamp with time zone"),
+            ),
             _make_ts_sample("2026-01-01T08:00:00Z"),
             _make_ts_sample("2026-01-01T08:00:00Z"),
         ])
@@ -529,7 +643,11 @@ class TestValidateExtended:
             _make_money(Decimal("1000.00"), Decimal("100.00")),
             _make_money(Decimal("1000.00"), Decimal("100.00")),
             _make_money(Decimal("1000.00"), Decimal("100.00")),
-            # timestamp_formats: 2 columns x (sqlite, pg)
+            # timestamp_formats: pg type lookup, then 2 columns x (sqlite, pg)
+            _make_col_types(
+                ("trips", "created_at", "timestamp with time zone"),
+                ("trips", "start_date", "timestamp with time zone"),
+            ),
             _make_ts_sample("2026-01-01T08:00:00Z"),
             _make_ts_sample("2026-01-01T08:00:00Z"),
             _make_ts_sample("2026-01-01T08:00:00Z"),

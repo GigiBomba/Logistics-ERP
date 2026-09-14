@@ -15,14 +15,19 @@ following extended families are also reported under ``results["checks"]``
                             alerts.trip_id -> trips; orphan counts are
                             reported (info-level fail with breakdown; the
                             run is never aborted).
-* ``monetary_rounding``   - SUM/AVG over NUMERIC money columns
+* ``monetary_rounding``   - full-table SUM and AVG over NUMERIC money columns
                             (invoices.total_amount, trips.total_price_eur,
                             receipts.total) agree to 2dp within 0.01
-                            (rounded before compare; Decimal-safe).
-* ``timestamp_formats``   - ISO-8601 regex pass-rate on sampled TEXT datetime
-                            columns (trips.created_at / trips.start_date);
-                            PG-side TIMESTAMPTZ is rendered via
-                            ``to_char(col AT TIME ZONE 'UTC', ...)``.
+                            (rounded before compare; Decimal-safe).  Both
+                            engines use the identical metric; a row-count
+                            divergence (e.g. an aborted import) is reported as
+                            such instead of a numeric mismatch.
+* ``timestamp_formats``   - ISO-8601 regex pass-rate on sampled datetime
+                            columns (trips.created_at / trips.start_date).
+                            Type-aware: PG TIMESTAMPTZ is rendered via
+                            ``to_char(col AT TIME ZONE 'UTC', ...)`` while a
+                            legacy TEXT column is matched against the raw
+                            value.
 * ``unique_sampling``     - duplicate counts on invoice_number, doc_number,
                             proforma_number must be zero on both engines.
 
@@ -69,6 +74,32 @@ def _money_close(a, b) -> bool:
 
 
 _ISO8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+
+
+def _pg_column_types(pg, spec) -> dict:
+    """Return ``{(table, column): data_type}`` for the *spec* columns on PG.
+
+    A single ``information_schema.columns`` lookup covers every sampled
+    column.  Data types come back lower-cased; missing columns are simply
+    absent from the mapping (the caller reports that as a check error).
+    """
+    conditions = " OR ".join(
+        "(table_name = ? AND column_name = ?)" for _ in spec
+    )
+    params = tuple(p for table, col in spec for p in (table, col))
+    rows = pg.rows_to_dicts(
+        pg.execute(
+            "SELECT table_name, column_name, data_type "
+            f"FROM information_schema.columns WHERE {conditions}",
+            params,
+        ).fetchall()
+    )
+    return {
+        (r.get("table_name"), r.get("column_name")): str(
+            r.get("data_type") or ""
+        ).strip().lower()
+        for r in rows
+    }
 
 
 # ── Extended validation families ───────────────────────────────────────────
@@ -132,7 +163,15 @@ def _check_fk_orphans(sqlite, pg) -> dict:
 
 
 def _check_monetary_rounding(sqlite, pg) -> dict:
-    """SUM/AVG over money columns agree to 2dp within 0.01."""
+    """Full-table SUM and AVG over money columns agree to 2dp within 0.01.
+
+    The comparison is metric-explicit and identical on both engines: the same
+    ``SUM(col)`` and ``AVG(col)`` are computed over the whole table.  A row
+    count (``COUNT(*)``) is fetched in the same query; when the engines
+    disagree on row count (e.g. an import error aborted a table, or duplicate
+    keys were dropped) the divergence is reported with the missing-row count
+    instead of a misleading SUM/AVG numeric mismatch.
+    """
     check = {"check": "monetary_rounding", "passed": [], "failed": [], "errors": []}
     spec = [
         ("invoices", "total_amount"),
@@ -141,9 +180,23 @@ def _check_monetary_rounding(sqlite, pg) -> dict:
     ]
     for table, col in spec:
         try:
-            sql = f'SELECT SUM("{col}") AS s, AVG("{col}") AS a FROM "{table}"'
+            sql = (
+                f'SELECT SUM("{col}") AS s, AVG("{col}") AS a, '
+                f'COUNT(*) AS n, COUNT("{col}") AS c FROM "{table}"'
+            )
             s = _scalar(sqlite, sql)
             p = _scalar(pg, sql)
+            s_n, p_n = s.get("n"), p.get("n")
+            if s_n != p_n:
+                if s_n is None or p_n is None:
+                    detail = f"row counts unknown (SQLite={s_n}, PG={p_n})"
+                else:
+                    detail = (
+                        f"row-count divergence: SQLite={s_n}, PG={p_n}, "
+                        f"missing={p_n - s_n}"
+                    )
+                check["failed"].append((table, col, detail, s_n, p_n))
+                continue
             s_sum, s_avg = _round2(s.get("s")), _round2(s.get("a"))
             p_sum, p_avg = _round2(p.get("s")), _round2(p.get("a"))
             entry = (table, col, s_sum, s_avg, p_sum, p_avg)
@@ -157,23 +210,54 @@ def _check_monetary_rounding(sqlite, pg) -> dict:
 
 
 def _check_timestamp_formats(sqlite, pg, sample_size: int = 200) -> dict:
-    """ISO-8601 pass-rate on sampled datetime columns per engine."""
+    """ISO-8601 pass-rate on sampled datetime columns per engine.
+
+    Type-aware: the PG column's ``information_schema.columns.data_type`` is
+    looked up first.  A real timestamp column is rendered through
+    ``to_char(col AT TIME ZONE 'UTC', ...)``; a legacy TEXT column (the
+    export/import path writes datetimes as TEXT, only the native alembic path
+    converts to TIMESTAMPTZ) is compared as-is with the ISO-8601 regex — the
+    ``AT TIME ZONE`` render raises ``function pg_catalog.timezone(unknown,
+    text) does not exist`` on TEXT.  Type-lookup failures are reported as
+    check errors instead of aborting the run.
+    """
     check = {"check": "timestamp_formats", "passed": [], "failed": [], "errors": []}
     spec = [
         ("trips", "created_at"),
         ("trips", "start_date"),
     ]
+    try:
+        pg_types = _pg_column_types(pg, spec)
+    except Exception as e:
+        for table, col in spec:
+            check["errors"].append((table, col, f"PG type lookup failed: {str(e)[:80]}"))
+        return check
+
     for table, col in spec:
         try:
+            pg_type = pg_types.get((table, col), "")
+            if not pg_type:
+                check["errors"].append(
+                    (table, col, "PG data_type lookup returned no result")
+                )
+                continue
             s_sql = (
                 f'SELECT "{col}" AS v FROM "{table}" '
                 f'WHERE "{col}" IS NOT NULL AND "{col}" != \'\' LIMIT ?'
             )
-            p_sql = (
-                f"SELECT to_char(\"{col}\" AT TIME ZONE 'UTC', "
-                f"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS v "
-                f'FROM "{table}" WHERE "{col}" IS NOT NULL LIMIT ?'
-            )
+            if "timestamp" in pg_type:
+                p_sql = (
+                    f"SELECT to_char(\"{col}\" AT TIME ZONE 'UTC', "
+                    f"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS v "
+                    f'FROM "{table}" WHERE "{col}" IS NOT NULL LIMIT ?'
+                )
+            else:
+                # TEXT/date columns have no timezone to render: apply the
+                # ISO-8601 regex to the raw stored value directly.
+                p_sql = (
+                    f'SELECT "{col}" AS v FROM "{table}" '
+                    f'WHERE "{col}" IS NOT NULL AND "{col}" != \'\' LIMIT ?'
+                )
             s_rows = sqlite.rows_to_dicts(
                 sqlite.execute(s_sql, (sample_size,)).fetchall()
             )
