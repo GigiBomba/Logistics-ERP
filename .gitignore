@@ -119,3 +119,6 @@ website/test-results/
 website/coverage/
 website/reports/
 mutation-report/
+
+# Deepwork progress (OpenCode session state)
+.slim/deepwork/
