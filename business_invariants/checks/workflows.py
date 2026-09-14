@@ -18,6 +18,7 @@ from business_invariants.models import (
     InvariantStatus,
     Severity,
 )
+from models.invoice_models import INVOICE_STATUS_TRANSITIONS
 
 COMMIT = ExecutionFrequency.COMMIT
 PR = ExecutionFrequency.PR
@@ -201,19 +202,10 @@ def check_invoice_state_machine(ctx: InvariantContext) -> InvariantResult:
             message="No database connection — runtime validation skipped",
         )
 
-    allowed_transitions = {
-        "draft": {"finalized", "cancelled"},
-        "finalized": {"xml_generated", "cancelled", "paid"},
-        "xml_generated": {"paid", "draft", "submitted_externally"},
-        "submitted_externally": {"queued", "rejected"},
-        "queued": {"submitting", "rejected"},
-        "submitting": {"accepted", "rejected", "manual_review"},
-        "accepted": {"paid"},
-        "rejected": {"draft", "manual_review"},
-        "manual_review": {"draft", "accepted", "rejected"},
-        "paid": set(),
-        "cancelled": set(),
-    }
+    # Single source of truth: the model table in models.invoice_models.
+    # No inline copy — WF-002 validates against the same table the rest of
+    # the codebase uses.
+    allowed_transitions = INVOICE_STATUS_TRANSITIONS
 
     try:
         # Check for status values that are not in the state machine at all
