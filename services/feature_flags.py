@@ -72,6 +72,18 @@ FEATURE_FLAGS: dict[str, FeatureFlag] = {
         default=False,
         scope=FlagScope.PER_COMPANY,
     ),
+    "payment_leniency": FeatureFlag(
+        key="payment_leniency",
+        description=(
+            "Rule-based payment leniency: pauses dunning escalation for clients "
+            "with a clean payment track record when a single invoice slips "
+            "(blueprint §4.6 approximation). Held for accountant/legal sign-off "
+            "before enabling — see services/operations/payment_leniency.py."
+        ),
+        default=False,
+        scope=FlagScope.GLOBAL,
+        metadata={"needs_legal_review": True},
+    ),
 }
 
 

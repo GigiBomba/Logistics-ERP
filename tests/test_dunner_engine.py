@@ -366,3 +366,43 @@ def test_log_sent_exception_logged(engine):
         # Should not raise
         engine._log_sent(invoice_id=1, trip_id=1, reminder_type="test",
                          days_offset=0, recipient_email="test@test.com")
+
+
+def test_evaluate_all_leniency_not_consulted_when_flag_off(engine):
+    """Payment leniency is feature-flagged OFF by default: the leniency engine
+    must never be consulted, so dunning behaviour is byte-for-byte unchanged
+    until an operator enables the flag."""
+    from datetime import date, timedelta
+
+    engine._rules.get.return_value = True
+    engine._notification_center = MagicMock()
+    engine._db = MagicMock()
+
+    leniency = MagicMock()
+    engine._leniency_engine = leniency
+
+    with patch("services.operations.dunner_engine.AutoMailRepository") as mock_repo, \
+            patch("services.operations.dunner_engine.TemplateService"):
+        mock_repo_instance = MagicMock()
+        mock_repo.return_value = mock_repo_instance
+        mock_repo_instance.get_active_schedules.return_value = [
+            {"id": 1, "name": "day_30", "template_id": 1}
+        ]
+        mock_repo_instance.get_all_templates.return_value = []
+        mock_repo_instance.get_all_overrides.return_value = {}
+        mock_repo_instance.get_all_settings.return_value = {}
+
+        due = (date.today() - timedelta(days=30)).isoformat()
+        engine._fetch_due_invoices = MagicMock(return_value=[
+            {"invoice_id": 1, "trip_id": 10, "client_id": 1, "due_date": due,
+             "invoice_number": "INV-001", "total_amount": 1000, "currency": "EUR",
+             "client_email": "c@c.com", "client_company_name": "Client",
+             "client_name": "Client", "client_contact": "", "truck_plate": "",
+             "driver_name": ""}
+        ])
+
+        result = engine.evaluate_all()
+
+    assert result == 0
+    leniency.grant_leniency.assert_not_called()
+    leniency.is_paused.assert_not_called()

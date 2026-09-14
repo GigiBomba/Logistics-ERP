@@ -22,12 +22,25 @@ from repositories.invoice_repository import InvoiceRepository
 from services.automail.reminder_service import ReminderService
 from services.automail.template_service import TemplateService
 from services.document_automation.package_builder import PackageBuilder
+from services.feature_flags import FeatureFlagService
 from services.invoicing.config_manager import load_company_config
-from services.operations.event_bus import DAILY_CHECK, EventBus
+from services.operations.event_bus import (
+    DAILY_CHECK,
+    PAYMENT_LENIENCY_GRANTED,
+    EventBus,
+)
 from services.operations.notification_center import NotificationCenter
+from services.operations.payment_leniency import (
+    ClientPaymentHistory,
+    PaymentLeniencyEngine,
+)
 from services.operations.rules import Rules
 
 logger = logging.getLogger("operations.dunner_engine")
+
+# Settings-table key namespace used to persist leniency grants (same store as
+# feature-flag overrides, which live under ``feature_flag.<key>``).
+_LENIENCY_GRANT_KEY_PREFIX = "payment_leniency.granted."
 
 
 class DunnerEngine:
@@ -44,6 +57,8 @@ class DunnerEngine:
         notification_center: Optional[NotificationCenter] = None,
         prefs=None,
         invoice_repository: Optional[InvoiceRepository] = None,
+        leniency_engine: Optional[PaymentLeniencyEngine] = None,
+        feature_flags: Optional[FeatureFlagService] = None,
     ) -> None:
         self._db = db
         self._notification_center = notification_center
@@ -51,6 +66,11 @@ class DunnerEngine:
         self._invoice_repo = invoice_repository or InvoiceRepository(self._db)
         self._event_bus = EventBus()
         self._rules = Rules()
+        self._leniency_engine = leniency_engine or PaymentLeniencyEngine()
+        self._feature_flags = feature_flags or FeatureFlagService(self._db)
+        # client_id -> ISO date of the most recent leniency grant (loaded once
+        # per evaluation cycle; also updated as grants are recorded mid-cycle).
+        self._leniency_grant_dates: dict[int, str] = {}
         self._subscribe()
 
     def _subscribe(self) -> None:
@@ -110,6 +130,12 @@ class DunnerEngine:
         company_name = load_company_config().get("company_name", "Operion ERP")
         today = date.today()
         sent_count = 0
+
+        # Payment leniency is feature-flagged (default OFF). When enabled,
+        # rule-based grants defuse reminder escalation for qualifying clients.
+        leniency_enabled = self._is_payment_leniency_enabled()
+        if leniency_enabled:
+            self._leniency_grant_dates = self._load_leniency_grant_dates()
 
         invoices = self._fetch_due_invoices()
         if not invoices:
@@ -211,6 +237,13 @@ class DunnerEngine:
                             template_id, sched["id"],
                         )
                         continue
+
+                    # Payment leniency (feature-flagged, default OFF): when a
+                    # rule-based grant applies, defuse this client's escalation
+                    # for the grant window instead of sending the reminder.
+                    if leniency_enabled and client_id is not None:
+                        if self._maybe_defuse_for_leniency(inv, client_id):
+                            break
 
                     # Render the email
                     subject, body_text, body_html = template_service.render_email(
@@ -359,3 +392,109 @@ class DunnerEngine:
             )
         except Exception as exc:
             logger.error("Dunner: failed to log reminder for invoice #%d: %s", invoice_id, exc)
+
+    # ── Payment leniency (feature-flagged, blueprint §4.6) ─────────────
+
+    def _is_payment_leniency_enabled(self) -> bool:
+        """Return whether the ``payment_leniency`` feature flag is on.
+
+        Disabled by default; failures degrade to disabled (never a crash).
+        """
+        try:
+            return bool(self._feature_flags.is_enabled("payment_leniency", company_id=0))
+        except Exception as exc:
+            logger.debug("Dunner: payment leniency flag check failed: %s", exc)
+            return False
+
+    def _load_leniency_grant_dates(self) -> dict[int, str]:
+        """Load persisted leniency grants (``payment_leniency.granted.<client_id>``
+        settings keys) into ``{client_id: ISO_date}``."""
+        if self._db is None:
+            return {}
+        try:
+            from repositories.settings_repository import SettingsRepository
+
+            rows = SettingsRepository(self._db).get_settings_by_key_pattern(
+                f"{_LENIENCY_GRANT_KEY_PREFIX}%"
+            )
+            grants: dict[int, str] = {}
+            for key, value in rows.items():
+                client_id_str = key.rsplit(".", 1)[-1]
+                if client_id_str.isdigit() and value:
+                    grants[int(client_id_str)] = value
+            return grants
+        except Exception as exc:
+            logger.debug("Dunner: failed to load leniency grants: %s", exc)
+            return {}
+
+    def _build_leniency_history(self, client_id: int) -> ClientPaymentHistory:
+        """Assemble the client's payment-track-record snapshot for the engine."""
+        invoices: list[dict] = []
+        try:
+            invoices = list(self._invoice_repo.get_by_client_id(client_id) or [])
+        except Exception as exc:
+            logger.debug(
+                "Dunner: failed to load invoice history for client #%s: %s", client_id, exc
+            )
+
+        grants: list[dict] = []
+        grant_value = self._leniency_grant_dates.get(client_id)
+        if grant_value:
+            grants.append({"granted_at": grant_value})
+
+        return ClientPaymentHistory(invoices=invoices, leniency_grants=grants)
+
+    def _record_leniency_grant(self, client_id: int, granted_at) -> None:
+        """Persist a leniency grant (settings key) and update the cycle cache."""
+        iso_date = granted_at.isoformat() if hasattr(granted_at, "isoformat") else str(granted_at)
+        self._leniency_grant_dates[client_id] = iso_date
+        if self._db is None:
+            return
+        try:
+            from repositories.settings_repository import SettingsRepository
+
+            SettingsRepository(self._db).upsert_setting(
+                f"{_LENIENCY_GRANT_KEY_PREFIX}{client_id}", iso_date
+            )
+        except Exception as exc:
+            logger.warning(
+                "Dunner: failed to persist leniency grant for client #%s: %s", client_id, exc
+            )
+
+    def _maybe_defuse_for_leniency(self, inv: dict, client_id: int) -> bool:
+        """Evaluate leniency for *inv* and defuse reminder dispatch when it applies.
+
+        Returns ``True`` when the reminder should be skipped (either a grant is
+        already active for the client, or a fresh grant is issued). Emits a
+        ``payment.leniency_granted`` event when a new grant is issued.
+        """
+        history = self._build_leniency_history(client_id)
+
+        if self._leniency_engine.is_paused(client_id, history):
+            logger.info(
+                "Dunner: payment leniency window active for client #%s, defusing invoice #%d",
+                client_id, inv.get("invoice_id"),
+            )
+            return True
+
+        grant = self._leniency_engine.grant_leniency(client_id, inv, history)
+        if grant is None:
+            return False
+
+        self._record_leniency_grant(client_id, grant.granted_at)
+        self._event_bus.publish(
+            PAYMENT_LENIENCY_GRANTED,
+            {
+                "client_id": client_id,
+                "invoice_id": inv.get("invoice_id"),
+                "pause_days": grant.pause_days,
+                "reason": grant.reason,
+                "granted_at": grant.granted_at.isoformat(),
+            },
+        )
+        logger.info(
+            "Dunner: payment leniency granted for client #%s (invoice #%d): %s — "
+            "dunning defused for %d days",
+            client_id, inv.get("invoice_id"), grant.reason, grant.pause_days,
+        )
+        return True
