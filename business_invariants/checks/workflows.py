@@ -177,8 +177,11 @@ def check_full_workflow_chain(ctx: InvariantContext) -> InvariantResult:
     id="WF-002",
     title="Invoice state machine enforced",
     description=(
-        "Invoice status transitions follow: "
-        "draft→finalized→xml_generated→paid (no ANAF submission chain)."
+        "Invoice status transitions follow the 11-state blueprint superset: "
+        "draft→finalized→xml_generated→submitted_externally→queued→submitting→"
+        "accepted→paid, with rejected / manual_review recovery branches and the "
+        "local-only finalized→paid and xml_generated→paid edges (ANAF submission "
+        "service itself is out of scope)."
     ),
     category=InvariantCategory.WORKFLOWS,
     modules=["invoicing"],
@@ -201,7 +204,13 @@ def check_invoice_state_machine(ctx: InvariantContext) -> InvariantResult:
     allowed_transitions = {
         "draft": {"finalized", "cancelled"},
         "finalized": {"xml_generated", "cancelled", "paid"},
-        "xml_generated": {"paid", "draft"},
+        "xml_generated": {"paid", "draft", "submitted_externally"},
+        "submitted_externally": {"queued", "rejected"},
+        "queued": {"submitting", "rejected"},
+        "submitting": {"accepted", "rejected", "manual_review"},
+        "accepted": {"paid"},
+        "rejected": {"draft", "manual_review"},
+        "manual_review": {"draft", "accepted", "rejected"},
         "paid": set(),
         "cancelled": set(),
     }

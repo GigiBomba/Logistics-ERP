@@ -21,14 +21,13 @@ Money/legal rigor:
     ``empty_line_items`` / ``not_editable``), never 500.
   * ``generate_xml`` writes a REAL UBL-inspired CIUS-RO XML via
     ``services.invoicing.xml_export`` (seller from the company config) and
-    stores ``efactura_xml_path``.  ``submit`` is an HONEST status-only stub:
-    no ANAF call exists anywhere in the codebase — it transitions to
-    ``submitted_externally`` and records a generated
-    ``efactura_submission_reference`` (a client-generated ``EFAC-`` reference,
-    never an ANAF submission id).  ``OPERION_ENABLE_ANAF_SUBMISSION``
-    (default false) is the explicit opt-in: true without ANAF credentials
-    returns 400 ``anaf_not_configured`` instead of faking a submission
-    (Gate-29 A3).
+    stores ``efactura_xml_path``.  The ANAF submission *service* is out of
+    scope: no ANAF call exists anywhere in the codebase and the legacy
+    ``submit`` action is rejected with 422 ``action_not_supported``.  The
+    11-state machine still models the full blueprint chain
+    (submitted_externally → queued → submitting → accepted / rejected /
+    manual_review) so the status surface matches OPERION_BLUEPRINT §14 — a
+    future ANAF service can drive it.
   * Invoice PDFs come from the desktop ``InvoiceGenerator``.
   * CMR PDFs come from the desktop ``CMRGenerator``; the captured signature
     PNG is persisted to the documents table (``entity_type='cmr'``,
@@ -36,14 +35,10 @@ Money/legal rigor:
     KIND_DOCUMENT token (Phase-2 signed-URL pattern).
 
 Permission mapping (§8.4 vs real code):
-  * finalize / generate_xml / submit / mark_paid  → ``can_finalize_invoice``.
-    **``can_submit_invoice`` DOES NOT EXIST** in the real ``PermissionService``
-    (grep 0) — submit is mapped to ``can_finalize_invoice`` (same matrix as
-    finalize, manager+admin).  The state machine still validates that the
-    invoice is in ``xml_generated`` before accepting the submit action.
-  * cancel                                       → ``can_cancel_invoice``.
-  * create / patch (draft edits)                 → ``can_create_invoice``.
-  * CMR generation                               → ``can_generate_cmr``
+  * finalize / generate_xml / mark_paid            → ``can_finalize_invoice``.
+  * cancel                                         → ``can_cancel_invoice``.
+  * create / patch (draft edits)                   → ``can_create_invoice``.
+  * CMR generation                                 → ``can_generate_cmr``
     (dispatcher ALLOWED — real matrix, §8.3 row 4 ✓).
 """
 from __future__ import annotations

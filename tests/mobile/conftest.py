@@ -372,9 +372,10 @@ def _insert_client(db, name: str, *, company_id: int = 1, vat: str = "RO-T") -> 
 
 # ── Phase 3A: finance seeding (invoices + maintenance) ────────────────────
 # Deterministic invoice rows across the REAL status machine (draft / finalized /
-# paid / cancelled / accepted / xml_generated) with line_items_json computed by
-# the REAL desktop calculator, plus maintenance schedules/records for the
-# schedule-list + cost-trend endpoints.
+# paid / cancelled / xml_generated ×2 — the blueprint e-Factura states are not
+# seeded because no ANAF submission service drives them) with line_items_json
+# computed by the REAL desktop calculator, plus maintenance schedules/records
+# for the schedule-list + cost-trend endpoints.
 
 _INVOICE_VECTORS = None
 

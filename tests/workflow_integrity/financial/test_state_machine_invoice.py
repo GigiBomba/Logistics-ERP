@@ -1,8 +1,13 @@
-"""Invoice state machine: Draft → Finalized → XML Generated → Paid.
+"""Invoice state machine (11-state blueprint superset).
 
-Also supports: Draft → Cancelled, Finalized → Cancelled, and the reversion
-path xml_generated → draft.  There is NO ANAF submission chain — the invoice
-generator never submits externally; the XML FILE is the legal deliverable.
+Core local lifecycle: Draft → Finalized → XML Generated → Paid, plus
+Draft → Cancelled and Finalized → Cancelled, and the local reversion path
+xml_generated → draft.
+
+Blueprint e-Factura chain (OPERION_BLUEPRINT §14): xml_generated →
+submitted_externally → queued → submitting → accepted → paid, with the
+rejected / manual_review recovery branches.  The ANAF submission *service*
+is out of scope — the machine models the states; nothing wires them yet.
 """
 
 from __future__ import annotations
@@ -168,9 +173,21 @@ class TestInvoiceInvalidTransitions:
         [
             ("draft", "paid"),             # skip finalization
             ("draft", "xml_generated"),    # skip finalization
+            ("draft", "submitted_externally"),  # must generate XML first
             ("finalized", "draft"),        # no reversion from finalized
-            ("xml_generated", "finalized"),  # xml_generated only → paid / draft
+            ("xml_generated", "finalized"),  # xml_generated only → paid / draft / submitted_externally
             ("xml_generated", "cancelled"),  # no cancel once XML exists
+            ("submitted_externally", "submitting"),  # must pass through queued
+            ("submitted_externally", "accepted"),    # must pass through queue+submitting
+            ("queued", "accepted"),        # must pass through submitting
+            ("queued", "manual_review"),   # manual_review only from submitting/rejected
+            ("submitting", "paid"),        # must be accepted first
+            ("accepted", "draft"),         # accepted → paid only
+            ("accepted", "rejected"),      # accepted → paid only
+            ("rejected", "submitting"),    # rejected → draft / manual_review only
+            ("rejected", "paid"),          # rejected must recover via draft
+            ("manual_review", "submitting"),  # manual_review → draft / accepted / rejected
+            ("manual_review", "queued"),   # must re-enter via draft → finalized → xml_generated
             ("paid", "draft"),             # no backward from terminal
             ("paid", "finalized"),         # no backward from terminal
             ("paid", "cancelled"),         # terminal → no transition

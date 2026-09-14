@@ -137,7 +137,7 @@ features. These must be addressed before production launch.
 | H3 | **No amount_paid / amount_remaining tracking** | `models/invoice_models.py` | Cannot track partial payments |
 | H4 | **No E-Factura status fields** | Schema, models, repository | No path to e-Factura integration |
 | H5 | **No immutable archival for finalized invoices** | `service.py` (finalize method) | Finalized invoices can still be deleted; no archive |
-| H6 | **Status enum incomplete** | `service.py` | Only draft/finalized/cancelled — missing 6 e-Factura states |
+| H6 | **Status enum incomplete** — ✅ **CLOSED** | `models/invoice_models.py` | Fixed: 11-state machine (blueprint superset) with transition validation + `invoice_status_history`. ANAF submission *service* remains out of scope. |
 | H7 | **No county/city on client for Romanian buyers** | `models/client_models.py` | Romanian invoices require county |
 
 ### MEDIUM
@@ -195,8 +195,8 @@ documented as **future milestones**.
 ### Is automatic ANAF submission the only remaining major compliance milestone?
 
 **No.** Before reaching that milestone, the following must also be completed:
-- XML/UBL export layer
-- E-Factura status state machine
+- ANAF submission service (state machine already models the chain — see H6/F4,
+  now closed)
 - Per-rate VAT breakdown in PDF
 - IBAN/bank_name on invoice
 - Individual buyer support
@@ -220,12 +220,12 @@ documented as **future milestones**.
 - [ ] **H3:** Add `amount_paid`, `amount_remaining` to invoice model and tracking logic
 - [ ] **H4:** Add E-Factura fields to schema, models, and repository
 - [ ] **H5:** Implement immutable archival — prevent delete/edit of finalized invoices
-- [ ] **H6:** Implement complete status state machine with transition validation
+- [x] **H6:** Implement complete status state machine with transition validation
 - [ ] **H7:** Add `county` to client model and ensure it appears on invoice PDF
 - [ ] **M4:** Implement VAT breakdown by rate in PDF generator
 - [ ] **M1:** Add `exchange_rate` to invoice model
 - [ ] **Part 10:** Implement deterministic XML export layer (UBL-ready)
-- [ ] **H6 (state machine):** Add status history table with transition timestamps
+- [x] **H6 (state machine):** Add status history table with transition timestamps
 
 ### Post-Launch (Phase 2)
 
@@ -291,9 +291,9 @@ Missing for Romanian compliance:
 - `taxable_amount: Optional[float]` (net after discount)
 - `line_total: Optional[float]`
 
-### F4. Status State Machine Gap (HIGH H6)
+### F4. Status State Machine Gap (HIGH H6) — ✅ RESOLVED
 
-Current status values used in code: `draft`, `finalized`, `cancelled`, `Unpaid`, `Paid`
+Current status values used in code: `draft`, `finalized`, `xml_generated`, `cancelled`, `paid`
 
 Required for e-Factura:
 ```
@@ -302,7 +302,15 @@ draft → finalized → xml_generated → submitted_externally → accepted
                                                           → manual_review
 ```
 
-No validation ensures `cancelled` can only come from `draft` or `finalized`.
+**Resolution:** `models/invoice_models.py` now defines the 11-state blueprint
+superset — all e-Factura states (`submitted_externally`, `queued`, `submitting`,
+`accepted`, `rejected`, `manual_review`) are in `INVOICE_STATUSES` with the
+full transition map, while the local-only edges (`finalized→paid`,
+`xml_generated→paid`/`→draft`) are preserved so mark-paid stays reachable
+without ANAF.  Transitions are enforced dynamically via
+`INVOICE_STATUS_TRANSITIONS` in `InvoiceService._validate_status_transition`,
+and every transition is recorded in `invoice_status_history`.  The ANAF
+submission *service* itself remains out of scope.
 
 ### F5. PDF IBAN Missing (HIGH H1)
 

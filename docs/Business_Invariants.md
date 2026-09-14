@@ -110,11 +110,11 @@ Paid → [Invoiced]
 Cancelled → [Planned]
 ```
 
-**Invoice Status Transitions:**
+**Invoice Status Transitions** (11-state blueprint superset; ANAF submission service out of scope):
 ```
 draft → [finalized, cancelled]
 finalized → [xml_generated, cancelled, paid]
-xml_generated → [submitted_externally, draft]
+xml_generated → [paid, submitted_externally, draft]
 submitted_externally → [queued, rejected]
 queued → [submitting, rejected]
 submitting → [accepted, rejected, manual_review]

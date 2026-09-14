@@ -35,16 +35,33 @@ INVOICE_STATUSES = [
     "draft",
     "finalized",
     "xml_generated",
+    "submitted_externally",
+    "queued",
+    "submitting",
+    "accepted",
+    "rejected",
+    "manual_review",
     "cancelled",
     "paid",
 ]
 
+# 11-state superset (OPERION_BLUEPRINT §14 invoice status workflow + the
+# pre-existing local-only edges).  The blueprint edges are all present so the
+# machine matches the spec exactly; the KEPT local edges (finalized→paid,
+# xml_generated→paid, xml_generated→draft) ensure mark-paid stays reachable in
+# local mode without an ANAF submission service.
 INVOICE_STATUS_TRANSITIONS: dict[str, list[str]] = {
-    "draft":         ["finalized", "cancelled"],
-    "finalized":     ["xml_generated", "cancelled", "paid"],
-    "xml_generated": ["paid", "draft"],
-    "paid":          [],
-    "cancelled":     [],
+    "draft":                ["finalized", "cancelled"],
+    "finalized":            ["xml_generated", "cancelled", "paid"],
+    "xml_generated":        ["paid", "draft", "submitted_externally"],
+    "submitted_externally": ["queued", "rejected"],
+    "queued":               ["submitting", "rejected"],
+    "submitting":           ["accepted", "rejected", "manual_review"],
+    "accepted":             ["paid"],
+    "rejected":             ["draft", "manual_review"],
+    "manual_review":        ["draft", "accepted", "rejected"],
+    "cancelled":            [],
+    "paid":                 [],
 }
 
 
@@ -117,7 +134,13 @@ class InvoiceResult(BaseModel):
     pdf_path: Optional[str] = None
     # e-Factura XML artifact tracking: the XML FILE is the legal deliverable
     # (UBL CIUS-RO via xml_export.py).  The invoice generator never submits to
-    # ANAF — there is no submission reference / submitted-at / response state.
+    # ANAF — there is no submission service wired.  The 11-state machine
+    # (INVOICE_STATUSES) nevertheless models the full blueprint chain
+    # (submitted_externally → queued → submitting → accepted/rejected/
+    # manual_review) so the status surface matches OPERION_BLUEPRINT §14 while
+    # the local-only edges (finalized→paid, xml_generated→paid/draft) keep
+    # mark-paid reachable without ANAF.  A future ANAF submission service can
+    # drive the chain; today no code produces those states.
     efactura_status: str = ""
     efactura_xml_path: Optional[str] = None
     # Audit

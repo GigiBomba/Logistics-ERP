@@ -509,14 +509,56 @@ class TestInvoiceCmr:
 
 class TestInvoiceMachineContract:
     def test_real_transition_table_used(self):
-        """The endpoints enforce the REAL desktop machine table (no ANAF chain)."""
+        """The endpoints enforce the REAL desktop machine (11-state blueprint superset)."""
         from models.invoice_models import INVOICE_STATUS_TRANSITIONS
 
+        # Local-only edges preserved (mark-paid reachable without ANAF).
         assert INVOICE_STATUS_TRANSITIONS["draft"] == ["finalized", "cancelled"]
         assert INVOICE_STATUS_TRANSITIONS["finalized"] == ["xml_generated", "cancelled", "paid"]
-        assert INVOICE_STATUS_TRANSITIONS["xml_generated"] == ["paid", "draft"]
+        assert INVOICE_STATUS_TRANSITIONS["xml_generated"] == ["paid", "draft", "submitted_externally"]
+        # Blueprint e-Factura chain present.
+        assert INVOICE_STATUS_TRANSITIONS["submitted_externally"] == ["queued", "rejected"]
+        assert INVOICE_STATUS_TRANSITIONS["queued"] == ["submitting", "rejected"]
+        assert INVOICE_STATUS_TRANSITIONS["submitting"] == ["accepted", "rejected", "manual_review"]
+        assert INVOICE_STATUS_TRANSITIONS["accepted"] == ["paid"]
+        assert INVOICE_STATUS_TRANSITIONS["rejected"] == ["draft", "manual_review"]
+        assert INVOICE_STATUS_TRANSITIONS["manual_review"] == ["draft", "accepted", "rejected"]
         assert INVOICE_STATUS_TRANSITIONS["cancelled"] == []
         assert INVOICE_STATUS_TRANSITIONS["paid"] == []
-        # The ANAF submission-chain states are gone from the machine entirely.
-        assert "submitted_externally" not in INVOICE_STATUS_TRANSITIONS
-        assert "accepted" not in INVOICE_STATUS_TRANSITIONS
+
+    def test_blueprint_submission_chain_walk(self, real_db, finance_seed):
+        """submitted_externally → queued → submitting → accepted → paid walks end-to-end."""
+        from services.invoicing.service import InvoiceService
+
+        svc = InvoiceService(real_db)
+        invoice_id = finance_seed["invoice_xml"]  # already xml_generated
+
+        chain = ["submitted_externally", "queued", "submitting", "accepted", "paid"]
+        current = invoice_id
+        for status in chain:
+            result = svc.set_status(current, status, user_id=0)
+            assert result.success is True, (
+                f"chain step -> {status} failed: {result.errors}"
+            )
+            assert result.data is not None and result.data.status == status
+            current = result.data.id
+        # Terminate: no transition out of paid.
+        term = svc.set_status(current, "draft", user_id=0)
+        assert term.success is False
+
+    def test_rejected_manual_review_draft_chain(self, real_db, finance_seed):
+        """rejected → manual_review → draft walks end-to-end (recovery path)."""
+        from services.invoicing.service import InvoiceService
+
+        svc = InvoiceService(real_db)
+        invoice_id = finance_seed["invoice_xml2"]  # already xml_generated
+
+        chain = ["submitted_externally", "rejected", "manual_review", "draft"]
+        current = invoice_id
+        for status in chain:
+            result = svc.set_status(current, status, user_id=0)
+            assert result.success is True, (
+                f"chain step -> {status} failed: {result.errors}"
+            )
+            assert result.data is not None and result.data.status == status
+            current = result.data.id
