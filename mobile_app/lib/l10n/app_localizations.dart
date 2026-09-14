@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/widgets.dart';
 
 // ignore_for_file: non_constant_identifier_names
@@ -28,6 +26,10 @@ class AppLocalizations {
     final strings = _localizedStrings[locale.languageCode] ?? _localizedStrings['en']!;
     return strings[key] ?? key;
   }
+
+  /// Resolves an arbitrary localization key (used for typed/state-driven
+  /// messages such as [FreightExchangeError.messageKey]).
+  String lookup(String key) => _get(key);
 
   String get appName => _get('appName');
   String get appTagline => _get('appTagline');
@@ -84,6 +86,23 @@ class AppLocalizations {
   String get freightExchange_searchHint => _get('freightExchange_searchHint');
   String get freightExchange_empty => _get('freightExchange_empty');
   String get freightExchange_emptyHint => _get('freightExchange_emptyHint');
+  String get freightExchange_loading => _get('freightExchange_loading');
+  String get freightExchange_error => _get('freightExchange_error');
+  String get freightExchange_filterOrigin => _get('freightExchange_filterOrigin');
+  String get freightExchange_filterDestination => _get('freightExchange_filterDestination');
+  String get freightExchange_filterDate => _get('freightExchange_filterDate');
+  String get freightExchange_filterCargoType => _get('freightExchange_filterCargoType');
+  String get freightExchange_loadPickup => _get('freightExchange_loadPickup');
+  String get freightExchange_loadDeadline => _get('freightExchange_loadDeadline');
+  String get freightExchange_loadWeight => _get('freightExchange_loadWeight');
+  String get freightExchange_loadDistance => _get('freightExchange_loadDistance');
+  String get freightExchange_price => _get('freightExchange_price');
+  String get freightExchange_import => _get('freightExchange_import');
+  String get freightExchange_evaluate => _get('freightExchange_evaluate');
+  String get freightExchange_detailTitle => _get('freightExchange_detailTitle');
+  String get freightExchange_noLoadsFound => _get('freightExchange_noLoadsFound');
+  String get freightExchange_evaluationComplete =>
+      _get('freightExchange_evaluationComplete');
 
   String get driver_myDay => _get('driver_myDay');
   String get driver_assignedTransports => _get('driver_assignedTransports');
@@ -341,6 +360,22 @@ class AppLocalizations {
       'freightExchange_searchHint': 'Caută după origine, destinație...',
       'freightExchange_empty': 'Schimb mărfuri',
       'freightExchange_emptyHint': 'Datele bursei de mărfuri vor apărea aici când backend-ul este conectat.',
+      'freightExchange_loading': 'Se încarcă...',
+      'freightExchange_error': 'Eroare la încărcarea datelor',
+      'freightExchange_filterOrigin': 'Origine',
+      'freightExchange_filterDestination': 'Destinație',
+      'freightExchange_filterDate': 'Data încărcării',
+      'freightExchange_filterCargoType': 'Tip marfă',
+      'freightExchange_loadPickup': 'Încărcare',
+      'freightExchange_loadDeadline': 'Termen limită',
+      'freightExchange_loadWeight': 'Greutate',
+      'freightExchange_loadDistance': 'Distanță',
+      'freightExchange_price': 'Preț',
+      'freightExchange_import': 'Importă ca transport',
+      'freightExchange_evaluate': 'Evaluează',
+      'freightExchange_detailTitle': 'Detalii încărcare',
+      'freightExchange_noLoadsFound': 'Nicio încărcare găsită',
+      'freightExchange_evaluationComplete': 'Evaluare completă',
       'driver_myDay': 'Ziua mea', 'driver_assignedTransports': 'Transporturi asignate',
       'driver_noTransports': 'Nu ai transporturi asignate', 'driver_vehicleInfo': 'Informații vehicul',
       'driver_expenses': 'Cheltuieli', 'driver_documents': 'Documentele mele',
@@ -522,6 +557,22 @@ class AppLocalizations {
       'freightExchange_searchHint': 'Search by origin, destination...',
       'freightExchange_empty': 'Freight Exchange',
       'freightExchange_emptyHint': 'Load board data will appear here when the backend is connected.',
+      'freightExchange_loading': 'Loading loads...',
+      'freightExchange_error': 'Failed to load freight data',
+      'freightExchange_filterOrigin': 'Origin',
+      'freightExchange_filterDestination': 'Destination',
+      'freightExchange_filterDate': 'Pickup date',
+      'freightExchange_filterCargoType': 'Cargo type',
+      'freightExchange_loadPickup': 'Pickup',
+      'freightExchange_loadDeadline': 'Deadline',
+      'freightExchange_loadWeight': 'Weight',
+      'freightExchange_loadDistance': 'Distance',
+      'freightExchange_price': 'Price',
+      'freightExchange_import': 'Import as Trip',
+      'freightExchange_evaluate': 'Evaluate',
+      'freightExchange_detailTitle': 'Load Details',
+      'freightExchange_noLoadsFound': 'No loads found',
+      'freightExchange_evaluationComplete': 'Evaluation complete',
       'driver_myDay': 'My Day', 'driver_assignedTransports': 'Assigned Transports',
       'driver_noTransports': 'No transports assigned', 'driver_vehicleInfo': 'Vehicle Info',
       'driver_expenses': 'Expenses', 'driver_documents': 'My Documents',

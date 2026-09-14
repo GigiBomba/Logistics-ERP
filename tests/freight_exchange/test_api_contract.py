@@ -246,9 +246,9 @@ class TestLoadListEndpoint:
     EXPECTED_KEYS = {
         "id", "origin", "destination", "cargo_type", "price", "currency",
         "pickup_date", "deadline_date", "weight_kg", "distance_km",
+        "provider_id", "provider_load_id",
     }
-    FORBIDDEN_KEYS = {"provider_id", "provider_load_id", "result_id",
-                      "trailer_type", "pickup_window", "delivery_window",
+    FORBIDDEN_KEYS = {"result_id", "trailer_type", "pickup_window", "delivery_window",
                       "raw_payload", "adr"}
 
     @patch("backend.api.v1.freight_exchange.SearchEngineService")

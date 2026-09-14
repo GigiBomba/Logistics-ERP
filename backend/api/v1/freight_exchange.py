@@ -88,6 +88,12 @@ class FreightLoadListItem(BaseModel):
     deadline_date: Optional[str] = None
     weight_kg: Optional[float] = None
     distance_km: Optional[str] = None
+    # NOTE: `provider_id`/`provider_load_id` are intentionally Optional here.
+    # The mapper (`_to_freight_load_item`) always populates them for real
+    # providers, and the Dart `FreightLoad` model treats them as required —
+    # this is purely an API-contract choice (Pydantic laxness), no DB change.
+    provider_id: Optional[str] = None
+    provider_load_id: Optional[str] = None
 
 
 def _to_freight_load_item(load) -> FreightLoadListItem:
@@ -113,6 +119,8 @@ def _to_freight_load_item(load) -> FreightLoadListItem:
         deadline_date=deadline_date,
         weight_kg=getattr(load, "weight_kg", 0.0) or None,
         distance_km=(str(round(distance_km, 1)) if distance_km else None),
+        provider_id=load.provider_id,
+        provider_load_id=load.provider_load_id,
     )
 
 

@@ -5,6 +5,8 @@
 /// fields to this shape.
 class FreightLoad {
   final String id;
+  final String providerId;
+  final String providerLoadId;
   final String origin;
   final String destination;
   final String? cargoType;
@@ -17,6 +19,8 @@ class FreightLoad {
 
   const FreightLoad({
     required this.id,
+    required this.providerId,
+    required this.providerLoadId,
     required this.origin,
     required this.destination,
     this.cargoType,
@@ -30,6 +34,8 @@ class FreightLoad {
 
   factory FreightLoad.fromJson(Map<String, dynamic> json) => FreightLoad(
         id: json['id'] as String? ?? '',
+        providerId: json['provider_id'] as String? ?? '',
+        providerLoadId: json['provider_load_id'] as String? ?? '',
         origin: json['origin'] as String? ?? '',
         destination: json['destination'] as String? ?? '',
         cargoType: json['cargo_type'] as String?,
@@ -47,6 +53,8 @@ class FreightLoad {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'provider_id': providerId,
+        'provider_load_id': providerLoadId,
         'origin': origin,
         'destination': destination,
         'cargo_type': cargoType,
