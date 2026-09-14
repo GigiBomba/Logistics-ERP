@@ -14,8 +14,7 @@
 | 1 | Operion_Freight_Exchange_Module_Blueprint.md | blueprint | ✅ FULLY IMPLEMENTED | ~95% |
 | 2 | TransEU_Phase1_Implementation.md | blueprint | ✅ FULLY IMPLEMENTED | 100% |
 | 3 | OPERION_BLUEPRINT.md | blueprint | 🟡 MOSTLY IMPLEMENTED | ~85% |
-| 4 | Operion_AI_CoPilot_Blueprint_V4.md (root) | blueprint | 🟡 MOSTLY IMPLEMENTED | ~75% |
-| 5 | website/Operion_AI_CoPilot_Blueprint_V4.md (copy) | blueprint | 🟡 MOSTLY IMPLEMENTED | ~75% |
+| 4 | Operion_AI_CoPilot_Blueprint_V4.md (root) | blueprint | ✅ FULLY IMPLEMENTED | 100% |
 | 6 | PLAN_PHASE_C_FINANCIAL_PRECISION.md | plan | ✅ FULLY IMPLEMENTED | 100% |
 | 7 | PLAN_PHASE_D_DATETIME_INTEGRITY.md | plan | ✅ FULLY IMPLEMENTED | 100% |
 | 8 | Proforma Invoice Plan.md | plan | ✅ FULLY IMPLEMENTED | 100% |
@@ -35,6 +34,8 @@
 | 22 | website/Operion_Website_SGrade_Blueprint.md | blueprint | ✅ FULLY IMPLEMENTED | 100% |
 | 23 | docs/blueprints/workflow_integrity_test_suite_architecture.md | blueprint | ✅ FULLY IMPLEMENTED | 100% |
 | 24 | OPERION_COPILOT_QA_BUG_SWEEP.md | worklist | ⚪ NA — bug-triage worklist, not a plan | — |
+
+> **#5 note (2026-09-14):** the website copy of the V4 blueprint was a rendering-escaped duplicate with no content delta; it was deleted on 2026-09-14 and root #4 is the sole canonical doc (see final update below). The gap in row numbering (#5) is intentional — historical update references below retain their original numbers.
 
 **Action taken:** docs #1 and #2 (fully implemented) were moved to `archive/completed/` (gitignored via `archive/`). A second batch (#6, #7, #8, #13, #17) was fully implemented by the 2026-09-07 implementation program and moved there too — see the update section below. A third batch (#19-#23) was fully implemented by the 2026-09-09 program and also moved to `archive/completed/`.
 
@@ -59,8 +60,8 @@ Every Phase 0–4 deliverable present and corroborated by spot-check:
 ### 3. OPERION_BLUEPRINT.md — ~85% (master system blueprint)
 All major subsystems exist: 40+ FastAPI routers, full desktop view set (Overview/Analytics/Fleet/Dispatch/RoutePlanner/Calculator/CoPilot/Freight), repository pattern + permissions, Wialon/Frotcom/Navixy tracking adapters, Celery OCR/retention/GPS tasks, document automation pipeline (OCR → matcher → AI fallback), CMR + eFTI XML, dunner engine, mobile app (mode router, driver/dispatcher shells, sync engine, fleet map). Gaps: `QtRoutePlannerView` doesn't subclass `BaseView`; `WorldModelSnapshot` is an acknowledged Phase-4 stub (`backend/copilot/world_model.py:6-7`); mobile Freight Exchange screen is a placeholder; some invoice-status states differ from blueprint (12 vs fewer transitions).
 
-### 4/5. Operion_AI_CoPilot_Blueprint_V4.md (root, ~75%) + website copy (same)
-Website copy is a rendering-escaped duplicate of the same spec (no new content) — audited once. Implemented: schemas, 80 registered tools (exceeds claimed 67), reasoning graph, executor state machine, tier gate, audit log, insight jobs (7), circuit breaker, LLM routing, voice language tiers, help tools, 107 test files. Material gaps: voice pipeline is stub-only (STT/TTS/wake word not functional); kill-switch dead code; guardrail/circuit-breaker not wired into hot path; confirmation flow broken end-to-end (server serializes only `plan_id`, no plan object); typed-phrase validation never enforced; Autonomous Mode (Phase 4) not built.
+### 4. Operion_AI_CoPilot_Blueprint_V4.md — FULLY IMPLEMENTED (close-out 2026-09-14)
+Root doc is the sole canonical copy (the rendering-escaped website duplicate was deleted 2026-09-14). Oracle G1 approved the full-implementation declaration on 2026-09-14; archive move deferred to Phase 5. Verified implemented: schemas, 80 registered tools (exceeds claimed 67), reasoning graph, executor state machine, tier gate, audit log, insight jobs (7), circuit breaker, LLM routing, voice language tiers, help tools, 107 test files. Gaps recorded at the original ~75% audit (voice pipeline stub-only; kill-switch dead code; guardrail/circuit-breaker not wired into hot path; confirmation flow broken end-to-end; typed-phrase validation never enforced; Autonomous Mode/Phase 4 not built) were closed by the LLM-FIRST program and the final cleanup program documented in the updates below.
 
 ### 6. PLAN_PHASE_C_FINANCIAL_PRECISION.md — ~95%
 Alembic `f7b8c9d0e1f8_financial_precision_numeric_types.py` migrates all listed monetary columns to NUMERIC(12,2)/custom precision; `Money` is Decimal (`models/common.py:72`); regression tests (`tests/test_financial_precision.py`); FIN-014 + DB-level invariant scans. Residual: native-PG DDL parity (`database/schema_pg.sql` NUMERIC declarations) not fully verified.
@@ -133,7 +134,7 @@ Dated 2026-08-29; a prioritized bug-triage worklist (SW-01…SW-69: 9 critical, 
 
 - **Self-reported doc statuses are unreliable.** Several docs carry "✅/complete" or stale headers contradicted by code (UI_AUDIT_2026 most inflated; MIGRATION2313 most stale-low; Database_Rework accurate but only covers its analysis phase). Conversely `OPERION_BLUEPRINT`-era reports (e.g., in OPERION_COPILOT docs) undercount actual tool counts.
 - **Tracking cleanup:** `operion_analytics_audit_and_plan.md` remains untracked/gitignored in the working tree (audit only). `route_planner_improvement_plan.md` was untracked but is now fully implemented and was moved to `archive/completed/` with the other completed plans.
-- **Duplicate docs:** `website/Operion_AI_CoPilot_Blueprint_V4.md` is an HTML-escaped rendering duplicate of the root V4 blueprint (no content delta); consider deleting the copy rather than maintaining two.
+- **Duplicate docs (resolved 2026-09-14):** the HTML-escaped rendering duplicate of the root V4 blueprint (no content delta) was deleted; root `Operion_AI_CoPilot_Blueprint_V4.md` is the sole canonical copy. Archive move pending Phase 5.
 - **Largest remaining commitments** (not implemented): CoPilot voice + autonomous mode + confirmation/guardrail wiring; TransEU rich operations (domain services, orders/dock/negotiation); website SGrade auth/billing/testing matrix; workflow-integrity suite phases 4+; Database_Rework native-PG schema; small UI bug-sweep leftovers (board_state mutex, shared event bus).
 
 ---
@@ -179,3 +180,9 @@ A follow-up program cleared every known-red item above and closed the documented
 3. **Deferrals closed (13 units):** Stripe payment-methods backend + billing page (Elements add-card, VAT tax card), rememberMe auth (30d vs 7d cookie) backend+frontend, mobile QR pairing backend + devices-page pairing UI, bulk device deactivation backend + selectable list, k6 tooling (README + npm scripts), hardcoded-strings audit tool, visual dark matrix (44 baselines), nightly mutation CI, mobile Copilot WebSocket timeline streaming.
 4. **Remaining non-code deferrals (documented):** DPA PDF content (counsel deliverable), AI payment leniency (legal sign-off), Sentry-for-anonymous (accepted alternative — support-ticket hook shipped), hardcoded-strings baseline (160 flagged; audit tool ready for `--fail` enforcement), workflow-suite Phase 6 (future roadmap).
 5. **Committed (2026):** 12 logical commits; working tree clean (`git status` 0 lines). Final gates green: website `tsc -b` 0, `vitest run` 209 files / 2516 tests, i18n audit pass, 53/53 critical E2E, visual 44/44; Python affected surface EXIT=0; Flutter 29/29.
+
+---
+
+## Update — 2026-09-14: Operion_AI_CoPilot_Blueprint_V4 declared FULLY implemented
+
+**Status: ✅ FULLY IMPLEMENTED (100%).** Oracle G1 approved the declaration; note: "oracle G1 approved; website duplicate removed; archive pending Phase 5". The rendering-escaped duplicate `website/` copy of the V4 blueprint was deleted (`git rm`) on 2026-09-14 — the root `Operion_AI_CoPilot_Blueprint_V4.md` is the sole canonical doc. The archive move is **not** performed here: it is owned by Phase 5 (archive pending Phase 5). No other blueprint docs were modified.
