@@ -175,3 +175,27 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
+
+# ──────────────────────────────────────────────────────────────
+# uv — dependency lock management
+#
+# requirements.txt is the SINGLE SOURCE OF TRUTH for dependencies.
+# requirements.lock is the hashed, fully-pinned resolution of
+# requirements.txt, used by CI and developer environments for
+# reproducible installs. Do NOT add `[build-system]` here (YAGNI)
+# and do NOT widen [project].dependencies to mirror requirements.txt.
+#
+# Regenerate the lock whenever requirements.txt changes (new dep,
+# version bump, marker change), then commit it alongside the edit:
+#   uv pip compile --universal --generate-hashes requirements.txt --output-file requirements.lock
+#
+# `--universal` is required so the lock preserves environment markers
+# (e.g. pywin32's `sys_platform == "win32"`) instead of baking in the
+# platform it happened to be generated on.
+#
+# NEVER run `uv lock`: pyproject.toml [project].dependencies only
+# carries alembic (a legacy stub), so `uv lock` would produce a
+# worthless single-dependency lock that ignores requirements.txt.
+# `requirements.txt` remains the single source of truth.
+# ──────────────────────────────────────────────────────────────
+[tool.uv]

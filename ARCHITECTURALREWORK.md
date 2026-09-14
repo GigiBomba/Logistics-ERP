@@ -202,14 +202,31 @@ class BackendSettings(BaseSettings):
     model_config = {"env_prefix": "OPERION_"}
 ```
 
-### 0.6 Set up `uv` Package Manager
+### 0.6 Set up `uv` Package Manager — IMPLEMENTED
 
-- Install `uv` globally: `pip install uv`
-- Create `uv.lock` via `uv pip compile requirements.txt`
-- Update `pyproject.toml` with `[tool.uv]` config section
-- Add `build.bat` / `build.sh` using `uv` instead of pip
+- `uv` installed globally (`pip install uv`), verified `uv --version` → 0.12.13.
+- Hashed lock committed as `requirements.lock`, generated with:
+  `uv pip compile --generate-hashes requirements.txt --output-file requirements.lock`
+  (136 pinned packages, all sha256-hashed). `requirements.txt` remains the single
+  source of truth for every consumer (pip, uv, CI).
+- `pyproject.toml` carries a documented `[tool.uv]` section. `uv lock` is never run:
+  root `[project].dependencies` only holds alembic, so it would produce a worthless
+  1-dependency lock that ignores `requirements.txt`. No `[build-system]` added (YAGNI);
+  `[project]` untouched.
+- `build.bat` deliberately KEEPS pip — approved deviation, documented in the script
+  header: uv is not installed on the Windows packaging host; the Docker images are
+  the uv-correct path; `requirements.lock` is for CI/dev.
+- Docker uses the proven uv pattern in both images:
+  `pip install --no-cache-dir uv` + `uv pip install --system --no-cache -r requirements.txt`
+  (`docker/Dockerfile`, `docker/Dockerfile.worker`).
 
-### 0.7 Create `.env.example` Template
+### 0.7 Create `.env.example` Template — IMPLEMENTED
+
+`.env.example` (committed) is already compliant: a 58 non-empty-line superset of the
+original 8-variable template shown below. It includes every variable here plus
+database path/pool tuning, Redis TTL, Celery config, desktop API base URL, CORS,
+security keys (empty placeholders only — no real secrets), logging/report dirs,
+support-service proxy, and AI provider keys. All secret fields are empty placeholders.
 
 ```
 OPERION_DB_ENGINE=sqlite
