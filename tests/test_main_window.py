@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QStackedWidget, QWidget
 
 
 # =========================================================================
@@ -546,3 +547,187 @@ class TestMainWindowAdvanced:
 
             with contextlib.suppress(Exception):
                 widget.close()
+
+
+# =========================================================================
+# Error Placeholder View Tests
+# =========================================================================
+
+@pytest.fixture
+def main_window_real(qtbot, mock_db, mock_api, mock_prefs, mock_ops,
+                     mock_api_client, monkeypatch):
+    """MainWindow with real _create_module and a real QStackedWidget container."""
+    monkeypatch.setattr("ui.main_window.MainWindow._init_services", lambda self: None)
+    monkeypatch.setattr("ui.main_window.MainWindow._init_fuel_status", lambda self: None)
+    monkeypatch.setattr("ui.main_window.MainWindow._start_warmup", lambda self: None)
+    monkeypatch.setattr("ui.main_window.MainWindow._build_ui", lambda self: None)
+
+    patcher_eb = patch("ui.main_window.EventBus", return_value=MagicMock())
+    patcher_eb.start()
+    services_patchers = [
+        patch("ui.main_window.Config"),
+        patch("ui.main_window.QWidgetShortcut"),
+    ]
+    for p in services_patchers:
+        p.start()
+
+    from ui.main_window import MainWindow
+    widget = MainWindow(
+        db=mock_db, api=mock_api, prefs=mock_prefs, ops=mock_ops,
+        api_client=mock_api_client,
+    )
+
+    widget.trip_service = MagicMock()
+    widget.client_service = MagicMock()
+    widget.fleet_service = MagicMock()
+    widget._fuel_service = MagicMock()
+
+    real_container = QStackedWidget()
+    qtbot.addWidget(real_container)
+    widget.app_shell = MagicMock()
+    widget.app_shell.view_container = real_container
+
+    monkeypatch.setattr(
+        "ui.main_window.MainWindow._animate_page_switch",
+        lambda self, frame: None,
+    )
+
+    qtbot.addWidget(widget)
+    yield widget
+
+    with contextlib.suppress(Exception):
+        widget.close()
+    for p in services_patchers:
+        p.stop()
+    patcher_eb.stop()
+
+
+class TestErrorPlaceholderView:
+    """Tests for ErrorPlaceholderView and _create_module error handling."""
+
+    def test_error_widget_uses_empty_state(self, qtbot):
+        """ErrorPlaceholderView renders with EmptyState (icon + title + subtitle + button)."""
+        from ui.main_window import ErrorPlaceholderView
+
+        epv = ErrorPlaceholderView(None, "test_module")
+        qtbot.addWidget(epv)
+        assert epv is not None
+
+        layout = epv.layout()
+        assert layout.count() == 1
+        empty_state = layout.itemAt(0).widget()
+        assert empty_state is not None
+
+    def test_error_widget_does_not_show_raw_exception(self, qtbot):
+        """Sanitized message does not contain raw exception text."""
+        from ui.main_window import ErrorPlaceholderView
+
+        exc_text = "Internal DB path: C:\\secret\\db.sqlite"
+        epv = ErrorPlaceholderView(None, "test_module")
+        qtbot.addWidget(epv)
+
+        texts = [child.text() for child in epv.findChildren(QLabel)]
+        assert len(texts) > 0
+        for text in texts:
+            assert exc_text not in text
+            assert "db.sqlite" not in text
+            assert "Traceback" not in text
+
+    def test_create_module_error_shows_error_placeholder(self, main_window_real, monkeypatch):
+        """A factory that raises lands in ErrorPlaceholderView (NOT PlaceholderView)."""
+        from ui.main_window import MainWindow, ErrorPlaceholderView
+
+        monkeypatch.setattr(
+            MainWindow, "_VIEW_FACTORIES",
+            {"overview": lambda: (_ for _ in ()).throw(RuntimeError("boom"))},
+        )
+
+        result = main_window_real._create_module("overview")
+
+        assert result is not None
+        assert "frame" in result
+        assert "obj" in result
+        assert isinstance(result["frame"], ErrorPlaceholderView)
+        assert isinstance(result["obj"], ErrorPlaceholderView)
+
+    def test_failed_module_cached_as_error_not_success(self, main_window_real, monkeypatch):
+        """A failed module must not be cached as a success."""
+        from ui.main_window import MainWindow, ErrorPlaceholderView
+
+        monkeypatch.setattr(
+            MainWindow, "_VIEW_FACTORIES",
+            {"overview": lambda: (_ for _ in ()).throw(RuntimeError("boom"))},
+        )
+
+        main_window_real.nav = MagicMock()
+        main_window_real._switch_module("overview")
+
+        assert "overview" in main_window_real._module_cache
+        cache = main_window_real._module_cache["overview"]
+        assert isinstance(cache["frame"], ErrorPlaceholderView)
+        assert main_window_real._active_module == "overview"
+
+    def test_retry_button_replaces_error_with_real_module(self, qtbot, main_window_real, monkeypatch):
+        """Retry button re-invokes the factory and replaces the error widget with the real module."""
+        from ui.main_window import MainWindow, ErrorPlaceholderView
+
+        call_count = [0]
+
+        class RealModule(QWidget):
+            pass
+
+        def factory():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("boom")
+            return RealModule()
+
+        monkeypatch.setattr(MainWindow, "_VIEW_FACTORIES", {"overview": factory})
+
+        result = main_window_real._create_module("overview")
+        error_widget = result["frame"]
+        assert isinstance(error_widget, ErrorPlaceholderView)
+        container = main_window_real.app_shell.view_container
+        assert container.indexOf(error_widget) >= 0
+
+        error_widget._handle_retry()
+
+        assert call_count[0] == 2
+        assert container.indexOf(error_widget) == -1
+
+        cache = main_window_real._module_cache.get("overview")
+        assert cache is not None
+        assert isinstance(cache["frame"], RealModule)
+        assert container.indexOf(cache["frame"]) >= 0
+        assert container.currentWidget() is cache["frame"]
+
+    def test_retry_repeated_failure_re_renders_cleanly(self, qtbot, main_window_real, monkeypatch):
+        """Repeated failure re-renders the error widget cleanly."""
+        from ui.main_window import MainWindow, ErrorPlaceholderView
+
+        monkeypatch.setattr(
+            MainWindow, "_VIEW_FACTORIES",
+            {"overview": lambda: (_ for _ in ()).throw(RuntimeError("still broken"))},
+        )
+
+        result = main_window_real._create_module("overview")
+        error_widget_1 = result["frame"]
+        assert isinstance(error_widget_1, ErrorPlaceholderView)
+        container = main_window_real.app_shell.view_container
+        assert container.indexOf(error_widget_1) >= 0
+
+        error_widget_1._handle_retry()
+
+        cache = main_window_real._module_cache.get("overview")
+        assert cache is not None
+        error_widget_2 = cache["frame"]
+        assert isinstance(error_widget_2, ErrorPlaceholderView)
+        assert error_widget_2 is not error_widget_1
+        assert container.indexOf(error_widget_1) == -1
+        assert container.indexOf(error_widget_2) >= 0
+        assert container.currentWidget() is error_widget_2
+
+    def test_placeholder_view_class_removed(self):
+        """PlaceholderView class no longer exists in main_window module."""
+        import ui.main_window as mw
+        assert not hasattr(mw, "PlaceholderView")

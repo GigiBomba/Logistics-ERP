@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QLabel,
     QMainWindow,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -977,13 +978,31 @@ class MainWindow(QMainWindow):
                 "copilot": lambda: self._build_copilot_view(parent),
             }
 
-        factory = MainWindow._VIEW_FACTORIES.get(key)
+        factory = MainWindow._VIEW_FACTORIES[key]
         try:
             with PerfTimer(f"create.{key}"):
-                widget = factory() if factory else PlaceholderView(parent, key)
+                widget = factory()
         except Exception as exc:
             logger.exception("Failed to create module '%s'", key)
-            widget = ErrorPlaceholderView(parent, key, str(exc))
+            widget = ErrorPlaceholderView(parent, key)
+
+            def _retry():
+                container = self.app_shell.view_container
+                idx = container.indexOf(widget)
+                if idx >= 0:
+                    container.removeWidget(widget)
+                widget.deleteLater()
+                self._module_cache.pop(key, None)
+                self._module_cache[key] = self._create_module(key)
+                cache = self._module_cache.get(key)
+                if cache and cache.get("frame") is not None:
+                    container.setCurrentWidget(cache["frame"])
+                    obj = cache.get("obj")
+                    if obj and hasattr(obj, "wakeup"):
+                        with contextlib.suppress(Exception):
+                            obj.wakeup()
+
+            widget.set_retry_callback(_retry)
         self.app_shell.view_container.addWidget(widget)
         return {"frame": widget, "obj": widget}
 
@@ -1150,43 +1169,40 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-class PlaceholderView(QWidget):
-    """Empty placeholder view used until a module is fully migrated."""
+class ErrorPlaceholderView(QWidget):
+    """Shown when a view module raises an exception during construction."""
 
     def __init__(self, parent: QWidget | None, key: str):
         super().__init__(parent)
+        self._key = key
+        self._on_retry: Callable[[], None] | None = None
+
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
         from ui.components import EmptyState
 
+        retry_btn = QPushButton(t("action.retry", default="Retry"))
+        retry_btn.clicked.connect(self._handle_retry)
+
         empty = EmptyState(
             self,
-            icon_name="mdi6.tools",
-            title=key,
-            subtitle=t("module.not_migrated", default="Module not yet migrated"),
+            icon_name="mdi6.alert-circle-outline",
+            title=t("module.error_title", default="Could not load module"),
+            subtitle=t(
+                "module.error_subtitle",
+                default="Something went wrong while loading this section. Please try again.",
+            ),
+            cta_button=retry_btn,
         )
         layout.addWidget(empty)
 
+    def set_retry_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_retry = callback
 
-class ErrorPlaceholderView(QWidget):
-    """Shown when a view module raises an exception during construction."""
-
-    def __init__(self, parent: QWidget | None, key: str, error: str):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
-
-        title = QLabel(f"⚠ {key}")
-        title.setProperty("role", "heading")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
-
-        msg = QLabel(f"Failed to load module.\n{error}")
-        msg.setProperty("role", "muted")
-        msg.setAlignment(Qt.AlignCenter)
-        msg.setWordWrap(True)
-        layout.addWidget(msg)
+    def _handle_retry(self) -> None:
+        if self._on_retry is not None:
+            self._on_retry()
 
 
 class UnavailableModuleView(QWidget):
