@@ -236,6 +236,13 @@ export interface CreateTicketRequest {
   category?: string
 }
 
+/** PII-free fatal-error digest sent when the user is unauthenticated. */
+export interface AnonymousErrorReportRequest {
+  digest: string
+  component_stack?: string
+  url?: string
+}
+
 export const supportApi = {
   createTicket: (data: CreateTicketRequest) =>
     apiClient.post<SupportTicket>("/api/v1/support/tickets", data),
@@ -245,6 +252,9 @@ export const supportApi = {
   /** Send a support message and get ARGO's reply (live conversational loop) */
   sendMessage: (data: SupportMessageRequest) =>
     apiClient.post<SupportMessageResponse>("/api/v1/support/messages", data),
+  /** Record a fatal-error digest from an unauthenticated visitor (rate-limited per IP) */
+  reportAnonymousError: (data: AnonymousErrorReportRequest) =>
+    apiClient.post<{ status: string }>("/api/v1/support/anonymous-error", data),
 }
 
 export const downloadApi = {

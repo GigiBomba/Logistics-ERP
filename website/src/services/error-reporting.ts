@@ -4,7 +4,9 @@
 // Deliberately NOT Sentry: the approved decision for this repo is a lightweight
 // hook that (a) ALWAYS feeds the existing analytics `trackError` funnel and
 // (b) for AUTHENTICATED users files a support ticket so the incident reaches
-// the team's existing queue.
+// the team's existing queue.  For UNAUTHENTICATED / opted-out users the same
+// PII-free digest is POSTed to a rate-limited anonymous channel
+// (POST /api/v1/support/anonymous-error) so fatal errors are never silent.
 //
 // Sentry-swappable seam: to adopt Sentry later, replace the bodies of
 // `reportFatalError` (and its digest builder) with `Sentry.captureException(...)`
@@ -74,11 +76,13 @@ function markReportedThisSession(signature: string): void {
 /**
  * Report a fatal (uncaught render) error.
  *
- * ALWAYS calls `trackError` first (consent-gated inside that service). When the
- * user is authenticated (in-memory access token present), a support ticket is
- * filed fire-and-forget — failures are swallowed so a broken network never masks
- * the original crash. Duplicate signatures are suppressed per browser session
- * via sessionStorage.
+ * ALWAYS calls `trackError` first (consent-gated inside that service).
+ * When the user is authenticated (in-memory access token present), a support
+ * ticket is filed fire-and-forget; when NOT authenticated, the same PII-free
+ * digest is POSTed to the rate-limited anonymous channel.  Either way the
+ * request is fire-and-forget — failures are swallowed so a broken network
+ * never masks the original crash. Duplicate signatures are suppressed per
+ * browser session via sessionStorage on both paths.
  */
 export function reportFatalError(error: unknown, componentStack?: string): void {
   const digest = buildReportDigest(error, componentStack ?? "")
@@ -88,20 +92,33 @@ export function reportFatalError(error: unknown, componentStack?: string): void 
     fatal: "true",
   })
 
-  // Only authenticated users can file tickets (server-side auth is required;
-  // public visitors are routed to login via the normal support flow instead).
-  if (!getAccessToken()) return
-
+  // Session dedupe applies to both paths — the same crash is reported at most
+  // once per browser session (identical to the previous authed-only behaviour).
   const signature = errorSignature(error, componentStack)
   if (hasReportedThisSession(signature)) return
   markReportedThisSession(signature)
 
-  // Swap this block for `Sentry.captureException(error)` when Sentry is adopted.
-  const payload: CreateTicketRequest = {
-    category: "bug",
-    subject: "[Fatal UI Error]",
-    description: digest,
+  if (getAccessToken()) {
+    // AUTHENTICATED: file a support ticket so the incident reaches the team's
+    // existing queue (server-side auth is required to create tickets).
+    const payload: CreateTicketRequest = {
+      category: "bug",
+      subject: "[Fatal UI Error]",
+      description: digest,
+    }
+    supportApi.createTicket(payload).catch(() => {})
+    return
   }
 
-  supportApi.createTicket(payload).catch(() => {})
+  // UNAUTHENTICATED: file the same digest to the anonymous channel (rate-limited
+  // per IP server-side). The digest is kept within the 4KB server-side cap, and
+  // the URL is included for repro context.
+  // Swap this block for `Sentry.captureException(error)` when Sentry is adopted.
+  supportApi
+    .reportAnonymousError({
+      digest: digest.slice(0, DIGEST_CAP),
+      component_stack: componentStack ?? "",
+      url: typeof window !== "undefined" ? window.location.href : undefined,
+    })
+    .catch(() => {})
 }

@@ -1574,6 +1574,21 @@ INDEX_WAITLIST_JOINED = "CREATE INDEX IF NOT EXISTS idx_waitlist_joined ON waitl
 INDEX_WAITLIST_SOURCE = "CREATE INDEX IF NOT EXISTS idx_waitlist_source ON waitlist_entries(source);"
 INDEX_WAITLIST_REFERRAL = "CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_referral ON waitlist_entries(referral_code);"
 
+# Anonymous error reports — PII-free fatal-error digests from unauthenticated
+# visitors (lightweight non-Sentry channel). NOT multi-tenant scoped.
+TABLE_ANONYMOUS_ERROR_REPORTS = """
+CREATE TABLE IF NOT EXISTS anonymous_error_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    digest TEXT NOT NULL,
+    component_stack TEXT,
+    url TEXT,
+    ip_hash TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_ANONYMOUS_ERROR_REPORTS_CREATED = "CREATE INDEX IF NOT EXISTS idx_anonymous_error_created ON anonymous_error_reports(created_at);"
+
 
 # ── Freight Exchange: Connections ─────────────────────────────────────────
 TABLE_FREIGHT_EXCHANGE_CONNECTIONS = """

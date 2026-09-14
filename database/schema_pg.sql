@@ -1139,6 +1139,19 @@ CREATE INDEX IF NOT EXISTS idx_waitlist_status ON waitlist_entries(status);
 CREATE INDEX IF NOT EXISTS idx_waitlist_joined ON waitlist_entries(joined_at);
 CREATE INDEX IF NOT EXISTS idx_waitlist_source ON waitlist_entries(source);
 
+-- ── Anonymous error reports ───────────────────────────────────────────
+-- Lightweight non-Sentry channel: PII-free fatal-error digests from
+-- unauthenticated visitors. NOT multi-tenant scoped.
+CREATE TABLE IF NOT EXISTS anonymous_error_reports (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    digest TEXT NOT NULL,
+    component_stack TEXT,
+    url TEXT,
+    ip_hash TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+);
+CREATE INDEX IF NOT EXISTS idx_anonymous_error_created ON anonymous_error_reports(created_at);
+
 -- =============================================================================
 -- §FTS: PostgreSQL full-text search triggers for documents
 -- Replaces the SQLite documents_fts FTS5 virtual table + triggers.

@@ -597,6 +597,18 @@ class DatabaseManager:
             "  changed_at TEXT NOT NULL,"
             "  reason TEXT DEFAULT ''"
             ")",
+            # anonymous_error_reports table (lightweight non-Sentry channel;
+            # also declared in schema_pg.sql — idempotent on both paths).
+            "CREATE TABLE IF NOT EXISTS anonymous_error_reports ("
+            "  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
+            "  digest TEXT NOT NULL,"
+            "  component_stack TEXT,"
+            "  url TEXT,"
+            "  ip_hash TEXT,"
+            "  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"
+            ")",
+            "CREATE INDEX IF NOT EXISTS idx_anonymous_error_created "
+            "ON anonymous_error_reports(created_at)",
             # The 6 numeric invoice columns (subtotal_net, total_vat,
             # total_gross, exchange_rate, amount_paid, amount_remaining) are
             # owned by the schema_pg.sql CREATE TABLE and the
@@ -938,6 +950,9 @@ class DatabaseManager:
             S.INDEX_WAITLIST_EMAIL, S.INDEX_WAITLIST_STATUS,
             S.INDEX_WAITLIST_JOINED, S.INDEX_WAITLIST_SOURCE,
             S.INDEX_WAITLIST_REFERRAL,
+            # Anonymous error reports — lightweight non-Sentry channel
+            S.TABLE_ANONYMOUS_ERROR_REPORTS,
+            S.INDEX_ANONYMOUS_ERROR_REPORTS_CREATED,
             # Freight Exchange
             S.TABLE_FREIGHT_EXCHANGE_CONNECTIONS,
             S.INDEX_FREIGHT_CONNECTIONS_COMPANY,
@@ -1330,6 +1345,14 @@ class DatabaseManager:
             logger.info("invoice_number_sequences table created")
         except Exception as e:
             logger.warning("Failed to create invoice_number_sequences: %s", e)
+
+        # ── Anonymous error report table (PII-free fatal-error digests) ──
+        try:
+            self.conn.execute(S.TABLE_ANONYMOUS_ERROR_REPORTS)
+            self.conn.execute(S.INDEX_ANONYMOUS_ERROR_REPORTS_CREATED)
+            logger.info("anonymous_error_reports table created")
+        except Exception as e:
+            logger.warning("Failed to create anonymous_error_reports: %s", e)
 
         # ── Invoice status history table ─────────────────────────────────
         try:

@@ -5,18 +5,28 @@ See Operion_Ops_Blueprint.md §41.2 for the full contract.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import json
+import os
+import secrets
 from typing import Any, Dict, List, Literal, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from backend.config import get_settings
+from backend.db import DatabaseManager
+from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user
 from backend.errors import ErrorCode
-from backend.schemas.support import CreateTicketRequest, TicketResponse
+from backend.schemas.support import (
+    AnonymousErrorReportRequest,
+    AnonymousErrorReportResponse,
+    CreateTicketRequest,
+    TicketResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -364,3 +374,90 @@ async def get_support_ticket(
     )
 
     return _ticket_response_from_data(data)
+
+
+# ── Anonymous error reports (lightweight non-Sentry channel) ─────────────
+# Accepts a PII-free fatal-error digest from UNAUTHENTICATED visitors.  The
+# request is rate-limited per IP and stored locally in
+# ``anonymous_error_reports`` for later review — it is deliberately NOT
+# proxied to the internal support service (there is no authenticated user to
+# attribute a ticket to).
+
+_ANON_ERROR_MAX = 10        # reports per IP per window
+_ANON_ERROR_WINDOW = 3600   # 1 hour
+
+# Salt for IP hashing (generated once at module load)
+_ANON_IP_SALT = os.environ.get("OPERION_IP_HASH_SALT", secrets.token_hex(16))
+
+
+def _anon_hash_ip(ip: str) -> str:
+    """SHA-256 hash of the IP with salt — never store a raw IP."""
+    return hashlib.sha256(f"{ip}:{_ANON_IP_SALT}".encode()).hexdigest()
+
+
+def _anon_sanitize_url(url: Optional[str]) -> Optional[str]:
+    """Drop query/fragment from a reported URL — query strings may carry PII."""
+    if not url:
+        return url
+    return url.split("?", 1)[0].split("#", 1)[0]
+
+
+@router.post(
+    "/anonymous-error",
+    response_model=AnonymousErrorReportResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def record_anonymous_error(
+    body: AnonymousErrorReportRequest,
+    request: Request,
+    db: DatabaseManager = Depends(get_db),
+) -> AnonymousErrorReportResponse:
+    """Record a PII-free fatal-error digest from an unauthenticated visitor.
+
+    No authentication is required.  The request is rate-limited per IP
+    (10/hour), the digest must match the URL-encoded shape built by
+    ``error-reporting.ts`` (``buildReportDigest``), and the row is stored
+    locally in ``anonymous_error_reports`` — never proxied to the support
+    service.
+    """
+    # ── Rate limit (per IP, via the shared Redis/in-memory helper) ──────
+    from backend.utils.rate_limit import check_rate_limit
+
+    client_ip = request.client.host if request.client else "unknown"
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    real_ip = forwarded.split(",")[0].strip() or client_ip
+
+    if not check_rate_limit(
+        "support:anonymous-error", real_ip, _ANON_ERROR_MAX, _ANON_ERROR_WINDOW
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many error reports. Please try again later.",
+            headers={"Retry-After": str(_ANON_ERROR_WINDOW)},
+        )
+
+    # ── Sanitize + persist ─────────────────────────────────────────────
+    ip_hash = _anon_hash_ip(real_ip)
+    url = _anon_sanitize_url(body.url)
+
+    try:
+        db.execute(
+            """INSERT INTO anonymous_error_reports
+               (digest, component_stack, url, ip_hash)
+               VALUES (?, ?, ?, ?)""",
+            (body.digest, body.component_stack, url, ip_hash),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to record the error report.",
+        )
+
+    logger.info(
+        "Anonymous error report recorded: ip_hash=%s… digest_bytes=%d",
+        ip_hash[:8],
+        len(body.digest),
+    )
+    return AnonymousErrorReportResponse(status="recorded")
