@@ -45,8 +45,7 @@ export default function NewsletterPage() {
             {t("newsletter.title")}
           </h1>
           <p className="mt-4 text-lg text-muted-foreground">
-            Get the latest news, product updates, and insights from {siteConfig.name}
-            delivered to your inbox.
+            {t("newsletter.headline").replace("{name}", siteConfig.name)}
           </p>
         </motion.div>
 
@@ -101,9 +100,9 @@ export default function NewsletterPage() {
         </motion.div>
 
         <p className="mt-6 text-xs text-muted-foreground">
-          No spam, unsubscribe at any time. Read our{" "}
+          {t("newsletter.noSpam")}{" "}
           <a href="/privacy" className="underline underline-offset-2 hover:text-foreground">
-            Privacy Policy
+            {t("newsletter.privacyPolicy")}
           </a>
           .
         </p>

@@ -74,6 +74,40 @@
   "about.values.simple": "Simple par conception",
   "about.values.simpleDesc": "Des outils puissants et intuitifs. Pas d'interfaces surchargées ni de complexité inutile.",
   "about.values.subtitle": "Les principes qui guident la façon dont nous construisons.",
+  "accessibility": {
+    "section": {
+      "conformanceStatus": {
+        "link": "Web Content Accessibility Guidelines (WCAG) 2.1 Level AA",
+        "p1a": "Operion is committed to ensuring digital accessibility for people with disabilities. We aim to meet the",
+        "p1b": "standard, which is widely recognized as the international benchmark for web accessibility."
+      },
+      "contact": {
+        "contactLabel": "Accessibility Contact"
+      },
+      "knownLimitations": {
+        "browserBody": "Some advanced ARIA patterns may not function optimally in older browsers. We recommend using the latest versions of Chrome, Firefox, Safari, or Edge.",
+        "browserTitle": "Older browser support:",
+        "mediaBody": "We are working toward providing captions and transcripts for all audio and video content. Most content currently does not include these alternatives.",
+        "mediaTitle": "Audio and video content:",
+        "tablesBody": "Some data tables in the dashboard may not have full screen reader support for complex relationships. We are gradually improving table markup and providing accessible summaries.",
+        "tablesTitle": "Complex data tables:",
+        "thirdPartyBody": "Some third-party services (such as interactive maps or embedded media) may not fully comply with WCAG standards. We are working with our providers to improve accessibility.",
+        "thirdPartyTitle": "Third-party embedded content:"
+      },
+      "testing": {
+        "axeCoreBody": "We integrate the axe-core accessibility engine into our development pipeline and CI/CD process. Every pull request is automatically scanned for accessibility violations, and issues must be resolved before merging.",
+        "axeCoreTitle": "Automated testing with axe-core:",
+        "contrastBody": "Color combinations are verified against WCAG 2.1 contrast requirements using automated tools and manual inspection.",
+        "contrastTitle": "Contrast verification:",
+        "keyboardBody": "Each feature is tested manually using keyboard-only navigation to verify that all interactive elements are reachable and operable without a mouse.",
+        "keyboardTitle": "Manual keyboard audits:",
+        "reviewsBody": "Accessibility is reviewed as part of our regular development cycles, and we maintain a backlog of accessibility improvements for each release.",
+        "reviewsTitle": "Regular reviews:",
+        "screenReaderBody": "We test with NVDA (Windows) and VoiceOver (macOS) to verify screen reader compatibility for key user flows.",
+        "screenReaderTitle": "Screen reader testing:"
+      }
+    }
+  },
   "accessibility.feature.altText.content": "All meaningful images include descriptive alt text.",
   "accessibility.feature.altText.title": "Alternative Text",
   "accessibility.feature.colorContrast.content": "Text and interactive elements maintain a minimum contrast ratio of 4.5:1 for normal text.",
@@ -665,15 +699,23 @@
   "billing.viewSubscription": "Voir l'abonnement",
   "blog": {
     "all": "All ({count})",
+    "articleMissingDesc": "The article you are looking for does not exist or may have been removed.",
     "authorDoesNotExist": "This author does not exist.",
     "authorNotFound": "Author Not Found",
     "authorNotFoundDesc": "The requested author could not be found.",
     "authorNotFoundTitle": "Author Not Found — Operion",
+    "authorRole": "Transport & Logistics",
+    "calculateRoi": "Calculate your ROI",
     "categories": "Categories:",
+    "ctaDesc": "Operion is a desktop logistics platform built for transport companies. It combines trip profit calculation, route planning with GraphHopper, fleet management, dispatching, and CMR document generation in one application. No monthly subscriptions — free during development.",
+    "ctaTitle": "Streamline Your Transport Operations with Operion ERP",
+    "exploreFeatures": "Explore features",
+    "joinWaitlist": "Join the waitlist",
     "loadingArticles": "Loading articles",
     "noArticlesYet": "No articles yet",
     "noArticlesYetDesc": "This author has not published any articles.",
-    "pageDesc": "Insights, updates, and practical tips on logistics management, fleet optimization, and transport operations."
+    "pageDesc": "Insights, updates, and practical tips on logistics management, fleet optimization, and transport operations.",
+    "relatedArticles": "Related Articles"
   },
   "blog.adminDesc": "Vous avez un accès administrateur pour gérer le contenu du blog",
   "blog.adminMode": "Mode administrateur",
@@ -689,6 +731,8 @@
   "blog.searchPlaceholder": "Rechercher des articles...",
   "blog.title": "Blog",
   "blogEditor": {
+    "accessDenied": "Access Denied",
+    "accessDeniedDesc": "You do not have permission to access this page.",
     "featuredImageAlt": "Featured preview"
   },
   "blogEditor.backToBlog": "Retour au blog",
@@ -1046,6 +1090,18 @@
     "toggleAnalytics": "Toggle analytics cookies",
     "toggleMarketing": "Toggle marketing cookies"
   },
+  "cookiePolicy": {
+    "section": {
+      "contact": {
+        "contentA": "If you have any questions about our use of cookies or this policy, please contact us at",
+        "contentB": ". You can also reach us by mail at Operion SRL, Bucharest, Romania."
+      },
+      "thirdPartyServices": {
+        "content": "We rely on a small number of trusted third parties to operate and protect this website. Cloudflare, Inc. provides our content delivery network (CDN) and bot protection, including the Cloudflare Turnstile verification shown on our public forms. Google LLC provides Google Analytics, which helps us understand how visitors interact with our website. Data you submit through our website is transmitted to and processed by the Operion API service (api.operionerp.xyz). These providers process data under strict data processing agreements, and we do not sell data to any third party.",
+        "title": "Third-Party Services"
+      }
+    }
+  },
   "cookiePolicy.category.analytics.content": "Analytics cookies help us understand how visitors interact with our website.",
   "cookiePolicy.category.analytics.title": "Analytics",
   "cookiePolicy.category.functional.content": "Functional cookies enable the website to remember your preferences and choices.",
@@ -1342,6 +1398,7 @@
   "docs": {
     "articleCount": "{count} articles",
     "articleCountSingular": "{count} article",
+    "articleNotFound": "Article Not Found",
     "backToDocumentation": "← Back to Documentation",
     "documentationHome": "Documentation Home",
     "menu": "Menu",
@@ -1364,6 +1421,7 @@
       "ocrDocuments": "OCR & Documents",
       "routePlanning": "Route Planning"
     },
+    "suggestEditsOnGithub": "Suggest edits on GitHub",
     "title": "Documentation",
     "versionHistoryComingSoon": "Version history coming soon"
   },
@@ -1509,6 +1567,7 @@
   "error.somethingWentWrong": "Une erreur s'est produite",
   "error.statusPage": "Page de statut",
   "errorBoundary": {
+    "loadingSection": "Something went wrong loading this section.",
     "report": "Report this issue",
     "title": "Something went wrong",
     "tryAgain": "Try again",
@@ -1703,7 +1762,8 @@
       "bullet1": "Smart Route Planning: AI handles multi-stop sequences, traffic, and driver hours automatically.",
       "bullet2": "Assisted Dispatch: Single-instruction dispatch with automated driver checks and notifications.",
       "bullet3": "Automated Documents: Instant generation of CMRs, invoices, and proformas with zero manual entry.",
-      "bullet4": "Multi-Platform Access: Desktop, mobile, and web access with transparent, affordable pricing."
+      "bullet4": "Multi-Platform Access: Desktop, mobile, and web access with transparent, affordable pricing.",
+      "eyebrow": "ARGO AI Engine"
     },
     "testimonials": {
       "subtitle": "What operators tell us while we're building. Real conversations, lightly edited.",
@@ -2045,6 +2105,11 @@
   "nav.trustCenter": "Centre de confiance",
   "nav.tutorials": "Tutoriels",
   "nav.waitlist": "Liste d'attente",
+  "newsletter": {
+    "headline": "Get the latest news, product updates, and insights from {name} delivered to your inbox.",
+    "noSpam": "No spam, unsubscribe at any time. Read our",
+    "privacyPolicy": "Privacy Policy"
+  },
   "newsletter.checkEmail": "Vérifiez vos e-mails pour confirmer votre abonnement.",
   "newsletter.desc": "Restez à jour avec les mises à jour produit, les tutoriels et les actualités logistiques.",
   "newsletter.error": "Échec de l'abonnement. Veuillez réessayer.",
@@ -2068,6 +2133,7 @@
     "contactSupport": "Contact Support",
     "description": "Complete these steps to set up your Operion account",
     "done": "Done",
+    "finishRequiredSteps": "Finish the required steps to get the most out of Operion.",
     "general": "General",
     "heading": "Getting Started",
     "needHelp": "Need help?",
@@ -2084,6 +2150,7 @@
     "requiredSteps": "Required steps",
     "saving": "Saving…",
     "step": "Step {number}",
+    "stepsCompleted": "steps completed",
     "tutorialsError": "Failed to load tutorials. Please try again later."
   },
   "onboarding.title": "Intégration",
@@ -2382,6 +2449,9 @@
   "partners.resellerDesc": "Nous finalisons notre programme de certification de revendeur officiel avec formation, enregistrement des transactions et accès au portail partenaire. Inscrivez-vous pour être informé de son lancement.",
   "partners.resellerTitle": "Programme de revente bientôt disponible",
   "partners.title": "Partenaires Operion",
+  "passwordStrength": {
+    "uppercaseLetter": "Uppercase letter"
+  },
   "press.brandAssets": "Ressources de marque",
   "press.brandAssetsDesc": "Téléchargez les logos officiels d'Operion et les kits média pour usage presse.",
   "press.brandAssetsNotAvailable": "Les ressources de marque ne sont pas encore disponibles au téléchargement. Revenez bientôt.",
@@ -2489,6 +2559,9 @@
   "privacy.tableOfContents": "Table of Contents",
   "productTour": {
     "amountHeader": "Amount",
+    "analytics": {
+      "revenueChartLabel": "Revenue by week (thousands EUR)"
+    },
     "clientHeader": "Client",
     "dateHeader": "Date",
     "fuel": "Fuel",
@@ -2609,6 +2682,7 @@
   "products": {
     "ai": "Operion AI",
     "aiDesc": "Intelligence layer",
+    "autonomousDispatchNote": "Every capability is designed around the autonomous dispatch engine. State the outcome. Operion executes the workflow.",
     "core": "Operion Core",
     "coreDesc": "AI dispatch engine",
     "mobile": "Operion Mobile",
@@ -3205,6 +3279,7 @@
   "subscription.viewEnterprise": "Voir la formule Enterprise",
   "support": {
     "aiChat": "AI Chat",
+    "argoChatHint": "tab above or the chat bubble at the bottom-right to start talking with ARGO.",
     "chat": {
       "attach": "Attach file",
       "error": "Something went wrong sending that — try again?",
@@ -3363,6 +3438,7 @@
     "installationDesc": "Get up and running in under two minutes.",
     "installersIncluded": "Windows, macOS, and Linux installers included",
     "latestRelease": "Latest Release",
+    "productName": "Operion Toolkit",
     "released": "Released {date}"
   },
   "trialBanner": {

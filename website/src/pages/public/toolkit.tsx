@@ -193,7 +193,7 @@ export default function ToolkitPage() {
                   <Download className="h-8 w-8 text-primary" />
                 </div>
                 <Badge variant="success" className="mb-3">{t("toolkit.latestRelease")}</Badge>
-                <h2 className="text-2xl font-bold">Operion Toolkit {toolkitConfig.latestVersion}</h2>
+                <h2 className="text-2xl font-bold">{t("toolkit.productName")} {toolkitConfig.latestVersion}</h2>
                 <p className="mt-2 text-sm text-muted-foreground">{t("toolkit.released").replace("{date}", toolkitConfig.releaseDate)}</p>
                 <Button size="xl" className="mt-6" asChild>
                   <a href={toolkitConfig.downloadUrl} download>

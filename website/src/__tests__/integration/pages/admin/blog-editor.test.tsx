@@ -74,6 +74,8 @@ vi.mock("@/i18n/locale-context", () => {
     "blogEditor.seoDescriptionPlaceholder": "Meta description...",
     "blogEditor.dangerZone": "Danger Zone",
     "blogEditor.deleteArticle": "Delete Article",
+    "blogEditor.accessDenied": "Access Denied",
+    "blogEditor.accessDeniedDesc": "You do not have permission to access this page.",
   }
   return {
     useLocale: () => ({ t: (key: string) => translations[key] ?? key, locale: "en", setLocale: vi.fn() }),

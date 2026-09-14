@@ -135,6 +135,7 @@ markers = [
     "chaos_workflow: Chaos / resilience workflow test",
     "telemetry: Telemetry assertion test",
     "historical: Historical data immutability test",
+    "scale: scale validation against a synthetic 10,000-trip dataset (blueprint Phase 6.2; never runs in the default suite)",
 ]
 
 # ──────────────────────────────────────────────────────────────

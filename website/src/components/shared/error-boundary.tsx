@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { TriangleAlert } from "lucide-react"
+import { useLocale } from "@/i18n/locale-context"
 
 interface Props {
   children: ReactNode
@@ -11,7 +12,7 @@ interface State {
   hasError: boolean
 }
 
-export class WidgetErrorBoundary extends Component<Props, State> {
+class WidgetErrorBoundaryInner extends Component<Props & { t: (key: string) => string }, State> {
   state: State = { hasError: false }
 
   static getDerivedStateFromError(): State {
@@ -26,7 +27,7 @@ export class WidgetErrorBoundary extends Component<Props, State> {
             <CardContent className="flex items-center gap-3 p-4">
               <TriangleAlert className="h-5 w-5 text-destructive" />
               <p className="text-sm text-muted-foreground">
-                Something went wrong loading this section.
+                {this.props.t("errorBoundary.loadingSection")}
               </p>
             </CardContent>
           </Card>
@@ -36,4 +37,9 @@ export class WidgetErrorBoundary extends Component<Props, State> {
 
     return this.props.children
   }
+}
+
+export function WidgetErrorBoundary({ children, fallback }: Props) {
+  const { t } = useLocale()
+  return <WidgetErrorBoundaryInner children={children} fallback={fallback} t={t} />
 }

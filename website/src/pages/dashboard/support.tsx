@@ -251,7 +251,7 @@ export default function SupportPage() {
                       <Badge variant="success" className="text-xs">{t("support.online")}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {t("support.liveChatDesc")} Use the <strong>{t("support.aiChat")}</strong> tab above or the chat bubble at the bottom-right to start talking with ARGO.
+                      {t("support.liveChatDesc")} Use the <strong>{t("support.aiChat")}</strong> {t("support.argoChatHint")}
                     </p>
                   </CardContent>
                 </Card>

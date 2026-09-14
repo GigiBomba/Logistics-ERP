@@ -383,7 +383,7 @@ export default function DocsArticlePage() {
       <>
         <Helmet><title>Article Not Found — Operion ERP</title></Helmet>
         <div className="text-center py-16">
-          <h1 className="text-2xl font-bold">Article Not Found</h1>
+          <h1 className="text-2xl font-bold">{t("docs.articleNotFound")}</h1>
           <p className="mt-2 text-muted-foreground">{t("docs.articleNotFoundDesc")}</p>
           <Link to="/docs" className="mt-4 inline-block text-primary hover:underline">{t("docs.backToDocs")}</Link>
         </div>
@@ -561,7 +561,7 @@ export default function DocsArticlePage() {
       >
         <Button variant="outline" size="sm" className="gap-1.5 inline-flex items-center">
           <Code className="h-3.5 w-3.5" />
-          Suggest edits on GitHub
+          {t("docs.suggestEditsOnGithub")}
         </Button>
       </motion.div>
 

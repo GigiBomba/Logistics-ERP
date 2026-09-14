@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 interface TableOfContentsItem {
   id: string
@@ -15,6 +16,7 @@ interface TableOfContentsProps {
 }
 
 export function TableOfContents({ headings, className }: TableOfContentsProps) {
+  const { t } = useLocale()
   const [activeId, setActiveId] = useState<string>("")
   const [items, setItems] = useState<TableOfContentsItem[]>(headings ?? [])
 
@@ -74,7 +76,7 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
   return (
     <nav className={cn("sticky top-24 max-h-[calc(100vh-8rem)] overflow-auto", className)}>
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        On this page
+        {t("docs.onThisPage")}
       </h3>
       <ul className="space-y-1">
         {items.map((item) => (

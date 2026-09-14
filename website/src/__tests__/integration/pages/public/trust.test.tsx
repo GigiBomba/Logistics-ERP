@@ -36,13 +36,14 @@ describe("TrustPage", () => {
     expect(screen.getByText("Have questions?")).toBeInTheDocument()
   })
 
-  it("renders DPA download link with honest fallback when the PDF is absent", () => {
+  it("renders DPA download link that downloads the DRAFT template while the counsel-approved PDF is pending", () => {
     render(<TrustPage />)
     const link = screen.getByRole("link", { name: "Download DPA template" })
     expect(link).toBeInTheDocument()
-    // website/public/dpa/operion-dpa.pdf is not shipped yet, so the approved
-    // fallback anchors to the #dpa section and must NOT offer a download.
-    expect(link).toHaveAttribute("href", "/trust#dpa")
-    expect(link).not.toHaveAttribute("download")
+    // A clearly-marked DRAFT TEMPLATE ships at public/dpa/operion-dpa.md so the
+    // link is functional today; the `download` attribute makes the draft download.
+    // When counsel delivers website/public/dpa/operion-dpa.pdf, flip DPA_HREF.
+    expect(link).toHaveAttribute("href", "/dpa/operion-dpa.md")
+    expect(link).toHaveAttribute("download")
   })
 })

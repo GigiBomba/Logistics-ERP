@@ -251,8 +251,8 @@ export default function BlogEditorPage() {
   if (!isAdmin) {
     return (
       <SectionWrapper>
-        <Callout variant="warning" title="Access Denied">
-          You do not have permission to access this page.
+        <Callout variant="warning" title={t("blogEditor.accessDenied")}>
+          {t("blogEditor.accessDeniedDesc")}
         </Callout>
       </SectionWrapper>
     )

@@ -213,7 +213,7 @@ export default function ProductsPage() {
               <div className="mt-10 flex items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 <Layers className="h-4 w-4" />
                 <span>
-                  Every capability is designed around the autonomous dispatch engine. State the outcome. Operion executes the workflow.
+                  {t("products.autonomousDispatchNote")}
                 </span>
               </div>
             </CardContent>

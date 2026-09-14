@@ -13,6 +13,7 @@ import { formatDate } from "@/lib/utils"
 import { useBlogPost, useBlogPosts } from "@/services/queries"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { trackCTAClick } from "@/services/analytics"
+import { useLocale } from "@/i18n/locale-context"
 
 interface BlogArticleData {
   title: string
@@ -1626,6 +1627,7 @@ Follow these steps to evaluate whether your fleet size needs adjustment:
 
 export default function BlogArticlePage() {
   const { isAdmin } = useAuth()
+  const { t } = useLocale()
   const { slug } = useParams<{ slug: string }>()
 
   const { data: postData, isLoading } = useBlogPost(slug || "")
@@ -1680,16 +1682,16 @@ export default function BlogArticlePage() {
             viewport={{ once: true }}
             className="mx-auto max-w-2xl py-20 text-center"
           >
-            <h2 className="text-3xl font-bold tracking-tight">Article Not Found</h2>
+            <h2 className="text-3xl font-bold tracking-tight">{t("blog.articleNotFound")}</h2>
             <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-              The article you are looking for does not exist or may have been removed.
+              {t("blog.articleMissingDesc")}
             </p>
             <Link
               to="/blog"
               className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to Blog
+              {t("blog.backToBlog")}
             </Link>
           </motion.div>
         </SectionWrapper>
@@ -1772,7 +1774,7 @@ export default function BlogArticlePage() {
             </div>
             <div>
               <p className="text-sm font-medium">{article.author_name}</p>
-              <p className="text-xs text-muted-foreground">Transport &amp; Logistics</p>
+              <p className="text-xs text-muted-foreground">{t("blog.authorRole")}</p>
             </div>
           </div>
 
@@ -1801,11 +1803,9 @@ export default function BlogArticlePage() {
 
           {/* Conversion CTA — Operion ERP */}
           <div className="mt-12 rounded-lg border border-primary/20 bg-gradient-to-br from-primary/5 via-primary/3 to-background p-8">
-            <h3 className="text-xl font-bold tracking-tight">Streamline Your Transport Operations with Operion ERP</h3>
+            <h3 className="text-xl font-bold tracking-tight">{t("blog.ctaTitle")}</h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Operion is a desktop logistics platform built for transport companies. It combines trip profit
-              calculation, route planning with GraphHopper, fleet management, dispatching, and CMR document
-              generation in one application. No monthly subscriptions — free during development.
+              {t("blog.ctaDesc")}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a
@@ -1813,13 +1813,13 @@ export default function BlogArticlePage() {
                 onClick={() => trackCTAClick("blog_article", `/blog/${slug ?? ""}`)}
                 className="inline-flex items-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
               >
-                Join the waitlist
+                {t("blog.joinWaitlist")}
               </a>
               <a
                 href="/features"
                 className="inline-flex items-center rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
               >
-                Explore features
+                {t("blog.exploreFeatures")}
               </a>
               <a
                 href="/pricing"
@@ -1831,7 +1831,7 @@ export default function BlogArticlePage() {
                 href="/roi-calculator"
                 className="inline-flex items-center rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
               >
-                Calculate your ROI
+                {t("blog.calculateRoi")}
               </a>
             </div>
           </div>
@@ -1850,7 +1850,7 @@ export default function BlogArticlePage() {
 
           {/* Related Articles */}
           <div className="mt-12 border-t pt-8">
-            <h3 className="mb-6 text-lg font-bold tracking-tight">Related Articles</h3>
+            <h3 className="mb-6 text-lg font-bold tracking-tight">{t("blog.relatedArticles")}</h3>
             {relatedPosts.length > 0 ? (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {relatedPosts.map((post: any) => (
@@ -1871,7 +1871,7 @@ export default function BlogArticlePage() {
               className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to all articles
+              {t("blog.backToArticles")}
             </Link>
           </div>
         </motion.article>

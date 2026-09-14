@@ -31,6 +31,7 @@ import { useLocale } from "@/i18n/locale-context"
 import type { OnboardingStep } from "@/types"
 
 function CircularProgress({ value, total }: { value: number; total: number }) {
+  const { t } = useLocale()
   const percentage = Math.round((value / total) * 100)
   const radius = 36
   const circumference = 2 * Math.PI * radius
@@ -70,10 +71,10 @@ function CircularProgress({ value, total }: { value: number; total: number }) {
       </div>
       <div>
         <p className="text-sm font-medium">
-          {value} of {total} steps completed
+          {value} of {total} {t("onboarding.stepsCompleted")}
         </p>
         <p className="text-xs text-muted-foreground">
-          Finish the required steps to get the most out of Operion.
+          {t("onboarding.finishRequiredSteps")}
         </p>
       </div>
     </div>

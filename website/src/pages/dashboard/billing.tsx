@@ -597,7 +597,7 @@ export default function BillingPage() {
                 <Button variant="outline" className="w-full" asChild>
                   <a href="mailto:support@operionerp.xyz">
                     <Mail className="mr-2 h-4 w-4" />
-                    Contact Support
+                    {t("billing.contactSupport")}
                   </a>
                 </Button>
               </CardContent>

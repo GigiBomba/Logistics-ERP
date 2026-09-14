@@ -21,6 +21,100 @@ const KEY_LIKE_RE = /(^|[^A-Za-z])t\s*\(/ // t("...")
 const DOTTED_KEY_RE = /\b[a-z][\w-]*(\.[a-z][\w-]*)+\b/ // "auth.checkEmail"
 const CAMEL_CASE_RE = /\b[a-z]+[A-Z][a-zA-Z]*\b/ // "loginSubmit"
 
+// Intentional, non-translatable UI strings (exact collapsed-text matches).
+// These are NOT user-facing marketing/app copy:
+//  - Demo/screenshot mockup data in public pages (features.tsx, home.tsx,
+//    industry-*.tsx): fake app previews with sample routes, cities, company
+//    names, metrics, and chat transcripts — illustrative data, not copy.
+//  - Proper-noun technical names on brand.tsx (font / icon library names).
+const ALLOWLIST = new Set([
+  // brand.tsx — proper nouns for the font & icon library
+  "JetBrains Mono",
+  "Lucide React",
+
+  // features.tsx — desktop-app screenshot mockups
+  "Route Planning",
+  "Bucharest → Ploiesti → Brasov → Cluj",
+  "Constanta → Bucharest → Pitesti",
+  "Fleet Live Map",
+  "Bucharest → Cluj",
+  "Constanta Port",
+  "Deva Yard",
+  "Brasov Depot",
+  "Dispatch Console",
+  "Dispatch Truck 14 from Bucharest to Cluj...",
+  "Batch Assign",
+  "I found a profitable return load for Truck X after it unloads in Poznań.",
+  "Distance to reload: 18 km · Est. profit: +€487",
+  "Show me the route and documents.",
+  "All prepared. Dispatch, CMR, proforma invoice, and final invoice are ready.",
+  "Today's Profit",
+  "Active Dispatches",
+  "Document Scanner",
+  "Transilvania Logistics",
+  "Cluj Distribution SRL",
+  "Cluj-Napoca, RO",
+  "Electronics, 24 pallets",
+  "Text extracted successfully",
+  "Fields mapped to shipment record",
+  "Invoice pending review",
+  "Total Revenue",
+  "↑ 12.3% vs last month",
+  "Empty Km Rate",
+  "↓ 4.1% vs last month",
+  "Fleet Utilization",
+  "↑ 5% vs last month",
+  "On-Time Delivery",
+  "↑ 2.1% vs last month",
+  "Weekly Profit Trend",
+  "Driver Schedule",
+  "Interface preview",
+
+  // home.tsx — desktop-app screenshot mockups
+  "Active Routes",
+  "Dispatch Truck 14 to Cluj...",
+
+  // industry-agriculture.tsx — seasonal calendar visual
+  "Seasonal Logistics Calendar",
+  "Cold Chain",
+  "2°C to 6°C maintained across 340 km route",
+  "Rural Routes",
+  "Unpaved road weight limits auto-applied",
+  "Harvesters synced to delivery windows",
+
+  // industry-construction.tsx — site board visual
+  "Site Coordination Board",
+  "3 active sites",
+  "All sites comply with today&apos;s safety checklist",
+
+  // industry-fleet.tsx — fleet monitor visual
+  "Fleet Health Monitor",
+  "Next maintenance window",
+  "Tomorrow 06:00 — 3 vehicles",
+
+  // industry-freight.tsx — before/after comparison labels
+  "Before Operion",
+  "After Operion",
+
+  // industry-manufacturing.tsx — supply chain visual
+  "Supply Chain Flow",
+  "Live synchronization",
+  "Active inbound routes",
+  "On-time to dock",
+  "Facilities synced",
+
+  // industry-owner-ops.tsx — mobile app mockup
+  "Next Load",
+  "Bucharest → Timisoara · 12t refrigerated",
+  "Pending Invoice",
+  "Today&apos;s Expenses",
+
+  // industry-transport.tsx — live dispatch visual
+  "Live Dispatch",
+  "4 active routes",
+  "Route density — Bucharest hub",
+])
+
 interface Flagged {
   file: string
   line: number
@@ -74,6 +168,7 @@ function countLongWords(text: string): number {
 function isHardcodedText(text: string): boolean {
   const trimmed = collapseWhitespace(text)
   if (!trimmed) return false
+  if (ALLOWLIST.has(trimmed)) return false
   if (looksKeyed(trimmed)) return false
   return countLongWords(trimmed) >= 2
 }

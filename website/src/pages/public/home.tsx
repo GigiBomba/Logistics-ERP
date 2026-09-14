@@ -122,7 +122,7 @@ export default function HomePage() {
                 </Badge>
               </div>
               <p className="mb-4 text-sm font-medium text-primary/80 tracking-wide uppercase">
-                ARGO AI Engine
+                {t("home.hero.eyebrow")}
               </p>
               <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
                 {t("home.hero.title")}

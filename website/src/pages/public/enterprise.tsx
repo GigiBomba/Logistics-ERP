@@ -11,8 +11,11 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { enterpriseConfig } from "@/config/site"
 
 // DPA content dependency (business/counsel deliverable; deferred): the signed
-// Operion DPA PDF is not yet available. Same approved fallback as /trust#dpa.
-const DPA_HREF = "/trust#dpa"
+// Operion DPA PDF is not yet available. Same approved approach as /trust#dpa:
+// a clearly-marked DRAFT TEMPLATE ships at public/dpa/operion-dpa.md and
+// downloads today. When counsel delivers website/public/dpa/operion-dpa.pdf,
+// flip DPA_HREF to "/dpa/operion-dpa.pdf".
+const DPA_HREF: string = "/dpa/operion-dpa.md"
 
 const enterpriseFeatureKeys = [
   "enterprise.feature1",

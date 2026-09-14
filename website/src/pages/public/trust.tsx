@@ -33,12 +33,13 @@ import { Badge } from "@/components/ui/badge"
 import { CtaBanner } from "@/components/shared/cta-banner"
 
 // DPA content dependency (business/counsel deliverable; deferred): the signed
-// Operion DPA PDF is not yet available. Per approved D4 the download wiring
-// ships regardless with an honest fallback to the #dpa section below. When
-// counsel delivers website/public/dpa/operion-dpa.pdf, change DPA_HREF to
-// "/dpa/operion-dpa.pdf" — the `download` attribute then activates
-// automatically (it is guarded by the DPA_HREF !== "/trust#dpa" check).
-const DPA_HREF = "/trust#dpa"
+// Operion DPA PDF is not yet available. A clearly-marked DRAFT TEMPLATE now
+// ships at public/dpa/operion-dpa.md so the download link is functional today;
+// the file itself states it is for legal/counsel review only and is not an
+// operative agreement. When counsel delivers website/public/dpa/operion-dpa.pdf,
+// flip DPA_HREF to "/dpa/operion-dpa.pdf" — the `download` attribute (guarded
+// by the DPA_HREF !== "/trust#dpa" check) stays active for either file.
+const DPA_HREF: string = "/dpa/operion-dpa.md"
 
 const securityOverview = [
   {

@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useLocale } from "@/i18n/locale-context"
 
 interface CookieEntry {
   name: string
@@ -41,20 +42,21 @@ const tocItems = [
 ]
 
 export default function CookiePolicyPage() {
+  const { t } = useLocale()
   return (
     <>
       <SeoHead
-        title="Cookie Policy — Operion ERP"
-        description="Operion ERP cookie policy — how we use cookies, what data they collect, and how you can manage your preferences."
+        title={t("cookiePolicy.meta.title")}
+        description={t("cookiePolicy.meta.description")}
         canonical="https://operionerp.xyz/cookie-policy"
       />
-      <PageHeader title="Cookie Policy" description="Last updated: July 2026" />
+      <PageHeader title={t("cookiePolicy.pageTitle")} description={t("cookiePolicy.lastUpdated")} />
 
       <SectionWrapper>
         <div className="mx-auto max-w-3xl">
           {/* Table of Contents */}
           <nav className="mb-12 rounded-lg border p-6">
-            <h2 className="font-semibold mb-4">Table of Contents</h2>
+            <h2 className="font-semibold mb-4">{t("cookiePolicy.tableOfContents")}</h2>
             <ul className="space-y-2">
               {tocItems.map((item) => (
                 <li key={item.id}>
@@ -70,48 +72,36 @@ export default function CookiePolicyPage() {
           <div className="space-y-10">
             {/* What Are Cookies */}
             <section id="what-are-cookies" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">What Are Cookies</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.whatAreCookies.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                Cookies are small text files that are stored on your device when you visit a website. They
-                are widely used to make websites work more efficiently, enhance user experience, and provide
-                information to website owners. Cookies can be &ldquo;session&rdquo; cookies (temporary,
-                deleted when you close your browser) or &ldquo;persistent&rdquo; cookies (remain on your
-                device for a set period or until you delete them).
+                {t("cookiePolicy.section.whatAreCookies.content")}
               </p>
             </section>
 
             {/* How We Use Cookies */}
             <section id="how-we-use-cookies" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">How We Use Cookies</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.howWeUseCookies.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                Operion uses cookies for several purposes: to ensure the security of your browsing session,
-                to remember your preferences (such as language and theme settings), to analyze how visitors
-                interact with our website so we can improve it, and to record your consent preferences. We
-                do not use cookies for advertising or marketing purposes, and we never sell data collected
-                through cookies to third parties.
+                {t("cookiePolicy.section.howWeUseCookies.content")}
               </p>
             </section>
 
             {/* Cookie Categories */}
             <section id="cookie-categories" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">Cookie Categories</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.cookieCategories.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                We classify the cookies used on our website into the following categories:
+                {t("cookiePolicy.section.cookieCategories.intro")}
               </p>
               <div className="mt-6 grid gap-4">
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2">
-                      <Badge variant="default">Strictly Necessary</Badge>
+                      <Badge variant="default">{t("cookiePolicy.category.strictlyNecessary.title")}</Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">
-                      These cookies are essential for the website to function properly. They enable core
-                      functionality such as security, network management, and account access. The website
-                      cannot function properly without these cookies, and they cannot be disabled in our
-                      systems. They are usually set only in response to actions you take, such as logging
-                      in or filling in forms.
+                      {t("cookiePolicy.category.strictlyNecessary.content")}
                     </p>
                   </CardContent>
                 </Card>
@@ -119,15 +109,12 @@ export default function CookiePolicyPage() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2">
-                      <Badge variant="secondary">Functional</Badge>
+                      <Badge variant="secondary">{t("cookiePolicy.category.functional.title")}</Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">
-                      Functional cookies enable the website to remember your preferences and choices (such
-                      as your preferred language or theme) to provide a more personalized experience. These
-                      cookies may be set by us or by third-party providers whose services we have added to
-                      our pages. If you disable these cookies, some functionality may not work as intended.
+                      {t("cookiePolicy.category.functional.content")}
                     </p>
                   </CardContent>
                 </Card>
@@ -135,16 +122,12 @@ export default function CookiePolicyPage() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2">
-                      <Badge variant="outline">Analytics</Badge>
+                      <Badge variant="outline">{t("cookiePolicy.category.analytics.title")}</Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">
-                      Analytics cookies help us understand how visitors interact with our website by
-                      collecting and reporting information anonymously. We use Google Analytics to analyse
-                      page usage, traffic sources, and user behaviour patterns. This data helps us improve
-                      our website content and user experience. These cookies do not identify you
-                      personally.
+                      {t("cookiePolicy.category.analytics.content")}
                     </p>
                   </CardContent>
                 </Card>
@@ -152,15 +135,12 @@ export default function CookiePolicyPage() {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2">
-                      <Badge variant="destructive">Marketing</Badge>
+                      <Badge variant="destructive">{t("cookiePolicy.category.marketing.title")}</Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">
-                      Operion does not currently use marketing or advertising cookies. This category will
-                      be updated if we introduce any marketing-related tracking in the future. You will be
-                      notified and asked for consent before any marketing cookies are placed on your
-                      device.
+                      {t("cookiePolicy.category.marketing.content")}
                     </p>
                   </CardContent>
                 </Card>
@@ -169,18 +149,18 @@ export default function CookiePolicyPage() {
 
             {/* Cookie List */}
             <section id="cookie-list" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">Cookie List</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.cookieList.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                The following table lists the cookies that may be set when you visit our website:
+                {t("cookiePolicy.section.cookieList.intro")}
               </p>
               <div className="mt-6 overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="px-4 py-3 text-left font-medium">Cookie</th>
-                      <th className="px-4 py-3 text-left font-medium">Purpose</th>
-                      <th className="px-4 py-3 text-left font-medium">Duration</th>
-                      <th className="px-4 py-3 text-left font-medium">Category</th>
+                      <th className="px-4 py-3 text-left font-medium">{t("cookiePolicy.table.header.cookie")}</th>
+                      <th className="px-4 py-3 text-left font-medium">{t("cookiePolicy.table.header.purpose")}</th>
+                      <th className="px-4 py-3 text-left font-medium">{t("cookiePolicy.table.header.duration")}</th>
+                      <th className="px-4 py-3 text-left font-medium">{t("cookiePolicy.table.header.category")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -203,40 +183,29 @@ export default function CookiePolicyPage() {
 
             {/* Third-Party Services */}
             <section id="third-party-services" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">Third-Party Services</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.thirdPartyServices.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                We rely on a small number of trusted third parties to operate and protect this
-                website. Cloudflare, Inc. provides our content delivery network (CDN) and bot
-                protection, including the Cloudflare Turnstile verification shown on our public
-                forms. Google LLC provides Google Analytics, which helps us understand how
-                visitors interact with our website. Data you submit through our website is
-                transmitted to and processed by the Operion API service (api.operionerp.xyz).
-                These providers process data under strict data processing agreements, and we do
-                not sell data to any third party.
+                {t("cookiePolicy.section.thirdPartyServices.content")}
               </p>
             </section>
 
             {/* Managing Cookies */}
             <section id="managing-cookies" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">Managing Cookies</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.managingCookies.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                You can control and manage cookies in several ways. Most browsers allow you to view, block,
-                or delete cookies through your browser settings. Please note that blocking strictly necessary
-                cookies may affect the functionality of our website. You can also withdraw your consent at
-                any time by clicking the &ldquo;Cookie Preferences&rdquo; link in the footer of our website.
-                For detailed instructions on managing cookies in your browser, visit aboutcookies.org.
+                {t("cookiePolicy.section.managingCookies.content")}
               </p>
             </section>
 
             {/* Contact */}
             <section id="contact" className="scroll-mt-20">
-              <h2 className="text-lg font-semibold">Contact</h2>
+              <h2 className="text-lg font-semibold">{t("cookiePolicy.section.contact.title")}</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                If you have any questions about our use of cookies or this policy, please contact us at{" "}
+                {t("cookiePolicy.section.contact.contentA")}{" "}
                 <a href="mailto:support@operionerp.xyz" className="text-primary hover:underline">
                   support@operionerp.xyz
                 </a>
-                . You can also reach us by mail at Operion SRL, Bucharest, Romania.
+                {t("cookiePolicy.section.contact.contentB")}
               </p>
             </section>
           </div>

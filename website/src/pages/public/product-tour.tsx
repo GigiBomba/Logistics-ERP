@@ -374,7 +374,7 @@ function AnalyticsPage() {
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-center text-xs text-muted-foreground">Revenue by week (thousands EUR)</p>
+            <p className="mt-2 text-center text-xs text-muted-foreground">{t("productTour.analytics.revenueChartLabel")}</p>
           </CardContent>
         </Card>
 

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 interface PasswordStrengthProps {
   password: string
@@ -39,6 +40,8 @@ function meetsCriteria(password: string) {
 }
 
 export function PasswordStrength({ password }: PasswordStrengthProps) {
+  const { t } = useLocale()
+
   if (!password) return null
 
   const score = getScore(password)
@@ -74,7 +77,7 @@ export function PasswordStrength({ password }: PasswordStrengthProps) {
           {criteria.symbol ? "✓" : "○"} Symbol
         </li>
         <li className={criteria.uppercase ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}>
-          {criteria.uppercase ? "✓" : "○"} Uppercase letter
+          {criteria.uppercase ? "✓" : "○"} {t("passwordStrength.uppercaseLetter")}
         </li>
       </ul>
     </div>
