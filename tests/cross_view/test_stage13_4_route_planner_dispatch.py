@@ -239,7 +239,10 @@ class TestRoutePlannerToDispatch:
             TRUCK_UPDATED,
         )
 
-        assert view._event_subscribed is True
+        # BaseView post-condition: all truck events were tracked via
+        # ``_subscribe`` during __init__ (replaces the pre-migration
+        # ``_event_subscribed`` flag assert).
+        assert len(view._subs) >= 3
 
         event_bus = view._event_bus
         subscribers_created = event_bus._subscribers.get(TRUCK_CREATED, [])
@@ -360,8 +363,9 @@ class TestRoutePlannerToDispatch:
         # Act: shut down the view
         view.shutdown()
 
-        # Verify the subscription flag is cleared
-        assert view._event_subscribed is False
+        # Verify the tracked subscription set was cleared (BaseView post-condition;
+        # replaces the pre-migration ``_event_subscribed is False`` assert)
+        assert view._subs == []
 
         # Verify the callback is no longer in the subscriber list
         subscribers = view._event_bus._subscribers.get(TRUCK_CREATED, [])

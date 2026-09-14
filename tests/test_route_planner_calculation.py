@@ -140,13 +140,13 @@ class TestRoutePlannerSignalMarshaling(unittest.TestCase):
             with patch.object(RouteRunner, "run_route_async", mock_run):
                 v = h.view
                 v._on_calculate_click()
-                self.assertFalse(v.calculate_btn.isEnabled(),
+                self.assertFalse(v.calc_btn.isEnabled(),
                                  "Calculate button should be disabled while running")
                 deadline = time.time() + 5.0
                 done = False
                 while time.time() < deadline:
                     QApplication.processEvents()
-                    if v.calculate_btn.isEnabled():
+                    if v.calc_btn.isEnabled():
                         done = True
                         break
                     time.sleep(0.05)
@@ -155,10 +155,10 @@ class TestRoutePlannerSignalMarshaling(unittest.TestCase):
                     "Calculate button never re-enabled — the worker-thread "
                     "callback was never delivered to the GUI thread.",
                 )
-                self.assertTrue(v.calculate_btn.isEnabled())
+                self.assertTrue(v.calc_btn.isEnabled())
                 # TASK 8: after result delivery the button is fully opaque.
                 self.assertEqual(
-                    v.calculate_btn.graphicsEffect().opacity(), 1.0
+                    v.calc_btn.graphicsEffect().opacity(), 1.0
                 )
                 self.assertTrue(v.lbl_info.text(),
                                 "lbl_info should have been updated with the result")

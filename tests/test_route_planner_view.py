@@ -433,15 +433,16 @@ class TestQtRoutePlannerViewLifecycle:
         assert id(route_planner.map_widget) != old_map_id
 
     def test_shutdown_unregisters_i18n(self, route_planner):
-        with patch(
-            "ui.views.route_planner_view.unregister_listener"
-        ) as mock_unreg:
-            route_planner.shutdown()
-            mock_unreg.assert_called()
+        # BaseView post-condition: _register_i18n stored the listener id in
+        # __init__, and BaseView.shutdown unregisters it and clears it.
+        assert route_planner._i18n_id is not None
+        route_planner.shutdown()
+        assert route_planner._i18n_id is None
 
     def test_shutdown_unsubscribes_event_bus(self, route_planner):
         route_planner.shutdown()
-        assert route_planner._event_subscribed is False
+        # BaseView post-condition: the tracked subscription set is empty.
+        assert route_planner._subs == []
 
     def test_shutdown_cancels_calculation(self, route_planner):
         route_planner.shutdown()

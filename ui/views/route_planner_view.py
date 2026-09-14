@@ -12,9 +12,10 @@ import os
 import uuid
 from typing import Any, cast
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPainter
 from PySide6.QtWidgets import (
+    QApplication,
     QBoxLayout,
     QCheckBox,
     QFileDialog,
@@ -23,7 +24,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLayout,
     QLineEdit,
     QProgressBar,
     QPushButton,
@@ -34,13 +34,13 @@ from PySide6.QtWidgets import (
 )
 
 from services.fleet_service import FleetService
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from ui.performance_timer import PerfTimer
 from services.operations.event_bus import (
     TRUCK_CREATED,
     TRUCK_DELETED,
     TRUCK_UPDATED,
-    shared_event_bus,
 )
 from services.route_history_service import RouteHistoryRecord, RouteHistoryService
 from services.route_persistence import RoutePersistenceService
@@ -279,11 +279,17 @@ LEAFLET_DARK_CSS = f"""
 """
 
 
-class QtRoutePlannerView(QWidget):
+class QtRoutePlannerView(BaseView):
     """Route planner with sidebar controls and an interactive map."""
 
     # Doc TASK 1: panel is fixed-width, never flexible.
     SIDEBAR_WIDTH = 300
+
+    # Explicit map floor so the map pane cannot collapse to zero inside the
+    # BaseView QScrollArea viewport.  320px leaves room beside the fixed
+    # 300px sidebar at the 1280px window minimum (design_tokens.WINDOW_MIN_WIDTH).
+    MAP_MIN_WIDTH = 320
+    MAP_MIN_HEIGHT = 240
 
     # Emitted from the route runner's worker thread when the calculation
     # completes.  ``Signal.emit`` is thread-safe — Qt queues the slot call
@@ -385,17 +391,17 @@ class QtRoutePlannerView(QWidget):
         self._render_stops_list()
 
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        # BaseView tracks the listener id in ``_i18n_id`` and unregisters it
+        # automatically on shutdown.
+        self._register_i18n(self._language_callback)
 
         # Subscribe to truck events so changes in the Fleet Manager
         # (or anywhere else) refresh this view's dropdown without an
-        # app restart.  We unsubscribe in ``shutdown``.
-        self._event_bus = shared_event_bus
-        self._subs: list = []
+        # app restart.  BaseView tracks every subscription in ``_subs``
+        # and unsubscribes the whole set on ``shutdown``.
         self._subscribe(TRUCK_CREATED, self._on_truck_event)
         self._subscribe(TRUCK_UPDATED, self._on_truck_event)
         self._subscribe(TRUCK_DELETED, self._on_truck_event)
-        self._event_subscribed = True
 
         # Defer MapWidget construction so the view switch is instant.
         # Initialize to None so method guards don't crash before lazy init runs.
@@ -419,16 +425,11 @@ class QtRoutePlannerView(QWidget):
         self._map_init_timer.timeout.connect(self._lazy_init_map)
         self._map_init_timer.start()
 
-    def _subscribe(self, event: str, callback: Any) -> None:
-        """Subscribe to an event-bus event and track it for shutdown."""
-        self._event_bus.subscribe(event, callback)
-        self._subs.append((event, callback))
-
     def _on_truck_event(self, _event_data: Any) -> None:
         """Refresh the truck dropdown when a truck is created,
         updated, or deleted elsewhere.  Keeps the user's current
         selection if the truck is still in the list."""
-        if not getattr(self, "_event_subscribed", False):
+        if self._shutdown_flag:
             return
         previous_id = self._selected_truck_id
         self._load_trucks()
@@ -448,7 +449,31 @@ class QtRoutePlannerView(QWidget):
     def _build_ui(self) -> None:
         self.setAccessibleName("Route planner")
         self.setAccessibleDescription("Route planning with map and sidebar controls")
-        outer = QVBoxLayout(self)
+
+        # ── QScrollArea contract (BaseView) ────────────────────────────────
+        # BaseView is a QScrollArea.  The whole route-planner layout lives in
+        # an inner container widget installed via setWidget(), resized to fill
+        # the viewport (the proven pattern from team_view.py / overview_view.py).
+        # The view is a fixed full-height two-pane layout, so the outer scroll
+        # area is not meant to scroll its content — the sidebar keeps its own
+        # internal QScrollArea for overflow.
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self._container = QWidget()
+        self.setWidget(self._container)
+
+        # Step 8 (OPERION_BLUEPRINT): QScrollArea consumes wheel events for
+        # scrolling; the map (a QWebEngineView) needs them for Leaflet's
+        # scroll-wheel zoom.  Install a viewport event filter so wheel events
+        # whose cursor lands on the map are forwarded to the map widget and
+        # swallowed, instead of scrolling the outer area.  Wheel over the
+        # sidebar/panel keeps normal scrolling (the filter only fires when the
+        # cursor is over the map).
+        self.viewport().installEventFilter(self)
+
+        outer = QVBoxLayout(self._container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
@@ -526,7 +551,7 @@ class QtRoutePlannerView(QWidget):
         # Map — placeholder widget replaced lazily to avoid synchronous
         # QWebEngineView startup (~270 ms) in _build_ui().
         self.map_widget = self._build_map_loading_panel()
-        self.map_widget.setMinimumWidth(1)
+        self.map_widget.setMinimumSize(self.MAP_MIN_WIDTH, self.MAP_MIN_HEIGHT)
         self._click_to_add_enabled = False
         content.addWidget(self.map_widget, 1)
 
@@ -534,6 +559,40 @@ class QtRoutePlannerView(QWidget):
 
         # Build sidebar content
         self._build_sidebar_content(scroll_layout, button_bar_layout)
+
+    def _map_wheel_target(self) -> QWidget | None:
+        """Return the live map widget when the cursor is over it.
+
+        Used by ``eventFilter`` (step 8) to decide whether a wheel event that
+        reached the outer BaseView viewport belongs to the map.  Returns None
+        when the map is absent, destroyed, or the cursor is elsewhere.
+        """
+        mw = self.map_widget
+        if mw is None:
+            return None
+        try:
+            if mw.isWidgetType() and mw.isVisible() and mw.underMouse():
+                return mw
+        except RuntimeError:
+            return None
+        return None
+
+    def eventFilter(self, obj, event) -> bool:
+        """Wheel passthrough for the map (step 8).
+
+        BaseView is a QScrollArea; without this filter its viewport would
+        consume wheel events for scrolling, robbing the map of Leaflet's
+        scroll-wheel zoom.  When a wheel event reaches the outer viewport and
+        the cursor is over the map, forward it to the map widget and swallow
+        it so the outer scroll area never steals the gesture.  Wheel events
+        over the sidebar/panel fall through to normal scrolling.
+        """
+        if obj is self.viewport() and event.type() == QEvent.Type.Wheel:
+            target = self._map_wheel_target()
+            if target is not None:
+                QApplication.sendEvent(target, event)
+                return True
+        return super().eventFilter(obj, event)
 
     def _build_map_loading_panel(self) -> QFrame:
         """Skeleton-style loading panel shown while the map initialises.
@@ -595,7 +654,7 @@ class QtRoutePlannerView(QWidget):
         self.map_widget = MapWidget(self._content_widget)
         self._map_renderer = QtRouteMapRenderer(self.map_widget)
         self.map_widget.set_click_callback(self._on_map_click)
-        self.map_widget.setMinimumWidth(1)
+        self.map_widget.setMinimumSize(self.MAP_MIN_WIDTH, self.MAP_MIN_HEIGHT)
         if content_layout is not None:
             cast(QBoxLayout, content_layout).addWidget(self.map_widget, 1)
         self.map_widget.loadFinished.connect(self._inject_map_styles)
@@ -1015,9 +1074,6 @@ class QtRoutePlannerView(QWidget):
         share_btn.clicked.connect(self._on_share_route)
         bl.addWidget(share_btn)
 
-        # Remove old sidebar references
-        self.calculate_btn = self.calc_btn
-
         self._load_trucks()
         self._refresh_chips()
 
@@ -1032,8 +1088,7 @@ class QtRoutePlannerView(QWidget):
     def _load_trucks(self) -> None:
         """Load trucks asynchronously — show spinner during load."""
         with PerfTimer("route_planner.load_trucks"):
-            if hasattr(self, '_show_loading'):
-                self._show_loading()
+            self._show_loading()
             WorkerPool.run(
                 fn=self._fetch_trucks_with_slots,
                 on_result=self._on_trucks_loaded,
@@ -1059,8 +1114,7 @@ class QtRoutePlannerView(QWidget):
     def _on_trucks_loaded(self, data: dict) -> None:
         """GUI thread: populate truck combo from batch data."""
         with PerfTimer("route_planner.trucks_loaded"):
-            if hasattr(self, '_hide_loading'):
-                self._hide_loading()
+            self._hide_loading()
             trucks = data["trucks"]
             slot_map = data.get("slot_map", {})
 
@@ -1083,8 +1137,7 @@ class QtRoutePlannerView(QWidget):
 
     def _on_trucks_error(self, error: str) -> None:
         """Handle truck load error."""
-        if hasattr(self, '_hide_loading'):
-            self._hide_loading()
+        self._hide_loading()
         logger.error("Failed to load trucks: %s", error)
 
     def _on_truck_selected(self, _index: int) -> None:
@@ -1889,6 +1942,14 @@ class QtRoutePlannerView(QWidget):
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
+    def _is_stale(self, key: str | None = None) -> bool:
+        """Route planner self-manages its data loads (trucks, etc. via
+        WorkerPool on demand); BaseView's staleness/async-load machinery is not
+        used.  Returning False keeps ``super().wakeup()`` a fast no-op so it
+        never flashes BaseView's full-view skeleton overlay on tab switch.
+        """
+        return False
+
     def wakeup(self) -> None:
         if self._pending_clear:
             self._pending_clear = False
@@ -1901,27 +1962,34 @@ class QtRoutePlannerView(QWidget):
             self._map_renderer = None
             QtRoutePlannerView.LEAFLET_CSS_INJECTED = False
             self._lazy_init_map()
+        # Let BaseView run its wakeup bookkeeping (skeleton, staleness,
+        # deferred data load).  Note: BaseView.wakeup no-ops once the view
+        # has been shut down — the map recreation above already ran, so a
+        # shut-down-then-reactivated view still shows a live map.
+        super().wakeup()
 
-    def shutdown(self) -> None:
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        # Unsubscribe from the event bus so a recreated view doesn't
-        # get duplicate events from a dead instance.
-        if getattr(self, "_event_subscribed", False):
-            for _event, _callback in self._subs:
-                try:
-                    self._event_bus.unsubscribe(_event, _callback)
-                except Exception:
-                    pass
-            self._subs.clear()
-            self._event_subscribed = False
+    def _on_shutdown(self) -> None:
+        """Route-planner-specific teardown, invoked by BaseView.shutdown.
+
+        BaseView.shutdown owns the shared cleanup (event-bus unsubscribe set,
+        i18n listener, tracked timers); this hook only tears down planner
+        internals.  Idempotent-guarded so it is safe if invoked twice
+        (e.g. via a second BaseView.shutdown call).
+        """
+        if getattr(self, "_route_teardown_done", False):
+            return
+        self._route_teardown_done = True
+
         # Cancel any pending deferred map-init timer so a shutdown view
         # never runs ``_lazy_init_map`` against destroyed C++ state.
         with contextlib.suppress(Exception):
             timer = getattr(self, "_map_init_timer", None)
             if timer is not None:
                 timer.stop()
-        # Stop the map-load fallback timer too.
+        # Stop the map-load fallback timer too.  These two timers are
+        # explicitly-parented single-shots (NOT BaseView ``_add_shot``
+        # timers), so they are not tracked in ``self._timers`` — BaseView
+        # cannot stop them, hence the explicit stops here.
         with contextlib.suppress(Exception):
             self._stop_map_timeout()
         # Cancel any in-flight route calculation and wait for completion

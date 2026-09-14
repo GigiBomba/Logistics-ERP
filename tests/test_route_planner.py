@@ -35,7 +35,7 @@ class TestQtRoutePlannerView:
     def test_creation(self, route_planner):
         assert route_planner.map_widget is not None
         assert route_planner._map_renderer is not None
-        assert route_planner.calculate_btn is not None
+        assert route_planner.calc_btn is not None
 
     def test_stops_list_renders(self, route_planner):
         assert len(route_planner._stop_rows) >= 2
@@ -61,7 +61,7 @@ class TestQtRoutePlannerView:
         assert route_planner.profile_combo.count() > 0
 
     def test_calculate_button_exists(self, route_planner):
-        assert route_planner.calculate_btn is not None
+        assert route_planner.calc_btn is not None
 
     def test_clear_route_state_resets_stops(self, route_planner):
         route_planner._clear_route_state()

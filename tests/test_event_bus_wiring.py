@@ -208,22 +208,86 @@ class TestRoutePlannerSubscribes(unittest.TestCase):
             "Expected _truck_refresh_btn wired to _load_trucks",
         )
 
-    def test_unsubscribes_in_shutdown(self) -> None:
-        import inspect
+    def _make_route_planner(self):
+        """Build a minimal live QtRoutePlannerView with heavy deps mocked."""
+        from unittest.mock import MagicMock, patch
+
+        from PySide6.QtWidgets import QWidget
+
+        class _FakeMapWidget(QWidget):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.loadFinished = MagicMock()
+
+            def set_click_callback(self, cb):
+                pass
+
+            def _run_js(self, js):
+                pass
+
         from ui.views.route_planner_view import QtRoutePlannerView
 
-        # Stage-A subscription-lifecycle rework: every subscription is
-        # tracked in ``self._subs`` and ``shutdown()`` unsubscribes the whole
-        # tracked set from the shared bus — so a recreated view never
-        # receives duplicate events from a dead instance.
-        src = inspect.getsource(QtRoutePlannerView.shutdown)
-        self.assertIn("self._event_bus.unsubscribe", src)
-        self.assertIn("for _event, _callback in self._subs", src)
-        self.assertIn("self._subs.clear()", src)
-        self.assertIn("_event_subscribed = False", src)
+        core = MagicMock()
+        core.cost_engine = MagicMock()
+        core.country_avoidance = MagicMock()
+        core.get_excluded_countries.return_value = []
 
-        # Each event must be registered through the tracking helper so
-        # shutdown() can balance every subscription exactly.
+        with (
+            patch("ui.views.route_planner_view.MapWidget", lambda *a, **kw: _FakeMapWidget()),
+            patch("ui.views.route_planner_view.QtRouteMapRenderer", lambda *a, **kw: MagicMock()),
+            patch("ui.views.route_planner_view.RoutePlannerController", lambda db: core),
+            patch("ui.views.route_planner_view.RouteHistoryService", lambda db: MagicMock()),
+            patch("ui.views.route_planner_view.RouteStateManager", lambda db: MagicMock()),
+            patch("ui.views.route_planner_view.FleetService", lambda db: MagicMock()),
+            patch("ui.views.route_planner_view.RoutePersistenceService", lambda *a, **kw: MagicMock()),
+            patch.object(QtRoutePlannerView, "_load_trucks", lambda self: None),
+        ):
+            return QtRoutePlannerView(
+                None,
+                db=MagicMock(),
+                controller=MagicMock(),
+                api_client=MagicMock(),
+            )
+
+    def test_unsubscribes_in_shutdown(self) -> None:
+        """BaseView post-conditions: after shutdown the tracked subscription
+        set is empty and every truck callback is removed from the event bus.
+
+        (Replaces the pre-migration source-text asserts on the old custom
+        ``_subscribe``/``_event_subscribed`` machinery — the subscription
+        lifecycle is now owned by BaseView.)"""
+        import contextlib
+        import inspect
+
+        _ensure_qapp()
+        from ui.views.route_planner_view import QtRoutePlannerView
+
+        view = self._make_route_planner()
+        try:
+            event_bus = view._event_bus
+            for evt in (TRUCK_CREATED, TRUCK_UPDATED, TRUCK_DELETED):
+                self.assertIn(
+                    view._on_truck_event,
+                    event_bus._subscribers.get(evt, []),
+                    f"view must be subscribed to {evt} before shutdown",
+                )
+            self.assertGreaterEqual(len(view._subs), 3)
+
+            view.shutdown()
+
+            self.assertEqual(view._subs, [])
+            for evt in (TRUCK_CREATED, TRUCK_UPDATED, TRUCK_DELETED):
+                self.assertNotIn(
+                    view._on_truck_event,
+                    event_bus._subscribers.get(evt, []),
+                    f"shutdown must unsubscribe {evt}",
+                )
+        finally:
+            with contextlib.suppress(Exception):
+                view.shutdown()
+
+        # Static check retained: __init__ must still register every truck
+        # event through the tracking helper so BaseView can balance them.
         init_src = inspect.getsource(QtRoutePlannerView.__init__)
         for evt in ("TRUCK_CREATED", "TRUCK_UPDATED", "TRUCK_DELETED"):
             self.assertIn(
