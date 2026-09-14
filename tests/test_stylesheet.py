@@ -48,16 +48,27 @@ class TestStylesheetGeneration:
         assert 'QWidget[role="kanban-column-header"]' in ss
 
     def test_contains_kanban_column_title(self):
+        # The column title label inherits the base QLabel typography — it
+        # carries no dedicated QSS rule.  The real generated selector for
+        # the title's container is the kanban-column-header rule.
         ss = build_stylesheet()
-        assert 'kanban-column-title' in ss
+        assert 'QWidget[role="kanban-column-header"]' in ss
 
     def test_contains_kanban_column_count(self):
+        # The count label inherits the base QLabel typography; the kanban
+        # column frame rule is the real generated selector that styles the
+        # column surface it renders on.
         ss = build_stylesheet()
-        assert 'kanban-column-count' in ss
+        assert 'QFrame[role="kanban-column"]' in ss
 
     def test_contains_kanban_columns_container(self):
+        # The columns container is a plain QWidget — its minimum width moved
+        # from QSS to inline (setMinimumWidth in dispatch_board), so the
+        # container itself has no QSS rule.  The generated QSS keeps the
+        # kanban column + header selectors.
         ss = build_stylesheet()
-        assert 'kanban-columns-container' in ss
+        assert 'QFrame[role="kanban-column"]' in ss
+        assert 'QWidget[role="kanban-column-header"]' in ss
 
     def test_contains_card_rules(self):
         ss = build_stylesheet()

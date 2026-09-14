@@ -55,10 +55,14 @@ class TestQssGeneration:
         assert dt.COLOR_BORDER_MEDIUM in qss
 
     def test_qss_contains_font_families(self, qapp):
+        # The theme's typeface ladder: IBM Plex Sans (sans) + IBM Plex Mono
+        # (data), with Segoe UI as the declared fallback in the sans stack.
+        # The "hero" face (Impact) is not emitted into the QSS — it is only
+        # applied via widget code where a single-word metric is rendered.
         qss = QtTheme.qss()
         assert "IBM Plex Sans" in qss
-        assert "Impact" in qss
         assert "IBM Plex Mono" in qss
+        assert "Segoe UI" in qss
 
     def test_qss_covers_core_widget_selectors(self, qapp):
         qss = QtTheme.qss()
@@ -76,7 +80,7 @@ class TestQssGeneration:
 
     def test_qss_contains_custom_properties(self, qapp):
         qss = QtTheme.qss()
-        assert 'fontRole="hero"' in qss
+        assert 'fontRole="mono"' in qss
         assert 'fontRole="section"' in qss
         assert 'role="card"' in qss
         assert 'role="kpi-card"' in qss

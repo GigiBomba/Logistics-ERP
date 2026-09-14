@@ -66,6 +66,22 @@ def db(db_path):
         pass
 
 
+@pytest.fixture(autouse=True)
+def _isolate_document_cache(monkeypatch):
+    """Disable the document Redis cache for this file's tests.
+
+    Every test here creates a FRESH temporary DB but shares the process-wide
+    Redis cache (``doc:{company_id}:{id}``).  A document cached while one
+    test's DB was live would leak into the next test's same-id lookups and
+    produce spurious 200s/404s (e.g. the cross-company containment test).
+    These tests exercise the upload/download/containment logic, not the
+    cache layer, so the cache is turned off — each lookup reads the real row.
+    """
+    from services.document_service import DocumentService
+
+    monkeypatch.setattr(DocumentService, "_get_cache", lambda self: None)
+
+
 def _make_client(db, doc_service=None):
     app = create_app()
 

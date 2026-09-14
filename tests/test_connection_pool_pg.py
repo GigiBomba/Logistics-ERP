@@ -106,6 +106,23 @@ def _per_file_test_db():
     _drop_test_db()
 
 
+@pytest.fixture(autouse=True)
+def _ensure_pool_db():
+    """(Re)create the per-file database before each test.
+
+    ``_drop_test_db()`` removes ``operion_test_pool`` at module teardown, so
+    a *concurrent* pytest invocation (e.g. an overlapping shard reusing the
+    same docker PG) can drop it between this module's import-time creation
+    and a test's connection attempt — the pool then fails with "database
+    does not exist" even though the module-level ``pg_reachable()`` check
+    passed.  Re-running the idempotent ensure step here (cheap: one admin
+    connection + existence check) closes that window.  It is a no-op when
+    ``OPERION_TEST_POSTGRES_DSN`` is set explicitly.
+    """
+    _ensure_test_db()
+    yield
+
+
 def pg_reachable(dsn: str = TEST_POSTGRES_DSN) -> bool:
     """Return ``True`` if PostgreSQL responds to a connection attempt."""
     try:

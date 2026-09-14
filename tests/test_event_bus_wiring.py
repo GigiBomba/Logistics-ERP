@@ -211,13 +211,25 @@ class TestRoutePlannerSubscribes(unittest.TestCase):
     def test_unsubscribes_in_shutdown(self) -> None:
         import inspect
         from ui.views.route_planner_view import QtRoutePlannerView
+
+        # Stage-A subscription-lifecycle rework: every subscription is
+        # tracked in ``self._subs`` and ``shutdown()`` unsubscribes the whole
+        # tracked set from the shared bus — so a recreated view never
+        # receives duplicate events from a dead instance.
         src = inspect.getsource(QtRoutePlannerView.shutdown)
-        # Each subscription should have a matching unsubscribe.
+        self.assertIn("self._event_bus.unsubscribe", src)
+        self.assertIn("for _event, _callback in self._subs", src)
+        self.assertIn("self._subs.clear()", src)
+        self.assertIn("_event_subscribed = False", src)
+
+        # Each event must be registered through the tracking helper so
+        # shutdown() can balance every subscription exactly.
+        init_src = inspect.getsource(QtRoutePlannerView.__init__)
         for evt in ("TRUCK_CREATED", "TRUCK_UPDATED", "TRUCK_DELETED"):
             self.assertIn(
-                f"bus.unsubscribe({evt}",
-                src,
-                f"shutdown() must unsubscribe from {evt}",
+                f"self._subscribe({evt},",
+                init_src,
+                f"__init__() must subscribe to {evt} via the tracking helper",
             )
 
 
@@ -248,15 +260,28 @@ class TestCalculatorSubscribes(unittest.TestCase):
     def test_unsubscribes_in_shutdown(self) -> None:
         import inspect
         from ui.views.calculator_view import QtCalculatorView
+
+        # Stage-A subscription-lifecycle rework: every subscription is
+        # tracked in ``self._subs`` and ``shutdown()`` unsubscribes the whole
+        # tracked set from the shared bus — so a recreated view never
+        # receives duplicate events from a dead instance.
         src = inspect.getsource(QtCalculatorView.shutdown)
+        self.assertIn("self._event_bus.unsubscribe", src)
+        self.assertIn("for event, callback in self._subs", src)
+        self.assertIn("self._subs.clear()", src)
+        self.assertIn("_events_subscribed = False", src)
+
+        # Each event must be registered through the tracking helper so
+        # shutdown() can balance every subscription exactly.
+        init_src = inspect.getsource(QtCalculatorView.__init__)
         for evt in (
             "TRUCK_CREATED", "TRUCK_UPDATED", "TRUCK_DELETED",
             "CLIENT_CREATED", "CLIENT_UPDATED",
         ):
             self.assertIn(
-                f"bus.unsubscribe({evt}",
-                src,
-                f"shutdown() must unsubscribe from {evt}",
+                f"self._subscribe({evt},",
+                init_src,
+                f"__init__() must subscribe to {evt} via the tracking helper",
             )
 
 

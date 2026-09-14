@@ -2276,7 +2276,8 @@
         "cmr_generated_status": "generated",
         "cmr_trip_title": "CMR Trip #{}",
         "cmr_copy_title": "CMR Trip #{} - {} COPY",
-        "doc_receipt_title": "Receipt"
+        "doc_receipt_title": "Receipt",
+        "doc_proforma_title": "Proforma"
     },
     "invoice_editor": {
         "select_client": "Client:",
@@ -2789,7 +2790,8 @@
         "attach_type_image": "Image",
         "attach_type_other": "Other",
         "received_from_placeholder": "Will be completed",
-        "amount_hint": "Enter an amount above"
+        "amount_hint": "Enter an amount above",
+        "trip_list_format": "#{id} {truck_number} — {client_name} [{created_at}]"
     },
     "admin": {
         "tab_title": "Admin Panel",
@@ -3281,5 +3283,10 @@
     "client_activity": {
         "trip_line": "Trip: {truck} — {status} / {client} — {distance} km",
         "invoice_line": "Invoice: {number} — {status} — {amount} EUR ({trip_status})"
+    },
+    "proforma_pdf": {
+        "title": "PROFORMA INVOICE",
+        "watermark": "PROFORMA",
+        "disclaimer": "This is a proforma invoice and does not constitute a tax invoice."
     }
 }

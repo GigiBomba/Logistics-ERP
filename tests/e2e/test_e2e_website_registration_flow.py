@@ -42,7 +42,12 @@ def client(request):
     """
     import tests.security.conftest as _sec
 
-    gen = _sec.app.__wrapped__(request)
+    # The security conftest's ``app`` fixture now requires a module-scoped
+    # ``test_db_path`` (unique SQLite file per module).  Reuse its own
+    # ``test_db_path`` fixture the same way pytest would resolve it, so the
+    # app is built against a real, isolated per-module DB file.
+    _db_path = _sec.test_db_path.__wrapped__(request)
+    gen = _sec.app.__wrapped__(request, _db_path)
     app = next(gen)
     tc = TestClient(app, raise_server_exceptions=False)
     yield tc

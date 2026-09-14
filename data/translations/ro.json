@@ -2886,7 +2886,8 @@
         "attach_type_image": "Imagine",
         "attach_type_other": "Altul",
         "received_from_placeholder": "Se va completa",
-        "amount_hint": "Introduceți suma mai jos"
+        "amount_hint": "Introduceți suma mai jos",
+        "trip_list_format": "#{id} {truck_number} — {client_name} [{created_at}]"
     },
     "admin": {
         "tab_title": "Panou Admin",

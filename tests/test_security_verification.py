@@ -120,6 +120,12 @@ class TestFinding3_EndpointAuth:
         "/api/v1/auth/logout",
         "/api/v1/registration/register",
         "/api/v1/status",
+        # Intentionally unauthenticated: a mobile device validates a QR
+        # pairing token BEFORE login (the token itself is the credential).
+        "/api/v1/mobile/pairing-token/validate",
+        # Intentionally unauthenticated + rate-limited: PII-free error
+        # digests from anonymous visitors (no user to attribute a token to).
+        "/api/v1/support/anonymous-error",
         "/docs",
         "/docs/oauth2-redirect",
         "/redoc",

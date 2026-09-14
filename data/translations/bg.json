@@ -2306,7 +2306,8 @@
         "cmr_generated_status": "генерирано",
         "cmr_trip_title": "CMR Курс #{}",
         "cmr_copy_title": "CMR Курс #{} - {} КОПИЕ",
-        "doc_receipt_title": "Разписка"
+        "doc_receipt_title": "Разписка",
+        "doc_proforma_title": "Proforma"
     },
     "invoice_editor": {
         "select_client": "Клиент:",
@@ -2819,7 +2820,8 @@
         "attach_type_image": "Изображение",
         "attach_type_other": "Други",
         "received_from_placeholder": "Ще бъде попълнено",
-        "amount_hint": "Въведете сума по-горе"
+        "amount_hint": "Въведете сума по-горе",
+        "trip_list_format": "#{id} {truck_number} — {client_name} [{created_at}]"
     },
     "admin": {
         "tab_title": "Административен Панел",
@@ -3311,5 +3313,10 @@
     "client_activity": {
         "trip_line": "Trip: {truck} — {status} / {client} — {distance} km",
         "invoice_line": "Invoice: {number} — {status} — {amount} EUR ({trip_status})"
+    },
+    "proforma_pdf": {
+        "title": "PROFORMA INVOICE",
+        "watermark": "PROFORMA",
+        "disclaimer": "This is a proforma invoice and does not constitute a tax invoice."
     }
 }
