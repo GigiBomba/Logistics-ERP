@@ -8,7 +8,6 @@ generation with language control, action buttons and copy-status tracking.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import os
 import threading
@@ -74,6 +73,10 @@ from ui.design_tokens import (
 from ui.views.cmr_form_view import QtCmrFormView
 from ui.views.invoice_editor import QtInvoiceEditor
 from ui.views.receipt_editor import QtReceiptEditor
+from ui.views.receipt_editor.autofill import (
+    fill_combo_if_empty,
+    fill_entry_if_empty,
+)
 from ui.widgets import (
     ActionButton,
     StyledComboBox,
@@ -782,24 +785,56 @@ class QtGeneratorsView(QWidget):
             logger.debug("Could not fill stops from route %d: %s", route_id, e)
 
     def _auto_fill_receipt(self, trip: dict) -> None:
-        """Auto-fill receipt logistics fields from the selected trip."""
+        """Auto-fill receipt fields from the selected trip.
+
+        Autofill rule: **fill-only-if-empty** — existing/user-entered values
+        are never clobbered.  Populates the logistics stops plus the
+        party/financial fields the receipt plan expects (customer, vehicle,
+        employee, amount, currency; see ``receipt_generator_plan.md`` §
+        "Automatic Generation").
+
+        Route stop extraction is delegated to
+        ``TripService.extract_route_pickup_delivery()`` — the same helper the
+        receipt editor uses, so both entry points share one implementation.
+        """
         if not self.db:
             return
         try:
-            pickup = ""
-            delivery = ""
-            if trip.get("route_history_v2_id"):
-                stops_json = self._trip_svc.get_route_stops_json(trip["route_history_v2_id"])
-                if stops_json:
-                    stops = json.loads(stops_json)
-                    if isinstance(stops, list) and len(stops) >= 2:
-                        pickup = stops[0].get("address", "")
-                        delivery = stops[-1].get("address", "")
+            editor = self._receipt_editor
+            if editor is None:
+                return
+            # Route stops (delegated to TripService, like the editor path).
+            pickup, delivery = self._trip_svc.extract_route_pickup_delivery(trip)
 
-            if hasattr(self._receipt_editor, "_pickup_location_entry") and pickup:
-                self._receipt_editor._pickup_location_entry.setText(pickup)
-            if hasattr(self._receipt_editor, "_delivery_location_entry") and delivery:
-                self._receipt_editor._delivery_location_entry.setText(delivery)
+            fill_entry_if_empty(
+                getattr(editor, "_pickup_location_entry", None), pickup
+            )
+            fill_entry_if_empty(
+                getattr(editor, "_delivery_location_entry", None), delivery
+            )
+            # Party fields sourced from the trip
+            fill_combo_if_empty(
+                getattr(editor, "_customer_combo", None), trip.get("client_name", "")
+            )
+            fill_combo_if_empty(
+                getattr(editor, "_vehicle_combo", None), trip.get("truck_number", "")
+            )
+            fill_entry_if_empty(
+                getattr(editor, "_employee_name_entry", None), trip.get("driver_name", "")
+            )
+            # Financial: amount (total_price_eur, fallback price_pre_vat) + currency.
+            # Only None / "" count as "absent" here — 0 is a real amount and
+            # must not be treated as missing.
+            amount = trip.get("total_price_eur")
+            if amount in (None, ""):
+                amount = trip.get("price_pre_vat")
+            if amount not in (None, ""):
+                fill_entry_if_empty(
+                    getattr(editor, "_amount_entry", None), str(amount)
+                )
+            fill_combo_if_empty(
+                getattr(editor, "_currency_combo", None), trip.get("currency", "")
+            )
         except Exception as e:
             logger.debug("Could not auto-fill receipt from trip %s: %s", trip.get("id"), e)
 

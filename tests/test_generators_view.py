@@ -372,6 +372,108 @@ class TestQtGeneratorsView:
         generators_view.db = None
         generators_view._auto_fill_receipt({"id": 1})  # should not crash
 
+
+class TestReceiptAutofill:
+    """_auto_fill_receipt populates amount/currency/party fields fill-only-if-empty."""
+
+    def _attach_receipt_widgets(self, generators_view):
+        """Build the receipt tab and attach real QLineEdit/QComboBox widgets
+        to the mocked receipt editor."""
+        from PySide6.QtWidgets import QComboBox, QLineEdit
+
+        generators_view._tab_widget.setCurrentIndex(2)  # build Receipt tab
+        editor = generators_view._receipt_editor
+        editor._pickup_location_entry = QLineEdit()
+        editor._delivery_location_entry = QLineEdit()
+        editor._employee_name_entry = QLineEdit()
+        editor._amount_entry = QLineEdit()
+        editor._customer_combo = QComboBox()
+        editor._customer_combo.addItems(["", "Client A"])
+        editor._vehicle_combo = QComboBox()
+        editor._vehicle_combo.addItems(["", "AB-01-ABC"])
+        editor._currency_combo = QComboBox()
+        editor._currency_combo.addItems(["", "EUR", "RON"])  # empty default
+        return editor
+
+    def _trip(self, **overrides):
+        trip = {
+            "id": 1,
+            "client_name": "Client A",
+            "truck_number": "AB-01-ABC",
+            "driver_name": "Driver One",
+            "total_price_eur": 1200.0,
+            "price_pre_vat": 1000.0,
+            "currency": "RON",
+            "route_history_v2_id": 42,
+        }
+        trip.update(overrides)
+        return trip
+
+    def test_auto_fill_receipt_from_trip(self, generators_view):
+        """Route stops + amount/currency/party fields are autofilled from the trip."""
+        view = generators_view
+        editor = self._attach_receipt_widgets(view)
+        view._trip_svc.extract_route_pickup_delivery = MagicMock(
+            return_value=("Origin", "Dest")
+        )
+
+        view._auto_fill_receipt(self._trip())
+
+        assert editor._pickup_location_entry.text() == "Origin"
+        assert editor._delivery_location_entry.text() == "Dest"
+        assert editor._customer_combo.currentText() == "Client A"
+        assert editor._vehicle_combo.currentText() == "AB-01-ABC"
+        assert editor._employee_name_entry.text() == "Driver One"
+        assert editor._amount_entry.text() == "1200.0"
+        assert editor._currency_combo.currentText() == "RON"
+
+    def test_auto_fill_receipt_fill_only_if_empty(self, generators_view):
+        """Existing receipt values are never clobbered by _auto_fill_receipt."""
+        view = generators_view
+        editor = self._attach_receipt_widgets(view)
+        view._trip_svc.extract_route_pickup_delivery = MagicMock(
+            return_value=("Origin", "Dest")
+        )
+
+        editor._amount_entry.setText("500.00")          # user-entered
+        editor._currency_combo.setCurrentText("EUR")    # user-selected
+        editor._employee_name_entry.setText("Manual")   # user-entered
+        editor._customer_combo.setCurrentText("Client A")
+        editor._vehicle_combo.setCurrentText("AB-01-ABC")
+
+        view._auto_fill_receipt(self._trip())
+
+        assert editor._amount_entry.text() == "500.00"
+        assert editor._currency_combo.currentText() == "EUR"
+        assert editor._employee_name_entry.text() == "Manual"
+        # Blank fields are still filled from the trip
+        assert editor._pickup_location_entry.text() == "Origin"
+        assert editor._delivery_location_entry.text() == "Dest"
+
+    def test_auto_fill_receipt_uses_price_pre_vat_fallback(self, generators_view):
+        """Amount falls back to price_pre_vat when total_price_eur is absent."""
+        view = generators_view
+        editor = self._attach_receipt_widgets(view)
+        view._trip_svc.extract_route_pickup_delivery = MagicMock(
+            return_value=("", "")
+        )
+
+        view._auto_fill_receipt(self._trip(total_price_eur=None))
+
+        assert editor._amount_entry.text() == "1000.0"
+
+    def test_auto_fill_receipt_skips_unknown_combo_values(self, generators_view):
+        """A truck plate not in the fleet combo is skipped, not inserted."""
+        view = generators_view
+        editor = self._attach_receipt_widgets(view)
+        view._trip_svc.extract_route_pickup_delivery = MagicMock(
+            return_value=("", "")
+        )
+
+        view._auto_fill_receipt(self._trip(truck_number="ZZ-99-UNKNOWN"))
+
+        assert editor._vehicle_combo.currentText() == ""
+
     # ── Collect CMR data ───────────────────────────────────────────────
 
     def test_collect_cmr_data_no_trip_selected(self, generators_view):

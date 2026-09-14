@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import shutil
 from datetime import datetime
 from typing import Any
 
@@ -52,6 +53,11 @@ from ui.widgets import (
 )
 from ui.widgets.layout_utils import clear_layout
 
+from ui.dialogs.share_receipt_dialog import ShareReceiptDialog
+from ui.views.receipt_editor.autofill import (
+    fill_combo_if_empty,
+    fill_entry_if_empty,
+)
 from ui.views.receipt_editor.line_items import LineItemsMixin
 
 logger = logging.getLogger(__name__)
@@ -76,7 +82,10 @@ PAYMENT_METHODS = [
 ]
 
 CURRENCIES = ["EUR", "RON", "USD"]
-LANGUAGES = ["en", "ro"]
+LANGUAGE_DISPLAY = {"en": "English", "ro": "Română"}
+# Reverse map (display name → language code) so adding a language to
+# LANGUAGE_DISPLAY is enough; no other lookup needs to change.
+LANGUAGE_REVERSE = {display: code for code, display in LANGUAGE_DISPLAY.items()}
 
 ATTACHMENT_TYPES = [
     ("receipt_photo", "receipt.attach_type_photo"),
@@ -226,6 +235,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         # Show form if we have data (clients, trips, or vehicles), otherwise empty
         has_data = bool(self._client_map) or bool(self._trip_combo_map) or bool(self._vehicle_map)
         self._receipt_stack.setCurrentIndex(1 if has_data else 0)
+        self._update_share_state()
 
     def shutdown(self) -> None:
         """Clean up resources."""
@@ -562,6 +572,15 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         )
         layout.addWidget(self._email_btn)
 
+        self._share_btn = Btn(
+            self._toolbar,
+            f"\U0001F4E4  {t('receipt.editor.share')}",
+            command=self._on_share,
+            variant="secondary",
+        )
+        self._share_btn.setEnabled(False)  # disabled until PDF exists
+        layout.addWidget(self._share_btn)
+
         layout.addStretch()
 
     # ── View Header ─────────────────────────────────────────────────
@@ -680,7 +699,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._currency_combo.currentTextChanged.connect(self._on_field_changed)
         right_layout.addWidget(field(right, t("receipt.currency_label"), self._currency_combo))
 
-        self._language_combo = StyledComboBox(right, values=["English", "Română"])
+        self._language_combo = StyledComboBox(right, values=list(LANGUAGE_DISPLAY.values()))
         self._language_combo.currentTextChanged.connect(self._on_field_changed)
         right_layout.addWidget(field(right, t("receipt.language_label"), self._language_combo))
 
@@ -1206,9 +1225,16 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
     # ── Combo change handlers ─────────────────────────────────────────
 
     def _on_trip_combo_changed(self, text: str) -> None:
-        """Auto-fill pickup/delivery from selected trip's route stops.
+        """Auto-fill logistics/person fields from the selected trip.
 
-        Route stop extraction is delegated to TripService.extract_route_pickup_delivery().
+        Autofill rule: **fill-only-if-empty** — existing user input is never
+        clobbered.  Precedence: **Invoice > Trip**.  The invoice handler runs
+        first (its related-trip selection fires this handler), so the empty
+        checks below guarantee a trip selection cannot overwrite values that
+        were already filled from an invoice (customer, amount, currency, …).
+
+        Route stop extraction is delegated to
+        ``TripService.extract_route_pickup_delivery()``.
         """
         if not text or text not in self._trip_combo_map:
             return
@@ -1216,18 +1242,29 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         if self._trip_svc:
             trip = self._trip_svc.get_by_id(trip_id)
             if trip:
-                # Delegate route stop extraction to TripService
+                # Route stops (delegated to TripService)
                 pickup, delivery = self._trip_svc.extract_route_pickup_delivery(trip)
-                if pickup:
-                    self._pickup_location_entry.setText(pickup)
-                if delivery:
-                    self._delivery_location_entry.setText(delivery)
-                # Try to match customer in client combo
-                client_name = trip.get("client_name", "")
-                if client_name:
-                    idx = self._customer_combo.findText(client_name)
-                    if idx >= 0:
-                        self._customer_combo.setCurrentIndex(idx)
+                fill_entry_if_empty(self._pickup_location_entry, pickup)
+                fill_entry_if_empty(self._delivery_location_entry, delivery)
+                # Customer: match against the client combo
+                fill_combo_if_empty(
+                    self._customer_combo, trip.get("client_name", "")
+                )
+                # Vehicle: map the trip's truck/plate onto the fleet combo
+                fill_combo_if_empty(
+                    self._vehicle_combo, trip.get("truck_number", "")
+                )
+                # Employee: the receipt model has no driver field, so the
+                # trip's driver maps to the Employee name (oracle-approved).
+                # Applied unconditionally fill-if-empty on trip selection —
+                # the Employee section itself is only shown for driver/
+                # employee-related receipt types, but keeping the value ready
+                # is harmless and simpler than coupling to the receipt type.
+                fill_entry_if_empty(
+                    self._employee_name_entry, trip.get("driver_name", "")
+                )
+                # Expense category: intentionally NOT autofilled — no data
+                # source exists for it (oracle: N/A).
         self._schedule_preview_refresh()
 
     def _on_customer_combo_changed(self, text: str) -> None:
@@ -1310,7 +1347,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._payment_date = self._payment_date_entry.text().strip()
         self._currency = self._currency_combo.currentText()
         lang_text = self._language_combo.currentText()
-        self._language = "ro" if "Română" in lang_text else "en"
+        self._language = LANGUAGE_REVERSE.get(lang_text, "en")
         self._branch = self._branch_entry.text().strip()
         fmt_text = self._format_combo.currentText() if hasattr(self, "_format_combo") else ""
         for key in RECEIPT_NUMBER_FORMATS:
@@ -1742,6 +1779,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
                 self._receipt_number = num
         except Exception as exc:
             logger.warning("Failed to generate receipt number: %s", exc)
+        self._update_share_state()
 
     # ══════════════════════════════════════════════════════════════════
     # VALIDATION
@@ -1836,6 +1874,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             # Open the PDF
             if os.path.isfile(path):
                 os.startfile(os.path.abspath(path))
+            self._update_share_state()
         except Exception as exc:
             logger.exception("Receipt generation failed")
             QMessageBox.critical(
@@ -1869,6 +1908,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             data["receipt_number"] = new_num
             self._receipt_number_entry.setText(new_num)
             self._restore_from_draft(data)
+        self._update_share_state()
         QMessageBox.information(
             self,
             t("receipt.editor.duplicated"),
@@ -1893,6 +1933,76 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             t("receipt.editor.email"),
             t("receipt.editor.email_placeholder"),
         )
+
+    # ── Share ─────────────────────────────────────────────────────
+
+    def _pdf_path(self) -> str:
+        """Return the expected PDF path for the current receipt number."""
+        if not self._receipt_number:
+            return ""
+        return os.path.join(
+            "data", "documents", "receipts", f"{self._receipt_number}.pdf"
+        )
+
+    def _update_share_state(self) -> None:
+        """Enable the Share button only when a PDF exists.
+
+        Documented behaviour: Share is disabled until the user generates
+        a PDF (or a PDF already exists on disk for the current number).
+        """
+        if hasattr(self, "_share_btn"):
+            path = self._pdf_path()
+            self._share_btn.setEnabled(bool(path and os.path.isfile(path)))
+
+    def _on_share(self) -> None:
+        """Open the share dialog for the receipt PDF."""
+        self._sync_state()
+        if not self._receipt_number:
+            QMessageBox.warning(
+                self,
+                t("receipt.editor.error"),
+                t("receipt.share.no_number"),
+            )
+            return
+        pdf_path = self._pdf_path()
+        if not os.path.isfile(pdf_path):
+            QMessageBox.warning(
+                self,
+                t("receipt.editor.error"),
+                t("receipt.share.no_file"),
+            )
+            return
+        dialog = ShareReceiptDialog(
+            parent=self,
+            file_path=os.path.abspath(pdf_path),
+            on_save_as=self._on_share_save_as,
+            on_open=self._on_share_open,
+        )
+        dialog.exec()
+
+    def _on_share_save_as(self, src_path: str) -> str | None:
+        """Copy the receipt PDF to a user-selected location."""
+        dest, _ = QFileDialog.getSaveFileName(
+            self,
+            t("receipt.share.save_as"),
+            os.path.basename(src_path),
+            "PDF Files (*.pdf)",
+        )
+        if not dest:
+            return None
+        shutil.copy2(src_path, dest)
+        return dest
+
+    def _on_share_open(self, path: str) -> None:
+        """Open the receipt PDF with the OS default application."""
+        abs_path = os.path.abspath(path)
+        try:
+            os.startfile(abs_path)
+        except Exception:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            QDesktopServices.openUrl(QUrl.fromLocalFile(abs_path))
 
     def _on_attach_files(self) -> None:
         """Open file dialog and attach files with type categorization."""
@@ -2132,7 +2242,9 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._payment_date_entry.setText(draft.get("payment_date", ""))
         self._currency_combo.setCurrentText(draft.get("currency", "EUR"))
         self._branch_entry.setText(draft.get("branch", ""))
-        lang_display = "Română" if draft.get("language") == "ro" else "English"
+        lang_display = LANGUAGE_DISPLAY.get(
+            draft.get("language") or "en", LANGUAGE_DISPLAY["en"]
+        )
         lang_idx = self._language_combo.findText(lang_display)
         if lang_idx >= 0:
             self._language_combo.setCurrentIndex(lang_idx)
@@ -2213,6 +2325,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
 
         # Refresh
         self._on_field_changed()
+        self._update_share_state()
 
     # ══════════════════════════════════════════════════════════════════
     # I18N
@@ -2264,6 +2377,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._duplicate_btn.setText(f"\U0001F4CB  {t('receipt.editor.duplicate')}")
         self._export_json_btn.setText(f"\U0001F4C4  {t('receipt.editor.export_json')}")
         self._email_btn.setText(f"\U0001F4E7  {t('receipt.editor.email')}")
+        self._share_btn.setText(f"\U0001F4E4  {t('receipt.editor.share')}")
 
         # Attachment button
         self._attach_btn.setText(f"  {t('receipt.editor.attach_files')}")
