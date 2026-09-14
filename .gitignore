@@ -122,3 +122,6 @@ mutation-report/
 
 # Deepwork progress (OpenCode session state)
 .slim/deepwork/
+
+# uv-native lock trap (requirements.lock is canonical per ARCHITECTURALREWORK decision)
+uv.lock
