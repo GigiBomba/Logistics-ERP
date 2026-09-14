@@ -538,7 +538,7 @@ class QtClientWorkspace(QWidget):
     def _on_outer_tab_changed(self, index: int) -> None:
         """Handle switching between Manager and AutoMail tabs."""
         if index == 1 and hasattr(self, "_automail_view"):
-            self._automail_view._ensure_wired()
+            self._automail_view.wakeup()
 
     def _on_client_tab_changed(self, index: int) -> None:
         """Refresh active client detail tab content when switching tabs."""
