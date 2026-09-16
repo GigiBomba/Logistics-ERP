@@ -15,6 +15,7 @@ from __future__ import annotations
 
 
 import os
+import tempfile
 import uuid
 # ⚠ Set OPERION_DB_PATH before any other import that reads Config.DB_PATH.
 # Config.DB_PATH is evaluated at module-import time, so the env var must be
@@ -22,7 +23,7 @@ import uuid
 # Use a unique DB path per session to avoid conflicts with other test suites
 # (e.g. E2E tests) that also set OPERION_DB_PATH at import time.
 _TEST_DB_FILENAME = f"test_security_{uuid.uuid4().hex[:8]}.db"
-TEST_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", _TEST_DB_FILENAME)
+TEST_DB_PATH = os.path.join(tempfile.gettempdir(), _TEST_DB_FILENAME)
 os.environ["OPERION_DB_PATH"] = TEST_DB_PATH
 os.environ["OPERION_RATE_LIMIT"] = "10000"  # Disable effective rate limiting for tests
 os.environ.pop("OPERION_API_KEY", None)  # Ensure API key middleware stays disabled
@@ -31,7 +32,6 @@ import bcrypt
 import json
 import sys
 import pytest
-import tempfile
 from datetime import datetime
 from fastapi.testclient import TestClient
 from typing import Any, Dict, Optional
@@ -236,7 +236,7 @@ def test_db_path(request):
     """
     module_name = request.module.__name__.replace("tests.security.", "").replace(".", "_")
     return os.path.join(
-        os.path.dirname(__file__), "..", "..", "data",
+        tempfile.gettempdir(),
         f"test_security_{module_name}_{uuid.uuid4().hex[:8]}.db",
     )
 

@@ -20,11 +20,12 @@ from __future__ import annotations
 import glob
 import os
 import sqlite3
+import tempfile
 import uuid
 from typing import Any, Dict, List
 
 # ── Set test DB path BEFORE any project import can load config ──────
-_TEST_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+_TEST_DB_DIR = tempfile.gettempdir()
 _TEST_DB_PATH = os.path.join(
     _TEST_DB_DIR, f"test_mobile_flow_{uuid.uuid4().hex[:12]}.db"
 )

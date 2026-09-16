@@ -20,12 +20,13 @@ Usage:
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from typing import Dict
 
 # ── Env setup before project imports ─────────────────────────────────
 _TEST_DB = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data",
+    tempfile.gettempdir(),
     f"test_mutation_{uuid.uuid4().hex[:12]}.db",
 )
 os.environ.setdefault("OPERION_DB_PATH", _TEST_DB)

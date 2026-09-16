@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # ── Set test DB path before ANY project import ──────────────────────────
-_TEST_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+_TEST_DIR = tempfile.gettempdir()
 _TEST_DB = os.path.join(
     _TEST_DIR, f"test_chaos_{uuid.uuid4().hex[:12]}.db"
 )
