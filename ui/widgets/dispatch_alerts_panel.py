@@ -277,7 +277,7 @@ class QtDispatchAlertsPanel(QWidget):
         chip.setAlignment(Qt.AlignCenter)
         chip.setStyleSheet(
             f"background-color: {chip_color}; color: {COLOR_TEXT_WHITE}; "
-            f"border-radius: {RADIUS_SM}px; padding: 2px 0; font-size: 11px; font-weight: bold;"
+            f"border-radius: 3px; padding: 2px 0; font-size: 11px; font-weight: bold;"
         )
         row_layout.addWidget(chip)
 

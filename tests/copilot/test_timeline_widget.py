@@ -1003,8 +1003,8 @@ class TestCoPilotTimelineWidget:
         ev = QResizeEvent(tl.size(), QSize(900, 600))
         tl.resizeEvent(ev)
         margins = tl._layout.getContentsMargins()
-        # SPACE_3 = 16 for width < 900
-        assert margins[0] == 16
+        # SPACE_3 = 12 for width < 900
+        assert margins[0] == 12
 
     def test_resize_event_large(self, qt_widget):
         """resizeEvent with width > 1280 sets larger margins."""
@@ -1016,8 +1016,8 @@ class TestCoPilotTimelineWidget:
         ev = QResizeEvent(tl.size(), QSize(900, 600))
         tl.resizeEvent(ev)
         margins = tl._layout.getContentsMargins()
-        # SPACE_5 = 24 (left), SPACE_6 = 24 (top), SPACE_5 = 24 (right), SPACE_4 = 16 (bottom)
-        assert margins[0] == 24
+        # SPACE_5 = 20 (left), SPACE_6 = 24 (top), SPACE_5 = 20 (right), SPACE_4 = 16 (bottom)
+        assert margins[0] == 20
         assert margins[1] == 24
 
 

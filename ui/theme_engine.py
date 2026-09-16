@@ -65,6 +65,7 @@ from ui.design_tokens import (
     RADIUS_MD as RADIUS_BUTTON,
     RADIUS_LG,
     RADIUS_LG as RADIUS_CARD,
+    RADIUS_XL,
     RADIUS_PILL,
     SPACE_2 as _P2,
     SPACE_4 as _P4,
@@ -916,7 +917,7 @@ class QtTheme:
             background-color: transparent;
             color: {COLOR_TEXT_SECONDARY};
             border: none;
-            border-radius: {RADIUS_LG}px;
+            border-radius: {RADIUS_XL}px;
             padding: 4px 12px;
             font-size: {FONT_SIZE_SM}px;
         }}
@@ -1410,7 +1411,7 @@ class QtTheme:
         QScrollBar:vertical {{
             background-color: {COLOR_BG_BASE};
             width: 6px;
-            border-radius: {RADIUS_SM}px;
+            border-radius: 3px;
         }}
 
         QScrollBar:vertical:hover {{
@@ -1420,7 +1421,7 @@ class QtTheme:
         QScrollBar::handle:vertical {{
             background-color: {COLOR_BORDER_MEDIUM};
             min-height: 36px;
-            border-radius: {RADIUS_SM}px;
+            border-radius: 3px;
         }}
 
         QScrollBar::handle:vertical:hover {{
@@ -1440,7 +1441,7 @@ class QtTheme:
         QScrollBar:horizontal {{
             background-color: {COLOR_BG_BASE};
             height: 6px;
-            border-radius: {RADIUS_SM}px;
+            border-radius: 3px;
         }}
 
         QScrollBar:horizontal:hover {{
@@ -1450,7 +1451,7 @@ class QtTheme:
         QScrollBar::handle:horizontal {{
             background-color: {COLOR_BORDER_MEDIUM};
             min-width: 36px;
-            border-radius: {RADIUS_SM}px;
+            border-radius: 3px;
         }}
 
         QScrollBar::handle:horizontal:hover {{
@@ -1476,7 +1477,7 @@ class QtTheme:
 
         QScrollBar::handle:vertical[compact="true"] {{
             background-color: {COLOR_BORDER_MEDIUM};
-            border-radius: {RADIUS_SM}px;
+            border-radius: 2px;
             min-height: {cls._px("5")}px;
         }}
         """
@@ -2367,7 +2368,7 @@ class QtTheme:
             font-weight: bold;
         }}
         QLabel[role="box-badge"][sizeRole="sm"] {{
-            border-radius: {RADIUS_SM}px;
+            border-radius: 3px;
         }}
         QLabel[role="box-badge"][state="complete"] {{
             background-color: {COLOR_SUCCESS_SUBTLE};
@@ -2845,7 +2846,7 @@ class QtTheme:
         }}
         QScrollArea[role="thin-scroll"] QScrollBar::handle:vertical {{
             background: {COLOR_BORDER_MEDIUM};
-            border-radius: {RADIUS_SM}px;
+            border-radius: 2px;
         }}
         QCheckBox[role="country-check"] {{
             color: {COLOR_TEXT_SECONDARY};
@@ -3070,7 +3071,7 @@ class QtTheme:
             padding: 4px 0;
         }}
         QLabel[role="dot"] {{
-            border-radius: {RADIUS_SM}px;
+            border-radius: 5px;
         }}
         """
 
@@ -3140,11 +3141,11 @@ class QtTheme:
         QProgressBar[role="thin-bar"] {{
             background: {COLOR_BORDER_SUBTLE};
             border: none;
-            border-radius: {RADIUS_SM}px;
+            border-radius: 2px;
         }}
         QProgressBar[role="thin-bar"]::chunk {{
             background: {COLOR_ACCENT_PRIMARY};
-            border-radius: {RADIUS_SM}px;
+            border-radius: 2px;
         }}
         QLabel[role="section-subtitle"] {{
             color: {COLOR_TEXT_SECONDARY};
@@ -3313,7 +3314,7 @@ class QtTheme:
         }}
         QScrollBar::handle:vertical[role="thin-scroll-no-arrows"] {{
             background: {COLOR_BORDER_MEDIUM};
-            border-radius: {RADIUS_SM}px;
+            border-radius: 2px;
             min-height: 30px;
         }}
         QScrollBar[role="thin-scroll-no-arrows"]::add-line,

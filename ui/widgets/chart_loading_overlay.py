@@ -42,6 +42,7 @@ from ui.design_tokens import (
     FONT_SIZE_3XL,
     RADIUS_LG,
     RADIUS_MD,
+    RADIUS_XL,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
@@ -163,7 +164,7 @@ class ChartLoadingOverlay(QFrame):
             "#chart-loading-overlay {"
             " background: rgba(10, 10, 15, 170);"
             f" border: 1px solid {BORDER_DEFAULT};"
-             f" border-radius: {RADIUS_LG}px;"
+             f" border-radius: {RADIUS_XL}px;"
             "}"
         )
 

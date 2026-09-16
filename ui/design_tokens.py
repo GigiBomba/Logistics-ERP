@@ -104,9 +104,9 @@ FONT_WEIGHT_BOLD     = 700
 # dense rows — are an accepted exception and not scale violations.
 SPACE_1  = 4
 SPACE_2  = 8
-SPACE_3  = 16
+SPACE_3  = 12
 SPACE_4  = 16
-SPACE_5  = 24
+SPACE_5  = 20
 SPACE_6  = 24
 SPACE_8  = 32
 SPACE_10 = 40
@@ -117,6 +117,7 @@ SPACE_16 = 64
 RADIUS_SM  = 4
 RADIUS_MD  = 6
 RADIUS_LG  = 8
+RADIUS_XL  = 12
 RADIUS_PILL = 100
 
 # === STATUS BADGE MAP ===
@@ -278,6 +279,7 @@ RADIUS = {
     "sm": RADIUS_SM,
     "md": RADIUS_MD,
     "lg": RADIUS_LG,
+    "xl": RADIUS_XL,
 }
 
 # Dimensions
@@ -286,7 +288,7 @@ SIDEBAR_COLLAPSED = 48
 TOPBAR_HEIGHT     = 44
 ROW_HEIGHT        = 38
 INPUT_HEIGHT      = 32
-BTN_HEIGHT        = 38
+BTN_HEIGHT        = 32
 BTN_HEIGHT_SM     = 28
 BTN_HEIGHT_MD     = 32
 BTN_HEIGHT_LG     = 38
