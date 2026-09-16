@@ -26,3 +26,19 @@
 **/values.dev.yaml
 LICENSE
 README.md
+# Build-context hygiene: runtime/test data must never be baked into images
+# (Dockerfile creates /app/data, /app/logs, /app/reports at runtime)
+data/
+reports/
+logs/
+*.db
+*.sqlite
+*.sqlite3
+tests/
+.slim/
+.pytest_cache/
+website/dist/
+website/coverage/
+website/playwright-report/
+mobile_app/build/
+mutation-report/
