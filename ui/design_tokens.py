@@ -114,6 +114,7 @@ SPACE_12 = 48
 SPACE_16 = 64
 
 # === BORDER RADIUS ===
+RADIUS_XS  = 2  # thin elements — scrollbar handles, thin progress bars; 2px preserved for parity
 RADIUS_SM  = 4
 RADIUS_MD  = 6
 RADIUS_LG  = 8
@@ -276,6 +277,7 @@ SP = {
 
 # Radii (legacy dict)
 RADIUS = {
+    "xs": RADIUS_XS,
     "sm": RADIUS_SM,
     "md": RADIUS_MD,
     "lg": RADIUS_LG,

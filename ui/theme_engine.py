@@ -58,6 +58,7 @@ from ui.design_tokens import (
     COLOR_WARNING_TEXT,
     TEXT_WHITE,
     HOVER_MS,
+    RADIUS_XS,
     RADIUS_SM,
     RADIUS_SM as RADIUS_CHIP,
     RADIUS_MD,
@@ -1477,7 +1478,7 @@ class QtTheme:
 
         QScrollBar::handle:vertical[compact="true"] {{
             background-color: {COLOR_BORDER_MEDIUM};
-            border-radius: 2px;
+            border-radius: {RADIUS_XS}px;
             min-height: {cls._px("5")}px;
         }}
         """
@@ -2846,7 +2847,7 @@ class QtTheme:
         }}
         QScrollArea[role="thin-scroll"] QScrollBar::handle:vertical {{
             background: {COLOR_BORDER_MEDIUM};
-            border-radius: 2px;
+            border-radius: {RADIUS_XS}px;
         }}
         QCheckBox[role="country-check"] {{
             color: {COLOR_TEXT_SECONDARY};
@@ -3141,11 +3142,11 @@ class QtTheme:
         QProgressBar[role="thin-bar"] {{
             background: {COLOR_BORDER_SUBTLE};
             border: none;
-            border-radius: 2px;
+            border-radius: {RADIUS_XS}px;
         }}
         QProgressBar[role="thin-bar"]::chunk {{
             background: {COLOR_ACCENT_PRIMARY};
-            border-radius: 2px;
+            border-radius: {RADIUS_XS}px;
         }}
         QLabel[role="section-subtitle"] {{
             color: {COLOR_TEXT_SECONDARY};
@@ -3314,7 +3315,7 @@ class QtTheme:
         }}
         QScrollBar::handle:vertical[role="thin-scroll-no-arrows"] {{
             background: {COLOR_BORDER_MEDIUM};
-            border-radius: 2px;
+            border-radius: {RADIUS_XS}px;
             min-height: 30px;
         }}
         QScrollBar[role="thin-scroll-no-arrows"]::add-line,
