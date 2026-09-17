@@ -40,9 +40,12 @@ from services.i18n import t
 from services.operations.event_bus import (
     ALERT_CREATED,
     ALERT_RESOLVED,
+    INVOICE_CREATED,
+    INVOICE_PAID,
     SETTINGS_UPDATED,
     SYNC_COMPLETED,
     TOUR_REPLAY_REQUESTED,
+    TRIP_STATUS_CHANGED,
     EventBus,
 )
 from services.trip_service import TripService
@@ -164,6 +167,8 @@ class MainWindow(QMainWindow):
         self._nav_stack: list[tuple[str, dict[str, Any] | None]] = []
         self._max_nav_stack = 20
         self._fuel_timer: QTimer | None = None
+        self._shutting_down: bool = False
+        self._nav_badge_timer: QTimer | None = None
 
         self._page_anim: QPropertyAnimation | None = None
 
@@ -198,6 +203,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._setup_shortcuts()
+        self._init_nav_badges()
         self._init_observability_dock()
         self._init_fuel_status()
         self._warmup_started = False
@@ -234,6 +240,9 @@ class MainWindow(QMainWindow):
         self._start_warmup()
 
     def _init_services(self):
+        self.trip_repo = None
+        self.invoice_repo = None
+
         if self.db is not None:
             from services.preferences import PreferencesManager
 
@@ -246,10 +255,14 @@ class MainWindow(QMainWindow):
 
             from repositories.driver_repository import DriverRepository
             from repositories.fleet_repository import FleetRepository
+            from repositories.invoice_repository import InvoiceRepository
+            from repositories.trip_repository import TripRepository
             from services.analytics_service import AnalyticsService
             from services.driver_truck_service import DriverTruckService
             from services.invoicing.service import InvoiceService
 
+            self.trip_repo = TripRepository(self.db)
+            self.invoice_repo = InvoiceRepository(self.db)
             self.analytics_service = AnalyticsService(self.db)
             self.driver_service = DriverRepository(self.db)
             self.dta_service = DriverTruckService(self.db)
@@ -379,66 +392,75 @@ class MainWindow(QMainWindow):
         nav = self.nav
         available = self._available_modules
 
-        def _add_group(group_key: str, items: list[tuple[str, str, str]]) -> None:
+        def _add_group(group_key: str, items: list[tuple[str, str, str, str | None]]) -> None:
             """Add a group + its items, skipping modules unavailable in the
             current connection mode (remote mode hides local-DB-only modules).
 
             The group label is only added when at least one of its items
-            survives the filter, avoiding orphan group headers.
+            survives the filter, avoiding orphan group headers. Each item is a
+            ``(key, label, i18n_key, badge_key)`` tuple; ``badge_key`` enables
+            the count-badge slot for that nav item (see ``set_badge``).
             """
-            kept = [(k, label, i18n) for k, label, i18n in items if k in available]
+            kept = [(k, label, i18n, badge) for k, label, i18n, badge in items if k in available]
             if not kept:
                 return
             nav.add_group(t(group_key), group_key)
-            for key, label, i18n_key in kept:
-                nav.add_item(key, label, i18n_key=i18n_key)
+            for key, label, i18n_key, badge_key in kept:
+                nav.add_item(key, label, i18n_key=i18n_key, badge_key=badge_key)
 
-        _add_group("nav.group_overview", [
-            ("overview", t("nav.overview"), "nav.overview"),
-            ("analytics", t("nav.analytics"), "nav.analytics"),
+        _add_group("nav.group_dashboard", [
+            ("overview", t("nav.overview"), "nav.overview", None),
+            ("analytics", t("nav.analytics"), "nav.analytics", None),
         ])
 
-        _add_group("nav.group_operations", [
-            ("route_planner", t("nav.routes"), "nav.routes"),
-            ("calculator", t("nav.calculator"), "nav.calculator"),
-            ("dispatch_board", t("nav.dispatch_board"), "nav.dispatch_board"),
-            ("tracking", t("nav.live_tracking"), "nav.live_tracking"),
-            ("freight_exchange", t("freight.title"), "freight.title"),
+        _add_group("nav.group_dispatch", [
+            ("dispatch_board", t("nav.dispatch_board"), "nav.dispatch_board", "dispatch_board"),
+            ("route_planner", t("nav.routes"), "nav.routes", None),
+            ("tracking", t("nav.tracking"), "nav.tracking", None),
+            ("calculator", t("nav.calculator"), "nav.calculator", None),
+            ("freight_exchange", t("freight.title"), "freight.title", None),
         ])
 
         _add_group("nav.group_fleet", [
-            ("fleet", t("nav.fleet"), "nav.fleet"),
-            ("driver_manager", t("nav.driver_manager"), "nav.driver_manager"),
-            ("clients", t("nav.clients"), "nav.clients"),
-            ("documents", t("nav.documents"), "nav.documents"),
-            ("maintenance", t("nav.maintenance_analytics"), "nav.maintenance_analytics"),
-            ("tachograph", t("nav.tachograph"), "nav.tachograph"),
+            ("fleet", t("nav.fleet"), "nav.fleet", None),
+            ("driver_manager", t("nav.driver_manager"), "nav.driver_manager", None),
+            ("maintenance", t("nav.maintenance_analytics"), "nav.maintenance_analytics", None),
+            ("tachograph", t("nav.tachograph"), "nav.tachograph", None),
+        ])
+
+        _add_group("nav.group_clients", [
+            ("clients", t("nav.clients"), "nav.clients", None),
+            ("documents", t("nav.documents"), "nav.documents", None),
         ])
 
         _add_group("nav.group_finance", [
-            ("invoices", t("nav.generators"), "nav.generators"),
-            ("history", t("nav.history"), "nav.history"),
-            ("route_history", t("nav.route_history"), "nav.route_history"),
+            ("invoices", t("nav.generators"), "nav.generators", "invoices"),
+            ("history", t("nav.history"), "nav.history", None),
+            ("route_history", t("nav.route_history"), "nav.route_history", None),
         ])
 
-        _add_group("nav.group_tools", [
-            ("copilot", t("nav.copilot"), "nav.copilot"),
-            ("migration_center", t("nav.migration_center"), "nav.migration_center"),
-        ])
-
-        # ── Administration (manager / admin only) ──
+        # ── Administration (manager / admin only for team) ──
+        admin_items: list[tuple[str, str, str, str | None]] = []
         if self._user_role in ("admin", "manager"):
-            _add_group("nav.group_administration", [
-                ("team", t("nav.team"), "nav.team"),
-            ])
-
-        nav.add_settings_item("settings", t("nav.settings"))
+            admin_items.append(("team", t("nav.team"), "nav.team", None))
+        admin_items.extend([
+            ("settings", t("nav.settings"), "nav.settings", None),
+            ("migration_center", t("nav.migration_center"), "nav.migration_center", None),
+            ("copilot", t("nav.copilot"), "nav.copilot", None),
+        ])
+        _add_group("nav.group_admin", admin_items)
 
         # Show the first available module on startup.  In remote mode the
         # local-DB-only modules (including the usual default, ``overview``)
         # are hidden, so fall back to the first available module.
         initial_key = "overview" if "overview" in available else self._first_available_key()
         nav.select(initial_key)
+
+        # Prime the recent-items section and badge counts once after the nav
+        # is fully built.
+        with contextlib.suppress(Exception):
+            nav.set_recent_items(self._get_recent_nav_items(3))
+        self._refresh_nav_badges()
 
     def _first_available_key(self) -> str:
         """First available module following the canonical warmup order."""
@@ -449,7 +471,8 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self):
         self._shortcut_calculate = QWidgetShortcut(self, Qt.Key_S, Qt.ControlModifier, self._open_calculator)
-        self._shortcut_history = QWidgetShortcut(self, Qt.Key_H, Qt.ControlModifier, self._open_history)
+        # NOTE: Ctrl+H (history) is intentionally NOT a QWidgetShortcut — the
+        # nav-loop below owns it so the sidebar hint and the binding agree.
 
         # ── Back navigation (Alt+Left) ──
         self._shortcut_back = QShortcut(QKeySequence("Alt+Left"), self, self._go_back)
@@ -459,7 +482,7 @@ class MainWindow(QMainWindow):
             QKeySequence("Ctrl+Shift+O"), self, self._toggle_observability
         )
 
-        # ── Navigation shortcuts (Ctrl+1..Ctrl+9) ──
+        # ── Navigation shortcuts (Ctrl+1..9, Ctrl+0, Ctrl+Shift+1..4, …) ──
         self._nav_shortcuts: list[QShortcut] = []
         _nav_keys = [
             ("Ctrl+1", "overview"),
@@ -471,9 +494,21 @@ class MainWindow(QMainWindow):
             ("Ctrl+7", "fleet"),
             ("Ctrl+8", "driver_manager"),
             ("Ctrl+9", "clients"),
+            ("Ctrl+0", "freight_exchange"),
+            ("Ctrl+Shift+1", "maintenance"),
+            ("Ctrl+Shift+2", "invoices"),
+            ("Ctrl+Shift+3", "history"),
+            ("Ctrl+Shift+4", "route_history"),
+            ("Ctrl+Shift+S", "settings"),
+            ("Ctrl+H", "history"),
+            ("Ctrl+Shift+T", "team"),
         ]
         for seq, module_key in _nav_keys:
             if module_key not in self._available_modules:
+                continue
+            # Team management is admin/manager-gated — never install the
+            # shortcut for other roles.
+            if module_key == "team" and self._user_role not in ("admin", "manager"):
                 continue
             sc = QShortcut(QKeySequence(seq), self, lambda k=module_key: self._switch_module(k))
             sc.setAutoRepeat(False)
@@ -554,6 +589,10 @@ class MainWindow(QMainWindow):
         # Update back button and recent menu state
         self._update_back_button()
 
+        # Nav badges: refresh immediately when entering the badge-bearing views.
+        if key in ("dispatch_board", "invoices"):
+            self._refresh_nav_badges()
+
         with PerfTimer(f"nav.switch.{key}", log_level=logging.DEBUG):
             # If switching to the same view, avoid shutdown/recreate cycle.
             # Just re-show the frame, wakeup, and handle any nav data.
@@ -620,12 +659,14 @@ class MainWindow(QMainWindow):
         self._switch_module(view_key, data)
         self._update_back_button()
 
-    def _update_back_button(self) -> None:
-        """Update back button visibility and populate recent items menu."""
-        has_history = len(self._nav_stack) > 0
-        self.app_shell.top_bar.set_back_enabled(has_history)
+    def _get_recent_nav_items(self, limit: int = 3) -> list[tuple[str, str]]:
+        """Most-recent visited view keys (unique, chronological) with labels.
 
-        # Build recent items list for the dropdown
+        Reuses the dedup walk used by the top-bar recent menu: iterate the nav
+        stack newest-first, skipping keys already seen, then reverse so the
+        returned list is in chronological order (oldest of the recent entries
+        first, newest last). Labels resolve through ``t(f"nav.{key}")``.
+        """
         recent: list[tuple[str, str]] = []
         seen: set[str] = set()
         for view_key, _ in reversed(self._nav_stack):
@@ -634,10 +675,25 @@ class MainWindow(QMainWindow):
             seen.add(view_key)
             name = t(f"nav.{view_key}", default=view_key.replace("_", " ").title())
             recent.append((view_key, name))
-            if len(recent) >= 5:
+            if len(recent) >= limit:
                 break
         recent.reverse()  # chronological order
+        return recent
+
+    def _update_back_button(self) -> None:
+        """Update back button visibility and populate recent items menu."""
+        has_history = len(self._nav_stack) > 0
+        self.app_shell.top_bar.set_back_enabled(has_history)
+
+        # Top-bar recent menu keeps the existing 5-entry window.
+        recent = self._get_recent_nav_items(5)
         self.app_shell.top_bar._update_recent_menu(recent)
+
+        # Sidebar recent section shows up to 3 entries (same dedup walk).
+        nav = getattr(self, "nav", None)
+        if nav is not None:
+            with contextlib.suppress(Exception):
+                nav.set_recent_items(self._get_recent_nav_items(3))
 
     def _on_report_issue(self) -> None:
         """Open the Report Issue dialog."""
@@ -1133,7 +1189,81 @@ class MainWindow(QMainWindow):
             on_error=lambda msg: logger.debug("Could not refresh alerts: %s", msg),
         )
 
+    # ── Nav badges (dispatch_board / invoices) ──────────────────────────
+
+    def _init_nav_badges(self) -> None:
+        """Start the 60s badge refresh timer and subscribe to data events.
+
+        Subscribes to the operations event-bus trip/invoice events ONLY when
+        they exist (TRIP_STATUS_CHANGED / INVOICE_PAID / INVOICE_CREATED are
+        defined in ``services/operations/event_bus.py``). The initial count is
+        pushed once from ``_build_nav`` after the nav is fully built.
+        """
+        self._nav_badge_timer = QTimer(self)
+        self._nav_badge_timer.timeout.connect(self._refresh_nav_badges)
+        self._nav_badge_timer.start(60_000)
+
+        self._nav_badge_subscriptions = []
+        for event_name in (TRIP_STATUS_CHANGED, INVOICE_PAID, INVOICE_CREATED):
+            try:
+                self._event_bus.subscribe(event_name, self._on_nav_data_event)
+                self._nav_badge_subscriptions.append(event_name)
+            except Exception:
+                logger.debug("Could not subscribe nav-badge refresh to %s", event_name)
+
+    def _on_nav_data_event(self, ev=None) -> None:
+        """Debounce badge refreshes after trip/invoice data changes."""
+        _timer = QTimer(self)
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(self._refresh_nav_badges)
+        _timer.start(0)
+
+    def _refresh_nav_badges(self) -> None:
+        """Recount nav badges on the WorkerPool and push to the sidebar.
+
+        Dispatch-board badge = active (non-terminal) trips; invoices badge =
+        unpaid invoice count. Repo reads run off the GUI thread; the result
+        callback is a no-op after the window has started shutting down so a
+        late worker result can never touch the nav after ``closeEvent``.
+        """
+        if self._shutting_down:
+            return
+        trip_repo = getattr(self, "trip_repo", None)
+        invoice_repo = getattr(self, "invoice_repo", None)
+        if trip_repo is None and invoice_repo is None:
+            return
+
+        def _fetch():
+            trips: list = []
+            invoices: list = []
+            if trip_repo is not None:
+                trips = trip_repo.get_active_excluding_statuses(
+                    exclude_statuses=["Delivered", "Completed", "Done", "Cancelled", "Paid"],
+                ) or []
+            if invoice_repo is not None:
+                invoices = invoice_repo.get_unpaid_with_client_trip_data() or []
+            return len(trips), len(invoices)
+
+        def _apply(result):
+            if self._shutting_down:
+                return
+            try:
+                trip_count, invoice_count = result
+                with contextlib.suppress(Exception):
+                    self.nav.set_badge("dispatch_board", trip_count)
+                with contextlib.suppress(Exception):
+                    self.nav.set_badge("invoices", invoice_count)
+            except Exception:
+                logger.debug("Could not refresh nav badges", exc_info=True)
+
+        WorkerPool.run(
+            fn=_fetch,
+            on_result=_apply,
+            on_error=lambda msg: logger.debug("Could not refresh nav badges: %s", msg),
+        )
+
     def closeEvent(self, event):
+        self._shutting_down = True
         if self._page_anim is not None:
             self._page_anim.stop()
             self._page_anim.deleteLater()
@@ -1162,6 +1292,11 @@ class MainWindow(QMainWindow):
             pass
         if self._fuel_timer is not None:
             self._fuel_timer.stop()
+        if self._nav_badge_timer is not None:
+            self._nav_badge_timer.stop()
+        for event_name in getattr(self, "_nav_badge_subscriptions", []):
+            with contextlib.suppress(Exception):
+                self._event_bus.unsubscribe(event_name, self._on_nav_data_event)
         self._event_bus.unsubscribe(SETTINGS_UPDATED, self._sub_settings)
         self._event_bus.unsubscribe(ALERT_CREATED, self._sub_alert_created)
         self._event_bus.unsubscribe(ALERT_RESOLVED, self._sub_alert_resolved)

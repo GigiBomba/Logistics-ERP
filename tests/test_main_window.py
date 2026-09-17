@@ -421,6 +421,130 @@ class TestMainWindowAdvanced:
         mock_obj.wakeup.assert_called_once()
         main_window._create_module.assert_not_called()
 
+    # ── Nav rework: final 6-group structure ─────────────────────────────
+
+    def test_build_nav_uses_final_six_groups(self, main_window, mock_nav):
+        """_build_nav registers the final six groups in spec order."""
+        main_window.nav = mock_nav
+        main_window._user_role = "admin"
+        main_window._build_nav()
+
+        group_keys = [c.args[1] for c in mock_nav.add_group.call_args_list]
+        assert group_keys == [
+            "nav.group_dashboard",
+            "nav.group_dispatch",
+            "nav.group_fleet",
+            "nav.group_clients",
+            "nav.group_finance",
+            "nav.group_admin",
+        ]
+
+        item_keys = [c.args[0] for c in mock_nav.add_item.call_args_list]
+        assert item_keys == [
+            "overview", "analytics",
+            "dispatch_board", "route_planner", "tracking", "calculator", "freight_exchange",
+            "fleet", "driver_manager", "maintenance", "tachograph",
+            "clients", "documents",
+            "invoices", "history", "route_history",
+            "team", "settings", "migration_center", "copilot",
+        ]
+        # Settings is now a normal group item — no special settings path.
+        mock_nav.add_settings_item.assert_not_called()
+
+    def test_build_nav_badge_keys_and_tracking_label(self, main_window, mock_nav):
+        """dispatch_board/invoices carry badge_key; tracking uses nav.tracking."""
+        main_window.nav = mock_nav
+        main_window._user_role = "admin"
+        main_window._build_nav()
+
+        badge_keys = {
+            c.args[0]: c.kwargs.get("badge_key")
+            for c in mock_nav.add_item.call_args_list
+        }
+        assert badge_keys["dispatch_board"] == "dispatch_board"
+        assert badge_keys["invoices"] == "invoices"
+        assert badge_keys["overview"] is None
+
+        tracking_call = next(
+            c for c in mock_nav.add_item.call_args_list if c.args[0] == "tracking"
+        )
+        assert tracking_call.kwargs["i18n_key"] == "nav.tracking"
+
+    def test_build_nav_team_gated_for_dispatcher(self, main_window, mock_nav):
+        """Team is hidden for non-admin/manager roles; the rest of ADMIN stays."""
+        main_window.nav = mock_nav
+        main_window._user_role = "dispatcher"
+        main_window._build_nav()
+
+        item_keys = [c.args[0] for c in mock_nav.add_item.call_args_list]
+        assert "team" not in item_keys
+        assert "settings" in item_keys
+        assert "migration_center" in item_keys
+        assert "copilot" in item_keys
+
+    # ── Nav rework: extended shortcuts ─────────────────────────────────
+
+    def test_nav_shortcuts_extended_set(self, main_window):
+        """Ctrl+0 / Ctrl+Shift+1..4 / Ctrl+Shift+S / Ctrl+H / Ctrl+Shift+T register."""
+        from PySide6.QtGui import QKeySequence
+
+        main_window._user_role = "admin"
+        main_window._nav_shortcuts = []
+        main_window._setup_shortcuts()
+
+        seqs = [sc.key() for sc in main_window._nav_shortcuts]
+        for seq in (
+            "Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6",
+            "Ctrl+7", "Ctrl+8", "Ctrl+9", "Ctrl+0",
+            "Ctrl+Shift+1", "Ctrl+Shift+2", "Ctrl+Shift+3", "Ctrl+Shift+4",
+            "Ctrl+Shift+S", "Ctrl+H", "Ctrl+Shift+T",
+        ):
+            assert any(k == QKeySequence(seq) for k in seqs), f"missing {seq}"
+        # The nav loop owns Ctrl+H now — the QWidgetShortcut is gone.
+        assert not hasattr(main_window, "_shortcut_history")
+
+    def test_nav_shortcuts_team_absent_for_non_admin(self, main_window):
+        """Ctrl+Shift+T is never installed for dispatcher/driver roles."""
+        from PySide6.QtGui import QKeySequence
+
+        main_window._user_role = "dispatcher"
+        main_window._nav_shortcuts = []
+        main_window._setup_shortcuts()
+
+        seqs = [sc.key() for sc in main_window._nav_shortcuts]
+        assert not any(k == QKeySequence("Ctrl+Shift+T") for k in seqs)
+        assert any(k == QKeySequence("Ctrl+H") for k in seqs)
+
+    # ── Nav rework: recent-items extraction ─────────────────────────────
+
+    def test_get_recent_nav_items_dedups_and_limits(self, main_window):
+        """Recent extraction keeps the last 3 UNIQUE keys, chronological."""
+        main_window._nav_stack = [
+            ("overview", None),
+            ("analytics", None),
+            ("overview", None),
+            ("fleet", None),
+            ("clients", None),
+        ]
+        items = main_window._get_recent_nav_items()
+        assert [k for k, _ in items] == ["overview", "fleet", "clients"]
+        assert len(items) == 3
+        assert all(label for _, label in items)
+
+    def test_update_back_button_pushes_recent_to_sidebar(self, main_window):
+        """_update_back_button feeds the sidebar recent section (3 unique)."""
+        main_window._nav_stack = [
+            ("overview", None),
+            ("fleet", None),
+            ("clients", None),
+        ]
+        main_window.app_shell = MagicMock()
+        main_window.nav = MagicMock()
+        main_window._update_back_button()
+        main_window.nav.set_recent_items.assert_called_once()
+        recent = main_window.nav.set_recent_items.call_args.args[0]
+        assert [k for k, _ in recent] == ["overview", "fleet", "clients"]
+
     # ── Alert tests (3) ─────────────────────────────────────────────────
 
     def test_on_alert_event_refreshes_alerts(self, main_window, qtbot):

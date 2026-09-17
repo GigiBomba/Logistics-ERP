@@ -13,6 +13,7 @@ import qtawesome as qta
 from PySide6.QtCore import QEasingCurve, QEvent, QParallelAnimationGroup, QPropertyAnimation, Qt
 from PySide6.QtWidgets import (
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import register_listener, t, unregister_listener
+from ui.components import Badge
 from ui.design_tokens import (
     ACCENT,
     BTN_HEIGHT_SM,
@@ -52,7 +54,10 @@ MONOGRAM_SIZE = 32
 
 # ── Icon mapping (qtawesome) ─────────────────────────────────────────
 # Nav items MUST use qtawesome icons — no emoji, no colored squares.
-# ── Keyboard shortcut hints for the first 9 nav items ──────────────
+# ── Keyboard shortcut hints for nav items ────────────────────────
+# Display-only hints. The Ctrl+1..9 bindings exist in main_window;
+# the extended set (Ctrl+0, Ctrl+Shift+1..4, Ctrl+Shift+S/T) is added
+# by the main_window Phase 6 lane and mirrored here for display.
 NAV_SHORTCUTS: dict[str, str] = {
     "overview":      "Ctrl+1",
     "analytics":     "Ctrl+2",
@@ -63,6 +68,13 @@ NAV_SHORTCUTS: dict[str, str] = {
     "fleet":         "Ctrl+7",
     "driver_manager":"Ctrl+8",
     "clients":       "Ctrl+9",
+    "freight_exchange": "Ctrl+0",
+    "maintenance":   "Ctrl+Shift+1",
+    "invoices":      "Ctrl+Shift+2",
+    "route_history": "Ctrl+Shift+4",
+    "settings":      "Ctrl+Shift+S",
+    "team":          "Ctrl+Shift+T",
+    "history":       "Ctrl+H",  # final table also lists Ctrl+Shift+3 for history; Ctrl+H wins as the single display hint
 }
 
 NAV_ICONS = {
@@ -117,6 +129,14 @@ class Sidebar(QFrame):
         self._group_i18n_keys: dict[str, str] = {}
         self._settings_item: str | None = None
         self._item_groups: dict[str, str | None] = {}
+        self._badge_keys: dict[str, str] = {}
+        self._badges: dict[str, Badge] = {}
+        self._badge_counts: dict[str, int] = {}
+        self._recent_section: QFrame | None = None
+        self._recent_label: QLabel | None = None
+        self._recent_items_layout: QVBoxLayout | None = None
+        self._recent_items: list[tuple[str, str]] = []
+        self._recent_frames: list[QFrame] = []
         self._search_input: QLineEdit | None = None
         self._collapse_btn: QPushButton | None = None
 
@@ -244,6 +264,9 @@ class Sidebar(QFrame):
         self._search_input.setVisible(self._expanded)
         self._container_layout.addWidget(self._search_input)
 
+        # ── Recent items section (top of the scroll area, above groups) ──
+        self._build_recent_section()
+
         self._scroll.setWidget(self._container)
         layout = self.layout()
         assert isinstance(layout, QVBoxLayout)
@@ -297,14 +320,16 @@ class Sidebar(QFrame):
         self._groups.append(name)
 
     def add_item(self, key: str, label: str, group: str | None = None,
-                 i18n_key: str | None = None):
+                 i18n_key: str | None = None, badge_key: str | None = None):
         if group and group not in self._groups:
             self.add_group(group)
         if i18n_key:
             self._item_i18n_keys[key] = i18n_key
+        if badge_key:
+            self._badge_keys[key] = badge_key
 
         text = t(i18n_key) if i18n_key else label
-        frame = self._create_item_frame(key, text)
+        frame = self._create_item_frame(key, text, badge_key=badge_key)
         self._container_layout.addWidget(frame)
         self._items[key] = frame
         self._item_groups[key] = group
@@ -341,9 +366,50 @@ class Sidebar(QFrame):
             if key in self._items:
                 self._items[key].setToolTip(text)
 
+    def set_badge(self, key: str, count: int):
+        """Set the count badge for a nav item (hides at <=0 and when collapsed)."""
+        badge = self._badges.get(key)
+        if badge is None:
+            return
+        self._badge_counts[key] = count
+        if not self._expanded:
+            badge.hide()
+            return
+        badge.set_count(count)
+
+    def set_recent_items(self, items: list[tuple[str, str]]):
+        """Rebuild the recent-items section (up to 3, most recent last).
+
+        Items are ``(nav_key, label)`` pairs. The section is hidden when the
+        list is empty. Clicking a recent item navigates through the normal
+        select path but never activates/highlights it.
+        """
+        recent = list(items[-3:])
+        self._recent_items = recent
+
+        # Remove previous frames from the layout before deleting them.
+        if self._recent_items_layout is not None:
+            while self._recent_items_layout.count():
+                item = self._recent_items_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+        self._recent_frames.clear()
+
+        if self._recent_items_layout is not None:
+            for key, label in recent:
+                frame = self._create_recent_item_frame(key, label)
+                self._recent_items_layout.addWidget(frame)
+                self._recent_frames.append(frame)
+
+        if self._recent_section is not None:
+            self._recent_section.setVisible(bool(recent))
+            if not self._expanded and self._recent_label is not None:
+                self._recent_label.hide()
+
     # ── Item factory ────────────────────────────────────────────
 
-    def _create_item_frame(self, key: str, label: str) -> QFrame:
+    def _create_item_frame(self, key: str, label: str, badge_key: str | None = None) -> QFrame:
         frame = QFrame()
         frame.setFixedHeight(ITEM_H)
         frame.setCursor(Qt.PointingHandCursor)
@@ -375,6 +441,15 @@ class Sidebar(QFrame):
         if not self._expanded:
             text_lbl.hide()
 
+        # Count badge (hidden at 0 and when collapsed; shown via set_badge)
+        if badge_key:
+            badge = Badge()
+            badge.setAttribute(Qt.WA_TransparentForMouseEvents)
+            layout.addWidget(badge)
+            self._badges[key] = badge
+            if not self._expanded:
+                badge.hide()
+
         # Keyboard shortcut hint (visible only when expanded)
         shortcut_text = NAV_SHORTCUTS.get(key)
         if shortcut_text:
@@ -396,6 +471,85 @@ class Sidebar(QFrame):
         frame.installEventFilter(self)
 
         self._labels[key] = text_lbl
+        return frame
+
+    # ── Recent items section ───────────────────────────────────
+
+    def _build_recent_section(self):
+        """Build the (initially hidden) recent-items section at the very top
+        of the scroll area — directly above the first group."""
+        section = QFrame()
+        section.setProperty("role", "nav-group")
+        section_layout = QVBoxLayout(section)
+        section_layout.setContentsMargins(0, 0, 0, 0)
+        section_layout.setSpacing(0)
+
+        self._recent_label = QLabel(t("nav.group_recent").upper())
+        self._recent_label.setProperty("role", "nav-group-label")
+        self._recent_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        section_layout.addWidget(self._recent_label)
+        if not self._expanded:
+            self._recent_label.hide()
+
+        self._recent_items_layout = QVBoxLayout()
+        self._recent_items_layout.setSpacing(0)
+        section_layout.addLayout(self._recent_items_layout)
+
+        # Separator below the recent section, above the first group.
+        spacer = QFrame()
+        spacer.setFixedHeight(8)
+        section_layout.addWidget(spacer)
+
+        # Insert below the search input (index 1) — above every group.
+        self._container_layout.insertWidget(1, section)
+        self._recent_section = section
+        self._recent_section.hide()
+
+    def _create_recent_item_frame(self, key: str, label: str) -> QFrame:
+        """Subdued nav-item frame for recent entries: tertiary text, dimmed
+        icon (60% opacity), no active accent. Never activated/highlighted."""
+        frame = QFrame()
+        frame.setFixedHeight(ITEM_H)
+        frame.setCursor(Qt.PointingHandCursor)
+        frame.setProperty("role", "nav-item")
+        frame.setProperty("is-recent", True)
+
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(SP["1"], 0, SP["2"], 0)
+        layout.setSpacing(0)
+
+        # Left accent bar — kept structurally, stays uncoloured (no active state)
+        accent = QFrame()
+        accent.setFixedWidth(4)
+        layout.addWidget(accent)
+
+        # Icon — dimmed to 60% opacity
+        icon_name = NAV_ICONS.get(key, "fa5s.circle")
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(qta.icon(icon_name, color=TEXT_MUTED).pixmap(16, 16))
+        icon_lbl.setFixedWidth(32)
+        icon_lbl.setAlignment(Qt.AlignCenter)
+        icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        effect = QGraphicsOpacityEffect(icon_lbl)
+        effect.setOpacity(0.6)
+        icon_lbl.setGraphicsEffect(effect)
+        layout.addWidget(icon_lbl)
+
+        # Text label — tertiary color, subdued
+        text_lbl = QLabel(label)
+        text_lbl.setProperty("role", "nav-label")
+        text_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        text_lbl.setStyleSheet(
+            f"color: {COLOR_TEXT_TERTIARY}; font-size: 13px; background: transparent;"
+        )
+        layout.addWidget(text_lbl, 1)
+        if not self._expanded:
+            text_lbl.hide()
+
+        frame.setAccessibleName(label)
+        frame.setToolTip(label)
+        frame.setProperty("nav-key", key)
+        frame.installEventFilter(self)
         return frame
 
     def _activate(self, key: str):
@@ -444,7 +598,13 @@ class Sidebar(QFrame):
                 return True
             key = obj.property("nav-key")
             if key is not None:
-                self.select(key)
+                if obj.property("is-recent"):
+                    # Recent items navigate through the select path but are
+                    # deliberately never shown as active/highlighted.
+                    if self._on_select:
+                        self._on_select(key, None)
+                else:
+                    self.select(key)
                 return True
         return super().eventFilter(obj, event)
 
@@ -492,6 +652,16 @@ class Sidebar(QFrame):
                 text_lbl = self._text_label_for_item(item)
                 if text_lbl is not None:
                     text_lbl.show()
+            # Badges: restore visibility from stored counts (hidden at <=0)
+            for key, badge in self._badges.items():
+                badge.set_count(self._badge_counts.get(key, 0))
+            # Recent section: show label + item texts when populated
+            if self._recent_label is not None:
+                self._recent_label.show()
+            for frame in self._recent_frames:
+                text_lbl = self._text_label_for_item(frame)
+                if text_lbl is not None:
+                    text_lbl.show()
         else:
             self.setFixedWidth(SIDEBAR_COLLAPSED)
             self.setMinimumWidth(SIDEBAR_COLLAPSED)
@@ -508,6 +678,15 @@ class Sidebar(QFrame):
                 lbl.hide()
             for item in self._items.values():
                 text_lbl = self._text_label_for_item(item)
+                if text_lbl is not None:
+                    text_lbl.hide()
+            # Badges and recent labels are hidden in the collapsed rail.
+            for badge in self._badges.values():
+                badge.hide()
+            if self._recent_label is not None:
+                self._recent_label.hide()
+            for frame in self._recent_frames:
+                text_lbl = self._text_label_for_item(frame)
                 if text_lbl is not None:
                     text_lbl.hide()
         self._anim_group = None
@@ -579,6 +758,8 @@ class Sidebar(QFrame):
         for name, i18n_key in self._group_i18n_keys.items():
             if name in self._group_labels:
                 self._group_labels[name].setText(t(i18n_key).upper())
+        if self._recent_label is not None:
+            self._recent_label.setText(t("nav.group_recent").upper())
 
     def _destroy(self) -> None:
         unregister_listener(self._language_callback)
@@ -589,4 +770,11 @@ class Sidebar(QFrame):
         self._group_labels.clear()
         self._item_i18n_keys.clear()
         self._group_i18n_keys.clear()
+        self._badge_keys.clear()
+        self._badges.clear()
+        self._badge_counts.clear()
+        for frame in self._recent_frames:
+            frame.deleteLater()
+        self._recent_frames.clear()
+        self._recent_items.clear()
         super().deleteLater()
