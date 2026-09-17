@@ -3641,6 +3641,7 @@
   "waitlist.form.fleetSizePlaceholder": "Selecciona el tamaño de flota",
   "waitlist.form.joining": "Procesando...",
   "waitlist.form.moreDetails": "Más detalles (opcional)",
+  "waitlist.form.moreDetailsHint": "Nos ayuda a priorizar tu incorporación",
   "waitlist.getOnList": "Apúntese a la lista",
   "waitlist.globalRollout": "Despliegue global",
   "waitlist.heroDesc": "Si tu equipo todavía está alternando entre Excel, WhatsApp, llamadas telefónicas y CMR en papel solo para despachar un solo camión — Operion automatiza todo el flujo de trabajo. Sin ingreso manual de datos, sin juegos de teléfono con conductores, sin planificación en hojas de cálculo.",

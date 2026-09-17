@@ -3641,6 +3641,7 @@
   "waitlist.form.fleetSizePlaceholder": "Flottengröße auswählen",
   "waitlist.form.joining": "Wird verarbeitet...",
   "waitlist.form.moreDetails": "Weitere Details (optional)",
+  "waitlist.form.moreDetailsHint": "Hilft uns, Ihr Onboarding zu priorisieren",
   "waitlist.getOnList": "Auf die Liste",
   "waitlist.globalRollout": "Globaler Rollout",
   "waitlist.heroDesc": "Wenn Ihr Team immer noch zwischen Excel, WhatsApp, Telefonaten und Papier-CMRs hin- und herspringt, nur um einen einzigen Lkw zu disponieren — Operion automatisiert den gesamten Workflow. Keine manuelle Dateneingabe, kein Telefon-Tag mit Fahrern, keine Tabellenkalkulation mehr.",

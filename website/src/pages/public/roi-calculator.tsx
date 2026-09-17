@@ -18,8 +18,8 @@ import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { SectionHeader } from "@/components/shared/page-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatCard } from "@/components/shared/stat-card"
+import { WaitlistCta } from "@/components/shared/waitlist-cta"
 import { useLocale } from "@/i18n/locale-context"
-import { trackCTAClick } from "@/services/analytics"
 
 /* ─── Animated number helper ─── */
 function useAnimatedNumber(target: number, duration = 900) {
@@ -455,13 +455,7 @@ export default function RoiCalculatorPage() {
             {t("roiCalculator.poweredByDesc")}
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <a
-              href="/waitlist"
-              onClick={() => trackCTAClick("roi_calculator", "/roi-calculator")}
-              className="inline-flex items-center rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              {t("roiCalculator.joinWaitlist")}
-            </a>
+            <WaitlistCta source="profit_calculator" />
             <a
               href="/features"
               className="inline-flex items-center rounded-lg border px-6 py-3 text-sm font-medium hover:bg-accent transition-colors"

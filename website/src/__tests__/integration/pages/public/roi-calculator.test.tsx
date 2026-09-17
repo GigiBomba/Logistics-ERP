@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import RoiCalculatorPage from "@/pages/public/roi-calculator"
+import { trackCTAClick } from "@/services/analytics"
+
+vi.mock("@/services/analytics", () => ({
+  trackCTAClick: vi.fn(),
+}))
 
 vi.mock("motion/react", () => ({
   motion: new Proxy(
@@ -114,8 +119,20 @@ describe("RoiCalculatorPage", () => {
 
   it("renders CTA section", () => {
     render(<RoiCalculatorPage />)
-    expect(screen.getByText("Join the waitlist — free during development")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /join waitlist/i })).toBeInTheDocument()
     expect(screen.getByText("Explore features")).toBeInTheDocument()
+  })
+
+  it("renders the waitlist CTA with the corrected source param", () => {
+    render(<RoiCalculatorPage />)
+    const link = screen.getByRole("link", { name: /join waitlist/i })
+    expect(link).toHaveAttribute("href", "/waitlist?source=profit_calculator")
+  })
+
+  it("tracks waitlist CTA clicks with the corrected source", () => {
+    render(<RoiCalculatorPage />, { initialEntries: ["/roi-calculator"] })
+    fireEvent.click(screen.getByRole("link", { name: /join waitlist/i }))
+    expect(trackCTAClick).toHaveBeenCalledWith("profit_calculator", "/roi-calculator")
   })
 
   it("fleet size slider can be changed", () => {

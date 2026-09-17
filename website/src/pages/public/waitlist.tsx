@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import { SeoHead } from "@/components/seo/seo-head"
 import { useForm } from "react-hook-form"
+import { useSearchParams } from "react-router"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
@@ -21,12 +22,16 @@ import {
   Bot,
   Workflow,
   MessageCircle,
+  ChevronDown,
+  Globe,
+  User,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
 import { CopyButton } from "@/components/ui/copy-button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { waitlistApi } from "@/api/endpoints"
+import { cn } from "@/lib/utils"
+import { waitlistApi, type WaitlistJoinRequest } from "@/api/endpoints"
 import { useWaitlistCount } from "@/services/queries"
 import { extractApiError } from "@/api/client"
 import { AxiosError } from "axios"
@@ -66,12 +71,19 @@ const benefits = [
   },
 ]
 
+const COMPANY_SIZE_OPTIONS = ["solo", "2-10", "11-50", "51-200", "200+"] as const
+const FLEET_SIZE_OPTIONS = ["1-5", "6-20", "21-50", "51-200", "200+"] as const
+
 const waitlistSchema = z.object({
   company_name: z
     .string()
     .min(2, "Company name must be at least 2 characters")
     .max(200, "Company name must be at most 200 characters"),
   email: z.string().email("Please enter a valid email"),
+  contact_name: z.string().max(150, "Contact name must be at most 150 characters").optional(),
+  company_size: z.enum(COMPANY_SIZE_OPTIONS).optional(),
+  country: z.string().length(2, "Country code must be 2 characters").optional(),
+  fleet_size: z.enum(FLEET_SIZE_OPTIONS).optional(),
   hp_field: z.string().optional(),
   source: z.string().optional(),
 })
@@ -109,10 +121,12 @@ function AnimatedCounter({ target }: { target: number }) {
 
 export default function WaitlistPage() {
   const { t } = useLocale()
+  const [searchParams] = useSearchParams()
   const [submitted, setSubmitted] = useState(false)
   const [referralCode, setReferralCode] = useState<string | null>(null)
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string>("")
+  const [showDetails, setShowDetails] = useState(false)
   const {
     data: countData,
     isLoading: countLoading,
@@ -130,7 +144,9 @@ export default function WaitlistPage() {
   } = useForm<WaitlistForm>({
     resolver: zodResolver(waitlistSchema),
     defaultValues: {
-      source: "landing_page",
+      // Contextual CTAs (blueprint §5.3) link to /waitlist?source=<source>;
+      // fall back to landing_page so the form never submits a blank source.
+      source: searchParams.get("source") || "landing_page",
       hp_field: "",
     },
   })
@@ -150,13 +166,20 @@ export default function WaitlistPage() {
     // Analytics: log form submit attempt (after honeypot check, before API call)
     trackEvent("waitlist_submit_attempt", "engagement", data.source || "landing_page")
 
+    // Progressive-disclosure fields are only sent when the user provided them
+    const payload: WaitlistJoinRequest = {
+      company_name: data.company_name,
+      email: data.email,
+      source: data.source || "landing_page",
+      turnstile_token: turnstileToken || undefined,
+    }
+    if (data.contact_name) payload.contact_name = data.contact_name
+    if (data.company_size) payload.company_size = data.company_size
+    if (data.country) payload.country = data.country
+    if (data.fleet_size) payload.fleet_size = data.fleet_size
+
     try {
-      const response = await waitlistApi.join({
-        company_name: data.company_name,
-        email: data.email,
-        source: data.source || "landing_page",
-        turnstile_token: turnstileToken || undefined,
-      })
+      const response = await waitlistApi.join(payload)
 
       setReferralCode(response.data.referral_code)
       setSubmitted(true)
@@ -338,6 +361,112 @@ export default function WaitlistPage() {
                               </p>
                             )}
                           </div>
+                        </div>
+
+                        {/* Progressive disclosure: optional onboarding details */}
+                        <div className="text-left">
+                          <button
+                            type="button"
+                            onClick={() => setShowDetails((v) => !v)}
+                            aria-expanded={showDetails}
+                            className="inline-flex items-center gap-2 rounded-md text-sm font-medium text-primary hover:text-primary/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <ChevronDown
+                              className={cn(
+                                "h-4 w-4 transition-transform",
+                                showDetails && "rotate-180"
+                              )}
+                            />
+                            {t("waitlist.form.moreDetails")}
+                          </button>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {t("waitlist.form.moreDetailsHint")}
+                          </p>
+
+                          {showDetails && (
+                            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                              <div className="space-y-2 text-left">
+                                <Label htmlFor="contact_name" className="text-foreground">
+                                  {t("waitlist.form.contactName")}
+                                </Label>
+                                <div className="relative">
+                                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                                  <Input
+                                    id="contact_name"
+                                    className="pl-10 h-11"
+                                    placeholder={t("waitlist.form.contactNamePlaceholder")}
+                                    {...register("contact_name", { setValueAs: (v) => v || undefined })}
+                                  />
+                                </div>
+                                {errors.contact_name && (
+                                  <p className="text-xs text-destructive">
+                                    {errors.contact_name.message}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="space-y-2 text-left">
+                                <Label htmlFor="company_size" className="text-foreground">
+                                  {t("waitlist.form.companySize")}
+                                </Label>
+                                <select
+                                  id="company_size"
+                                  className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                  {...register("company_size", { setValueAs: (v) => v || undefined })}
+                                >
+                                  <option value="">{t("waitlist.form.companySizePlaceholder")}</option>
+                                  {COMPANY_SIZE_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="space-y-2 text-left">
+                                <Label htmlFor="country" className="text-foreground">
+                                  {t("waitlist.form.country")}
+                                </Label>
+                                <div className="relative">
+                                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                                  <Input
+                                    id="country"
+                                    className="pl-10 h-11"
+                                    placeholder={t("waitlist.form.countryPlaceholder")}
+                                    maxLength={2}
+                                    autoComplete="off"
+                                    {...register("country", {
+                                      setValueAs: (v) =>
+                                        (typeof v === "string" ? v.trim().toUpperCase() : v) || undefined,
+                                    })}
+                                  />
+                                </div>
+                                {errors.country && (
+                                  <p className="text-xs text-destructive">
+                                    {errors.country.message}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="space-y-2 text-left">
+                                <Label htmlFor="fleet_size" className="text-foreground">
+                                  {t("waitlist.form.fleetSize")}
+                                </Label>
+                                <select
+                                  id="fleet_size"
+                                  className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                  {...register("fleet_size", { setValueAs: (v) => v || undefined })}
+                                >
+                                  <option value="">{t("waitlist.form.fleetSizePlaceholder")}</option>
+                                  {FLEET_SIZE_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {duplicateMessage && (

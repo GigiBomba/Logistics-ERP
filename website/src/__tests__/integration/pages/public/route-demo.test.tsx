@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@/test-utils"
 import RouteDemoPage from "@/pages/public/route-demo"
+import { trackCTAClick } from "@/services/analytics"
+
+vi.mock("@/services/analytics", () => ({
+  trackCTAClick: vi.fn(),
+}))
 
 vi.mock("motion/react", () => ({
   motion: new Proxy(
@@ -111,5 +116,17 @@ describe("RouteDemoPage", () => {
     render(<RouteDemoPage />)
     expect(screen.getByText("Try Operion for free")).toBeInTheDocument()
     expect(screen.getByText("Get started")).toBeInTheDocument()
+  })
+
+  it("renders the waitlist CTA with the corrected source param", () => {
+    render(<RouteDemoPage />)
+    const link = screen.getByRole("link", { name: /join waitlist/i })
+    expect(link).toHaveAttribute("href", "/waitlist?source=route_calculator")
+  })
+
+  it("tracks waitlist CTA clicks with the corrected source", () => {
+    render(<RouteDemoPage />, { initialEntries: ["/route-demo"] })
+    fireEvent.click(screen.getByRole("link", { name: /join waitlist/i }))
+    expect(trackCTAClick).toHaveBeenCalledWith("route_calculator", "/route-demo")
   })
 })

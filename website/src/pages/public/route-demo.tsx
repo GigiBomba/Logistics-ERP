@@ -21,8 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { StatCard } from "@/components/shared/stat-card"
 import { CtaBanner } from "@/components/shared/cta-banner"
+import { WaitlistCta } from "@/components/shared/waitlist-cta"
 import { useLocale } from "@/i18n/locale-context"
-import { trackCTAClick } from "@/services/analytics"
 import apiClient from "@/api/client"
 
 /* ─── Animated number helper ─── */
@@ -312,13 +312,7 @@ export default function RouteDemoPage() {
             {t("routeDemo.poweredByDesc")}
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <a
-              href="/waitlist"
-              onClick={() => trackCTAClick("route_demo", "/route-demo")}
-              className="inline-flex items-center rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              {t("routeDemo.joinWaitlist")}
-            </a>
+            <WaitlistCta source="route_calculator" />
             <a
               href="/features"
               className="inline-flex items-center rounded-lg border px-6 py-3 text-sm font-medium hover:bg-accent transition-colors"

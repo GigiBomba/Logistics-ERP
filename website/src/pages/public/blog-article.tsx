@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/auth-provider"
 import { formatDate } from "@/lib/utils"
 import { useBlogPost, useBlogPosts } from "@/services/queries"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { trackCTAClick } from "@/services/analytics"
+import { WaitlistCta } from "@/components/shared/waitlist-cta"
 import { useLocale } from "@/i18n/locale-context"
 
 interface BlogArticleData {
@@ -1808,13 +1808,7 @@ export default function BlogArticlePage() {
               {t("blog.ctaDesc")}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a
-                href="/waitlist"
-                onClick={() => trackCTAClick("blog_article", `/blog/${slug ?? ""}`)}
-                className="inline-flex items-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                {t("blog.joinWaitlist")}
-              </a>
+              <WaitlistCta source={`blog:${slug}`} />
               <a
                 href="/features"
                 className="inline-flex items-center rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-accent transition-colors"

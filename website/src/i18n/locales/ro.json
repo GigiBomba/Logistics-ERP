@@ -3641,6 +3641,7 @@
   "waitlist.form.fleetSizePlaceholder": "Selectează mărimea flotei",
   "waitlist.form.joining": "Se procesează...",
   "waitlist.form.moreDetails": "Mai multe detalii (opțional)",
+  "waitlist.form.moreDetailsHint": "Ne ajută să prioritizăm integrarea ta",
   "waitlist.getOnList": "Înscrie-te pe listă",
   "waitlist.globalRollout": "Lansare globală",
   "waitlist.heroDesc": "Dacă echipa ta încă jonglează între Excel, WhatsApp, telefoane și CMR-uri pe hârtie doar pentru a dispeci un singur camion — Operion automatizează întregul flux. Fără introducere manuală de date, fără joc de telefoane cu șoferii, fără planificare în foi de calcul.",

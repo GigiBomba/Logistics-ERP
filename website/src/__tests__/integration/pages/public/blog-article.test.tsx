@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen } from "@/test-utils"
+import { render, screen, fireEvent } from "@/test-utils"
 import BlogArticlePage from "@/pages/public/blog-article"
 import { useAuth } from "@/contexts/auth-provider"
 import { useParams } from "react-router"
 import { createMockAuthContext } from "@/test-utils"
+import { trackCTAClick } from "@/services/analytics"
+
+vi.mock("@/services/analytics", () => ({
+  trackCTAClick: vi.fn(),
+}))
 
 vi.mock("@/services/queries", () => {
   const mockArticle = {
@@ -107,6 +112,18 @@ describe("BlogArticlePage", () => {
   it("renders conversion CTA section", () => {
     render(<BlogArticlePage />)
     expect(screen.getByText("Streamline Your Transport Operations with Operion ERP")).toBeInTheDocument()
+  })
+
+  it("renders the waitlist CTA with a slug-based source", () => {
+    render(<BlogArticlePage />, { initialEntries: ["/blog/getting-started-with-operion"] })
+    const link = screen.getByRole("link", { name: /join waitlist/i })
+    expect(link).toHaveAttribute("href", "/waitlist?source=blog:getting-started-with-operion")
+  })
+
+  it("tracks waitlist CTA clicks with the slug-based source", () => {
+    render(<BlogArticlePage />, { initialEntries: ["/blog/getting-started-with-operion"] })
+    fireEvent.click(screen.getByRole("link", { name: /join waitlist/i }))
+    expect(trackCTAClick).toHaveBeenCalledWith("blog:getting-started-with-operion", "/blog/getting-started-with-operion")
   })
 
   it("renders related articles with overlapping category/tags", () => {
