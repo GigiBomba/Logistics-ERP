@@ -41,6 +41,10 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 // by the DPA_HREF !== "/trust#dpa" check) stays active for either file.
 const DPA_HREF: string = "/dpa/operion-dpa.md"
 
+// The draft template is also rendered for browsing at /dpa (pages/public/dpa.tsx);
+// the raw-file / future signed-PDF download link above stays available.
+const DPA_PAGE_HREF: string = "/dpa"
+
 const securityOverview = [
   {
     icon: Lock,
@@ -274,11 +278,21 @@ export default function TrustPage() {
                   <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
                     {t("trust.dpaContent")}
                   </p>
-                  <Button variant="outline" asChild className="mt-4">
-                    <a href={DPA_HREF} download={DPA_HREF !== "/trust#dpa"}>
+                  <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <Button variant="outline" asChild>
+                      <Link to={DPA_PAGE_HREF}>
+                        {t("trust.dpaTitle")}
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
+                    <a
+                      href={DPA_HREF}
+                      download={DPA_HREF !== "/trust#dpa"}
+                      className="text-sm text-muted-foreground underline underline-offset-4"
+                    >
                       {t("trust.dpaDownload")}
                     </a>
-                  </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>

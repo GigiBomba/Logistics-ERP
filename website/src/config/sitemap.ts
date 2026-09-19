@@ -66,6 +66,7 @@ export const sitemapRoutes: SitemapRoute[] = [
   { path: "/terms", priority: LOW, changefreq: "yearly" },
   { path: "/cookie-policy", priority: LOW, changefreq: "yearly" },
   { path: "/accessibility-statement", priority: LOW, changefreq: "yearly" },
+  { path: "/dpa", priority: LOW, changefreq: "yearly" },
 
   // Content hub (list pages get a fixed entry; article slugs are dynamic)
   { path: "/blog", priority: MED, changefreq: "weekly" },

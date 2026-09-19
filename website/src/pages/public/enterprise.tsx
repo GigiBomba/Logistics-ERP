@@ -1,3 +1,4 @@
+import { Link } from "react-router"
 import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { Mail, Check } from "lucide-react"
@@ -16,6 +17,9 @@ import { enterpriseConfig } from "@/config/site"
 // downloads today. When counsel delivers website/public/dpa/operion-dpa.pdf,
 // flip DPA_HREF to "/dpa/operion-dpa.pdf".
 const DPA_HREF: string = "/dpa/operion-dpa.md"
+
+// The draft template is also rendered for browsing at /dpa (pages/public/dpa.tsx).
+const DPA_PAGE_HREF: string = "/dpa"
 
 const enterpriseFeatureKeys = [
   "enterprise.feature1",
@@ -83,6 +87,10 @@ export default function EnterprisePage() {
             {t("enterprise.ctaText")}
           </p>
           <p className="mt-3 text-center text-sm text-muted-foreground">
+            <Link to={DPA_PAGE_HREF} className="underline underline-offset-4">
+              {t("trust.dpaTitle")}
+            </Link>
+            {" · "}
             <a href={DPA_HREF} download={DPA_HREF !== "/trust#dpa"} className="underline underline-offset-4">
               {t("trust.dpaDownload")}
             </a>

@@ -36,14 +36,17 @@ describe("TrustPage", () => {
     expect(screen.getByText("Have questions?")).toBeInTheDocument()
   })
 
-  it("renders DPA download link that downloads the DRAFT template while the counsel-approved PDF is pending", () => {
+  it("links to the browsable /dpa page and keeps the draft-template download", () => {
     render(<TrustPage />)
-    const link = screen.getByRole("link", { name: "Download DPA template" })
-    expect(link).toBeInTheDocument()
-    // A clearly-marked DRAFT TEMPLATE ships at public/dpa/operion-dpa.md so the
+    // Primary action navigates to the rendered DPA document page.
+    const viewLink = screen.getByRole("link", { name: "Data Processing Agreement (DPA)" })
+    expect(viewLink).toHaveAttribute("href", "/dpa")
+    // Secondary action keeps the raw DRAFT TEMPLATE download available. A
+    // clearly-marked DRAFT TEMPLATE ships at public/dpa/operion-dpa.md so the
     // link is functional today; the `download` attribute makes the draft download.
     // When counsel delivers website/public/dpa/operion-dpa.pdf, flip DPA_HREF.
-    expect(link).toHaveAttribute("href", "/dpa/operion-dpa.md")
-    expect(link).toHaveAttribute("download")
+    const downloadLink = screen.getByRole("link", { name: "Download DPA template" })
+    expect(downloadLink).toHaveAttribute("href", "/dpa/operion-dpa.md")
+    expect(downloadLink).toHaveAttribute("download")
   })
 })

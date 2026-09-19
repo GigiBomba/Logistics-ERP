@@ -58,6 +58,7 @@ const EnterprisePage = lazy(() => import("@/pages/public/enterprise"))
 const PartnersPage = lazy(() => import("@/pages/public/partners"))
 const TrustPage = lazy(() => import("@/pages/public/trust"))
 const TrustCenterPage = lazy(() => import("@/pages/public/trust-center"))
+const DpaPage = lazy(() => import("@/pages/public/dpa"))
 const ApiPlaygroundPage = lazy(() => import("@/pages/public/api-playground"))
 const IntegrationsExplorerPage = lazy(() => import("@/pages/public/integrations-explorer"))
 const WaitlistPage = lazy(() => import("@/pages/public/waitlist"))
@@ -432,6 +433,14 @@ export function AppRoutes() {
               element={
                 <Suspense fallback={<PageSuspense />}>
                   <TrustPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="dpa"
+              element={
+                <Suspense fallback={<PageSuspense />}>
+                  <DpaPage />
                 </Suspense>
               }
             />
