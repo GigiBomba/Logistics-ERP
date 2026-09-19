@@ -113,11 +113,17 @@ SPACE_10 = 40
 SPACE_12 = 48
 SPACE_16 = 64
 
+# Deliberate residual (G1 2026): 3px/5px literal radii in theme_engine /
+# dispatch_alerts_panel are intentional micro-tunings (scrollbar 3px for 6px
+# track) grandfathered as documented debt.
+
 # === BORDER RADIUS ===
 RADIUS_XS  = 2  # thin elements — scrollbar handles, thin progress bars; 2px preserved for parity
 RADIUS_SM  = 4
 RADIUS_MD  = 6
 RADIUS_LG  = 8
+# RADIUS_XL kept for visual parity (12px sites; audit's delete-item superseded
+# by parity decision, G1 2026).
 RADIUS_XL  = 12
 RADIUS_PILL = 100
 
