@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from services.trans_eu.sync_service import FreightSyncService, OrderSyncService
+
 logger = logging.getLogger(__name__)
 
 TRANS_EU_CALLBACK_IP = "52.208.90.151"
@@ -95,8 +97,8 @@ class WebhookIngestionService:
             (company_id, trans_eu_event_id, event_name, occurred_at,
              json.dumps(payload, default=str), now),
         )
-        self.db.conn.commit()
         row = cursor.fetchone()
+        self.db.conn.commit()
         return row[0] if row else ""
 
     def mark_processed(self, event_id: str) -> None:
@@ -166,8 +168,9 @@ class WebhookIngestionService:
 
         1. Idempotency check
         2. Store raw event
-        3. Route and handle
-        4. On failure: store to DLQ
+        3. Route — freight/order events are dispatched to FreightSyncService
+           / OrderSyncService; unknown categories are skipped
+        4. On failure: mark failed + store to DLQ (never propagate)
 
         Returns: {"status": "processed"|"skipped"|"failed", "event_id": str, ...}
         """
@@ -191,22 +194,39 @@ class WebhookIngestionService:
             self.mark_processed(row_id)
             return {"status": "skipped", "event_id": event_id, "reason": "unknown_event_type"}
 
-        # Handle (delegates to sync service later)
+        # Handle — dispatch to the appropriate sync service.
         try:
-            # In Phase 4.2, FreightSyncService handles the actual updates.
-            # For now, mark as processed — sync service queries from
-            # trans_eu_webhook_events table.
+            data = payload.get("data", {})
+            if category == "freight":
+                sync_result = await FreightSyncService(self.db).process_freight_event(
+                    company_id, event_name, occurred_at, data,
+                )
+            elif category == "order":
+                sync_result = await OrderSyncService(self.db).process_order_event(
+                    company_id, event_name, occurred_at, data,
+                )
+            else:
+                # transport / dock — no sync service yet; acknowledge only
+                sync_result = {"status": "processed", "category": category}
+
             self.mark_processed(row_id)
             logger.info(
-                "Webhook event %s (%s) processed — routed to %s handler",
-                event_id, event_name, category,
+                "Webhook event %s (%s) processed — routed to %s handler (sync=%s)",
+                event_id, event_name, category, sync_result.get("status"),
             )
             return {"status": "processed", "event_id": event_id, "category": category}
         except Exception as e:
             logger.exception("Failed to process webhook event %s", event_id)
-            self.mark_failed(row_id, str(e))
-            self.store_to_dlq(
-                company_id, event_id, event_name, payload, str(e),
-                error_type="processing",
-            )
+            try:
+                self.mark_failed(row_id, str(e))
+            except Exception:
+                logger.exception("Failed to mark webhook event %s as failed", event_id)
+            try:
+                self.store_to_dlq(
+                    company_id, event_id, event_name, payload, str(e),
+                    error_type="processing",
+                )
+            except Exception:
+                logger.exception("Failed to store webhook event %s in DLQ", event_id)
+            # Never propagate — always acknowledge to the provider (200 OK).
             return {"status": "failed", "event_id": event_id, "error": str(e)}

@@ -196,6 +196,98 @@ async def receive_webhook(partner: str, request: Request, db=Depends(get_db)):
     }
 
 
+# ── Trans.eu receiver ───────────────────────────────────────────────────
+
+@router.post("/trans-eu/{company_id}")
+async def receive_trans_eu_webhook(
+    company_id: int,
+    request: Request,
+    secret: Optional[str] = None,
+    db=Depends(get_db),
+):
+    """Receive a Trans.eu webhook event for a specific company.
+
+    Trans.eu requires a dedicated callback URL per company::
+
+        POST /api/v1/webhooks/trans-eu/{company_id}?secret={company_webhook_secret}
+
+    The ``{company_id}`` path segment identifies the tenant.  The optional
+    ``secret`` query parameter is validated against the stored webhook
+    secret (``webhook.trans-eu.secret`` in the settings table) when one is
+    configured.  Processing failures are recorded in the dead letter queue
+    by :class:`WebhookIngestionService` — the endpoint always acknowledges
+    with **200** so Trans.eu does not retry indefinitely.
+
+    Trans.eu webhook format::
+
+        {
+            "id": "87795",
+            "event_name": "freights.freight.update",
+            "occurred_at": "2026-01-25T11:41:11+00:00",
+            "data": {"freight_id": 87795, ...}
+        }
+    """
+    # ── Validate URL secret ────────────────────────────────────────────
+    stored_secret = _get_webhook_secret(db, "trans-eu")
+    if stored_secret and secret != stored_secret:
+        logger.warning(
+            "Trans.eu webhook rejected: invalid secret for company %s", company_id
+        )
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    # ── Parse JSON payload ─────────────────────────────────────────────
+    raw_body = await request.body()
+    try:
+        payload: dict = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload must be a JSON object")
+
+    event_name = payload.get("event_name", "")
+    trans_eu_event_id = str(payload.get("id", ""))
+    occurred_at = payload.get("occurred_at", "")
+
+    if not trans_eu_event_id or not event_name:
+        logger.info(
+            "Trans.eu webhook skipped: missing event_id/event_name (company=%s)",
+            company_id,
+        )
+        return {
+            "received": True,
+            "company_id": company_id,
+            "status": "skipped",
+            "reason": "missing event_id or event_name",
+        }
+
+    # ── Process via the ingestion pipeline ─────────────────────────────
+    from services.trans_eu.webhook_ingestion import WebhookIngestionService
+
+    service = WebhookIngestionService(db)
+    result = await service.process_webhook(
+        company_id=company_id,
+        event_id=trans_eu_event_id,
+        event_name=event_name,
+        occurred_at=occurred_at,
+        payload=payload,
+    )
+
+    logger.info(
+        "Trans.eu webhook processed: company=%s event=%s status=%s",
+        company_id, trans_eu_event_id, result.get("status"),
+    )
+
+    return {
+        "received": True,
+        "company_id": company_id,
+        "event_id": trans_eu_event_id,
+        "event_name": event_name,
+        "status": result.get("status"),
+        "category": result.get("category", ""),
+    }
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 async def _dispatch_webhook(

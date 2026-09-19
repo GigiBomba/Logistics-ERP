@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -47,7 +48,7 @@ def freight_tables(db):
     """)
     db.conn.execute("""
         CREATE TABLE IF NOT EXISTS trans_eu_webhook_events (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
             company_id INTEGER,
             trans_eu_event_id TEXT UNIQUE,
             event_name TEXT,
@@ -61,7 +62,7 @@ def freight_tables(db):
     """)
     db.conn.execute("""
         CREATE TABLE IF NOT EXISTS trans_eu_webhook_events_failed (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
             company_id INTEGER,
             trans_eu_event_id TEXT,
             event_name TEXT,
@@ -352,6 +353,143 @@ class TestOrderSyncService:
             1, "freight_orders.nonexistent", "", {},
         )
         assert result["status"] == "skipped"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 3.5. Webhook → Sync dispatch (process_webhook pipeline)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestWebhookDispatchToSync:
+    """process_webhook routes freight/order events to the sync services."""
+
+    @pytest.mark.asyncio
+    async def test_freight_event_updates_freight_offer(self, db, freight_tables):
+        """A freights.* webhook updates the local freight offer via FreightSyncService."""
+        now = datetime.now(timezone.utc).isoformat()
+        db.conn.execute(
+            "INSERT INTO trans_eu_freight_offers "
+            "(id, company_id, user_id, trans_eu_freight_id, status, origin, destination, created_at, updated_at) "
+            "VALUES ('f7', 1, 1, 700, 'draft', 'Krakow', 'Berlin', ?, ?)",
+            (now, now),
+        )
+        db.conn.commit()
+
+        from services.trans_eu.webhook_ingestion import WebhookIngestionService
+        service = WebhookIngestionService(db)
+        result = await service.process_webhook(
+            company_id=1,
+            event_id="evt-freight-1",
+            event_name="freights.publication.activated",
+            occurred_at=now,
+            payload={
+                "id": "evt-freight-1",
+                "event_name": "freights.publication.activated",
+                "occurred_at": now,
+                "data": {"freight_id": 700},
+            },
+        )
+
+        assert result["status"] == "processed"
+        assert result["category"] == "freight"
+
+        freight = db.conn.execute(
+            "SELECT status, publication_status FROM trans_eu_freight_offers"
+            " WHERE trans_eu_freight_id = 700 AND company_id = 1"
+        ).fetchone()
+        assert freight is not None
+        assert freight[0] == "published"
+        assert freight[1] == "active"
+
+        evt = db.conn.execute(
+            "SELECT status FROM trans_eu_webhook_events"
+            " WHERE trans_eu_event_id = 'evt-freight-1'"
+        ).fetchone()
+        assert evt[0] == "processed"
+
+    @pytest.mark.asyncio
+    async def test_order_created_event_dispatches_to_order_sync(self, db, freight_tables):
+        """freight_orders.order.created routes to OrderSyncService with data=payload['data']."""
+        now = datetime.now(timezone.utc).isoformat()
+
+        from services.trans_eu.webhook_ingestion import WebhookIngestionService
+        from services.trans_eu.sync_service import OrderSyncService
+
+        service = WebhookIngestionService(db)
+        with patch.object(
+            OrderSyncService,
+            "process_order_event",
+            new=AsyncMock(return_value={"status": "synced", "action": "order_created"}),
+        ) as mock_process:
+            result = await service.process_webhook(
+                company_id=1,
+                event_id="evt-order-1",
+                event_name="freight_orders.order.created",
+                occurred_at=now,
+                payload={
+                    "id": "evt-order-1",
+                    "event_name": "freight_orders.order.created",
+                    "occurred_at": now,
+                    "data": {"freight_id": 800, "status": "created"},
+                },
+            )
+
+        mock_process.assert_awaited_once_with(
+            1, "freight_orders.order.created", now, {"freight_id": 800, "status": "created"}
+        )
+
+        assert result["status"] == "processed"
+        assert result["category"] == "order"
+
+        evt = db.conn.execute(
+            "SELECT status FROM trans_eu_webhook_events"
+            " WHERE trans_eu_event_id = 'evt-order-1'"
+        ).fetchone()
+        assert evt[0] == "processed"
+
+    @pytest.mark.asyncio
+    async def test_failing_sync_goes_to_dlq_and_failed(self, db, freight_tables):
+        """A sync service exception marks the event failed and stores it in the DLQ."""
+        from services.trans_eu.webhook_ingestion import WebhookIngestionService
+        from services.trans_eu.sync_service import FreightSyncService
+
+        service = WebhookIngestionService(db)
+        with patch.object(
+            FreightSyncService,
+            "process_freight_event",
+            new=AsyncMock(side_effect=RuntimeError("sync boom")),
+        ):
+            result = await service.process_webhook(
+                company_id=1,
+                event_id="evt-fail-1",
+                event_name="freights.freight.update",
+                occurred_at="2026-01-25T11:41:11+00:00",
+                payload={
+                    "id": "evt-fail-1",
+                    "event_name": "freights.freight.update",
+                    "data": {"freight_id": 1},
+                },
+            )
+
+        assert result["status"] == "failed"
+        assert "sync boom" in result.get("error", "")
+
+        evt = db.conn.execute(
+            "SELECT status, error_message FROM trans_eu_webhook_events"
+            " WHERE trans_eu_event_id = 'evt-fail-1'"
+        ).fetchone()
+        assert evt[0] == "failed"
+        assert "sync boom" in evt[1]
+
+        dlq = db.conn.execute(
+            "SELECT trans_eu_event_id, status, error_type, error_message"
+            " FROM trans_eu_webhook_events_failed"
+        ).fetchone()
+        assert dlq is not None
+        assert dlq[0] == "evt-fail-1"
+        assert dlq[1] == "pending"
+        assert dlq[2] == "processing"
+        assert "sync boom" in dlq[3]
 
 
 # ═══════════════════════════════════════════════════════════════════════
