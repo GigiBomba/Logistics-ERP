@@ -1,3 +1,5 @@
+> **CLOSE-OUT NOTE (2026-09-19 audit — verified FULLY implemented):** 59 routers in `backend/api/v1/`; uv setup (`[tool.uv]` in `pyproject.toml` + hashed `requirements.lock`); root `.env.example` 58-line compliant superset (no secret values); `docker/Dockerfile.worker` uv + trixie apt fixes (`libglib2.0-0t64`), worker image builds. Documented residuals: main `docker/Dockerfile` uses the `pip install uv` → `uv pip install` build path, and `build.bat` deliberately keeps pip (`REM Why pip (and not uv)?` — uv absent on the Windows packaging host) — a documented deviation, not a functional gap. Moved from repo root to `archive/completed/` on 2026-09-19.
+
 # ARCHITECTURAL REWORK PLAN
 
 ## Comprehensive Blueprint for Decoupling the Operion ERP Monolith into a Distributed API Engine

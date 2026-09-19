@@ -1,3 +1,5 @@
+> **CLOSE-OUT NOTE (2026-09-19 audit — verified FULLY implemented):** Share dialog + `ui/dialogs/share_receipt_dialog.py` (clipboard/save-as/OS-open, disabled-until-PDF guard); trip/invoice autofill via `ui/utils/autofill.py:26-40` (fill-only-if-empty, Invoice>Trip precedence); language field fully wired (`ui/views/receipt_editor/editor_form.py:702-704` LANGUAGES-driven combo, persisted at `editor_form.py:2093` in `_collect_receipt_data`, i18n-routed); 11 receipt types at `services/invoicing/receipt_generator.py:510-521`; 100+ i18n keys. Moved from repo root to `archive/completed/` on 2026-09-19.
+
 # Operion AI Prompt – Design & Implement a Professional Receipt Generator
 
 ## Objective
