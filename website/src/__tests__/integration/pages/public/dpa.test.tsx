@@ -15,6 +15,13 @@ describe("DpaPage", () => {
     expect(screen.getByText(/DRAFT — for legal\/counsel review only/)).toBeInTheDocument()
   })
 
+  it("sets a draft-accurate SEO meta description", () => {
+    render(<DpaPage />)
+    const meta = document.querySelector('meta[name="description"]')
+    expect(meta).toBeInTheDocument()
+    expect(meta).toHaveAttribute("content", expect.stringContaining("draft"))
+  })
+
   it("renders the DPA document sections from public/dpa/operion-dpa.md", () => {
     render(<DpaPage />)
     expect(screen.getByRole("heading", { level: 2, name: /1\. Parties/ })).toBeInTheDocument()

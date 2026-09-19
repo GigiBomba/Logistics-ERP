@@ -72,8 +72,10 @@ jobs:
       - name: Install Playwright chromium
         run: npx playwright install chromium --with-deps
 
+      # accessibility-basics.spec.ts runs once, in its dedicated gate below —
+      # --grep-invert keeps it out of the generic critical run.
       - name: Critical E2E
-        run: npx playwright test e2e/critical
+        run: npx playwright test e2e/critical --grep-invert accessibility-basics
         env:
           CI: "true"
 

@@ -213,9 +213,13 @@ export default function DpaPage() {
     <>
       <SeoHead
         title={t("trust.dpaTitle")}
-        description={t("trust.dpaContent")}
+        description={t("trust.dpaDraftSeo")}
         canonical="https://operionerp.xyz/dpa"
       />
+      {/* PageHeader keeps trust.dpaContent (standard-DPA availability copy shared
+          with the trust page); the SEO description uses the draft-accurate
+          trust.dpaDraftSeo so search snippets don't over-promise a signed DPA
+          while this page shows the draft template. */}
       <PageHeader title={t("trust.dpaTitle")} description={t("trust.dpaContent")} />
 
       <SectionWrapper>

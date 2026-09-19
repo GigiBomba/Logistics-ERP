@@ -1101,6 +1101,7 @@
   "trust.ctaButton": "Get in touch",
   "trust.dpaTitle": "Data Processing Agreement (DPA)",
   "trust.dpaContent": "A standard Data Processing Agreement is available for our enterprise customers. Contact us at dpa@operionerp.xyz to request a signed DPA.",
+  "trust.dpaDraftSeo": "Review Operion's draft Data Processing Agreement (DPA) template — in progress for legal review. Contact dpa@operionerp.xyz for questions.",
   "trust.dpaDownload": "Download DPA template",
   "trust.dataRetention": "Data Retention",
   "trust.dataRetentionDesc": "How long we retain different categories of data.",
