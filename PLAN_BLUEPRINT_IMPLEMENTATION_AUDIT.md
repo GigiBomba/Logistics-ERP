@@ -13,13 +13,13 @@
 |---|----------|-------|---------|-------|
 | 1 | Operion_Freight_Exchange_Module_Blueprint.md | blueprint | ✅ FULLY IMPLEMENTED | ~95% |
 | 2 | TransEU_Phase1_Implementation.md | blueprint | ✅ FULLY IMPLEMENTED | 100% |
-| 3 | OPERION_BLUEPRINT.md | blueprint | 🟡 MOSTLY IMPLEMENTED | ~85% |
+| 3 | OPERION_BLUEPRINT.md | blueprint | ✅ FULLY IMPLEMENTED → archived | 100% |
 | 4 | Operion_AI_CoPilot_Blueprint_V4.md (root) | blueprint | ✅ FULLY IMPLEMENTED | 100% |
 | 6 | PLAN_PHASE_C_FINANCIAL_PRECISION.md | plan | ✅ FULLY IMPLEMENTED | 100% |
 | 7 | PLAN_PHASE_D_DATETIME_INTEGRITY.md | plan | ✅ FULLY IMPLEMENTED | 100% |
 | 8 | Proforma Invoice Plan.md | plan | ✅ FULLY IMPLEMENTED | 100% |
 | 9 | receipt_generator_plan.md | blueprint | 🟡 MOSTLY IMPLEMENTED | ~85% |
-| 10 | ui_optimization_plan.md | plan | 🟡 MOSTLY IMPLEMENTED | ~75% |
+| 10 | ui_optimization_plan.md | plan | ✅ FULLY IMPLEMENTED → archived | 100% |
 | 11 | UI_AUDIT_2026_FINDINGS_AND_PLAN.md | hybrid | ✅ FULLY IMPLEMENTED → archived | 100% |
 | 12 | ARCHITECTURALREWORK.md | hybrid | 🟡 MOSTLY IMPLEMENTED | ~85% |
 | 13 | MIGRATION2313.md | hybrid | ✅ FULLY IMPLEMENTED | 100% |
@@ -37,7 +37,7 @@
 
 > **#5 note (2026-09-14):** the website copy of the V4 blueprint was a rendering-escaped duplicate with no content delta; it was deleted on 2026-09-14 and root #4 is the sole canonical doc (see final update below). The gap in row numbering (#5) is intentional — historical update references below retain their original numbers.
 
-**Action taken:** docs #1 and #2 (fully implemented) were moved to `archive/completed/` (gitignored via `archive/`). A second batch (#6, #7, #8, #13, #17) was fully implemented by the 2026-09-07 implementation program and moved there too — see the update section below. A third batch (#19-#23) was fully implemented by the 2026-09-09 program and also moved to `archive/completed/`.
+**Action taken:** docs #1 and #2 (fully implemented) were moved to `archive/completed/` (gitignored via `archive/`). A second batch (#6, #7, #8, #13, #17) was fully implemented by the 2026-09-07 implementation program and moved there too — see the update section below. A third batch (#19-#23) was fully implemented by the 2026-09-09 program and also moved to `archive/completed/`. A fourth batch (#3 OPERION_BLUEPRINT, #10 ui_optimization_plan, #11 UI_AUDIT_2026) was verified fully implemented on 2026-09-19 and moved to `archive/completed/` too (each archived doc carries its own close-out note).
 
 ---
 
@@ -57,8 +57,8 @@ Every Phase 0–4 deliverable present and corroborated by spot-check:
 
 ## 🟡 Mostly implemented (core scope present, ≥1 material gap)
 
-### 3. OPERION_BLUEPRINT.md — ~85% (master system blueprint)
-All major subsystems exist: 40+ FastAPI routers, full desktop view set (Overview/Analytics/Fleet/Dispatch/RoutePlanner/Calculator/CoPilot/Freight), repository pattern + permissions, Wialon/Frotcom/Navixy tracking adapters, Celery OCR/retention/GPS tasks, document automation pipeline (OCR → matcher → AI fallback), CMR + eFTI XML, dunner engine, mobile app (mode router, driver/dispatcher shells, sync engine, fleet map). Gaps: all closed 2026-09-14 (deepwork session) — `QtRoutePlannerView` now subclasses `BaseView` (oracle-approved migration + contract-site tests); World Model fully implemented (`backend/copilot/world_model.py`, 10 section builders, no stub); mobile Freight Exchange screen is a real browse/import/evaluate screen (Flutter, 25 tests); invoice-status machine is an 11-state additive superset of the blueprint (adds submitted_externally/queued/submitting/accepted/rejected/manual_review, keeps local mark-paid paths).
+### 3. OPERION_BLUEPRINT.md — ✅ FULLY IMPLEMENTED → ARCHIVED (2026-09-19)
+All major subsystems exist: 40+ FastAPI routers, full desktop view set (Overview/Analytics/Fleet/Dispatch/RoutePlanner/Calculator/CoPilot/Freight), repository pattern + permissions, Wialon/Frotcom/Navixy tracking adapters, Celery OCR/retention/GPS tasks, document automation pipeline (OCR → matcher → AI fallback), CMR + eFTI XML, dunner engine, mobile app (mode router, driver/dispatcher shells, sync engine, fleet map). The 4 remaining gaps are verified closed (2026-09-19, G1-approved): `QtRoutePlannerView` → `BaseView` (`ui/views/route_planner_view.py:282`); invoice status machine is an 11-state additive superset (`models/invoice_models.py:34-65` — adds submitted_externally/queued/submitting/accepted/rejected/manual_review, keeps local mark-paid paths); mobile Freight Exchange is a real browse/import/evaluate screen; WorldModel has all 10 section builders live (`backend/copilot/world_model.py:165-176`). **Verified FULLY implemented (100%) and archived to `archive/completed/OPERION_BLUEPRINT.md` (2026-09-19).**
 
 ### 4. Operion_AI_CoPilot_Blueprint_V4.md — FULLY IMPLEMENTED (close-out 2026-09-14)
 Root doc is the sole canonical copy (the rendering-escaped website duplicate was deleted 2026-09-14). Oracle G1 approved the full-implementation declaration on 2026-09-14; archived to `archive/completed/Operion_AI_CoPilot_Blueprint_V4.md` on 2026-09-14 (commit 4bb0695d). Verified implemented: schemas, 80 registered tools (exceeds claimed 67), reasoning graph, executor state machine, tier gate, audit log, insight jobs (7), circuit breaker, LLM routing, voice language tiers, help tools, 107 test files. Gaps recorded at the original ~75% audit (voice pipeline stub-only; kill-switch dead code; guardrail/circuit-breaker not wired into hot path; confirmation flow broken end-to-end; typed-phrase validation never enforced; Autonomous Mode/Phase 4 not built) were closed by the LLM-FIRST program and the final cleanup program documented in the updates below.
@@ -75,8 +75,8 @@ Phase 0–7 all substantially built: table + indices + `proforma_repository.py`;
 ### 9. receipt_generator_plan.md — ~85%
 Full ReportLab generator (`receipt_generator.py`, 1075 lines): 11 receipt types, two-column editor w/ live HTML preview, parties, payment details, VAT auto-calc, amount-in-words, employee-expense section, signatures/stamps, attachments, ~135 translation keys, `receipt_repository` numbering formats, tab in GeneratorsView, dedicated tests (incl. API). Gaps: all closed 2026-09-14 (deepwork session) — Share button + `ui/dialogs/share_receipt_dialog.py` (clipboard/save-as/OS-open, disabled-until-PDF guard); trip/invoice autofill (vehicle, employee/Driver, amount/currency) fill-only-if-empty with Invoice>Trip precedence + shared `ui/utils/autofill.py`; language field fully wired (persisted in `_collect_receipt_data`, LANGUAGES-driven combo, i18n). Effectively ~100%.
 
-### 10. ui_optimization_plan.md — ~75%
-All perf items C1–C12 verified (LIKE→range query `analytics_repository.py:158`, autocommit off, batch driver lookup, async WorkerPool loads, diff-based fleet tracking refresh, lazy analytics tabs, composite indexes), plus density/maintenance-hub items. Missing: C13 (generators combo reuse), C14 (client workspace chart staleness), and Phase 5 design-token items — `SPACE_3/SPACE_5` still 12/20, `BTN_HEIGHT` still 32, 20+ raw `border-radius: 2px` not tokenized; Phase 6 nav rework untouched.
+### 10. ui_optimization_plan.md — ✅ FULLY IMPLEMENTED → ARCHIVED (2026-09-19)
+All perf items C1–C12 verified (LIKE→range query `analytics_repository.py:158`, autocommit off, batch driver lookup, async WorkerPool loads, diff-based fleet tracking refresh, lazy analytics tabs, composite indexes), plus density/maintenance-hub items. C13 (generators combo reuse — `generators_view.py:694-706`), C14 (client workspace chart staleness — `client_workspace.py:639-645`) and Phase 6 nav rework (`main_window.py:411-515`) verified closed (2026-09-19). Phase 5 token values (`SPACE_3=16`, `SPACE_5=24`, `BTN_HEIGHT=38`) deliberately NOT applied — superseded by the user's visual-parity directive (2026-09-16, commits 6f93e9ff restore + 10612a70 tokenize); canonical values 12/20/32 are the parity baseline; 7 raw 3px/5px literals in theme_engine.py grandfathered per UI_AUDIT G1 ruling (scrollbar 3px intentional for 6px track). **Closed FULLY-implemented-with-documented-parity-deviation; archived to `archive/completed/ui_optimization_plan.md` (2026-09-19).**
 
 ### 11. UI_AUDIT_2026_FINDINGS_AND_PLAN.md — ✅ FULLY IMPLEMENTED → ARCHIVED (2026-09-19)
 Real: STATUS_STYLES i18n, maintenance hub, component canonicalization (`ui/components.py`), collapsible filter sections, window min 1280×720 tokens, IBM Plex fonts, `tools/ui_style_gate.py`, evidence dirs. Contradicted claims: all resolved 2026-09-14 (deepwork session) — `PlaceholderView` deleted (dead code; registry fully populated) and the error fallback redesigned (EmptyState + sanitized message + Retry, raw exception logged only); `_PlaceholderPanel` removed with real ConfigPanel/TimelinePanel/EditorPanel wired directly (lazy scaffold dropped); route planner uses the shared bus via `BaseView`; `board_state.py` QMutex present (ui-bug-sweep Fix 17). **All 20 findings CLOSED or documented-debt (UI_AUDIT close-out, 2026-09-19); archived to `archive/completed/UI_AUDIT_2026_FINDINGS_AND_PLAN.md`.** Residuals documented as deliberate: RADIUS_XL visual parity (G1 2026), 3px/5px micro-tunings in theme_engine/dispatch_alerts_panel (grandfathered, scrollbar 3px for 6px track), 640 inline-QSS grandfather.

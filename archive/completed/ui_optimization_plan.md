@@ -1,3 +1,5 @@
+> **CLOSE-OUT NOTE (2026-09-19):** Phase 5 token values (SPACE_3=16, SPACE_5=24, BTN_HEIGHT=38) deliberately NOT applied — superseded by the user's visual-parity directive (2026-09-16, commits 6f93e9ff restore + 10612a70 tokenize). Canonical values 12/20/32 are the parity baseline. Residuals: 7 raw 3px/5px literals in theme_engine.py grandfathered per UI_AUDIT G1 ruling (scrollbar 3px intentional for 6px track). Closed FULLY-implemented-with-documented-parity-deviation. Moved from repo root to `archive/completed/` on 2026-09-19.
+
 # Phase 3–7: UI Optimization Execution Plan
 
 ---

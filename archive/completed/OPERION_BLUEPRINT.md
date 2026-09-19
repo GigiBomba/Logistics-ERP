@@ -1,3 +1,10 @@
+> **CLOSE-OUT NOTE (2026-09-19):** the 4 remaining gaps are verified closed as of this
+> batch (G1-approved): `QtRoutePlannerView` → `BaseView` (`ui/views/route_planner_view.py:282`);
+> invoice status machine is an 11-state superset (`models/invoice_models.py:34-65`); mobile
+> Freight Exchange is a real browse/import/evaluate screen; WorldModel has all 10 section
+> builders live (`backend/copilot/world_model.py:165-176`). Archive reason: fully-implemented.
+> Moved from repo root to `archive/completed/` on 2026-09-19.
+
 # Operion ERP — Complete System Blueprint
 
 > **Audience:** Senior software engineer / architect new to the project
