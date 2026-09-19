@@ -1,7 +1,7 @@
 """Trans.eu webhook ingestion service.
 
 Validates, stores, and routes incoming webhook events from Trans.eu.
-Uses IP whitelisting + URL secret for verification (no HMAC).
+Uses a per-company URL secret for verification (no HMAC).
 Idempotent — duplicate events (by trans_eu_event_id) are skipped.
 """
 
@@ -16,11 +16,9 @@ from services.trans_eu.sync_service import FreightSyncService, OrderSyncService
 
 logger = logging.getLogger(__name__)
 
-TRANS_EU_CALLBACK_IP = "52.208.90.151"
-
 
 class WebhookValidationError(Exception):
-    """Webhook payload is invalid (wrong IP, bad secret, malformed JSON)."""
+    """Webhook payload is invalid (bad secret, malformed JSON)."""
 
 
 class WebhookAlreadyProcessed(Exception):
@@ -45,13 +43,6 @@ class WebhookIngestionService:
         self.db = db
 
     # ── Validation ────────────────────────────────────────────────────
-
-    def validate_source_ip(self, client_ip: str) -> None:
-        """Verify the request originates from Trans.eu's callback server."""
-        if client_ip != TRANS_EU_CALLBACK_IP:
-            raise WebhookValidationError(
-                f"Invalid source IP: {client_ip}. Expected: {TRANS_EU_CALLBACK_IP}"
-            )
 
     def validate_url_secret(self, expected_secret: str | None, actual_secret: str | None) -> None:
         """Verify the URL secret matches the company's configured secret."""

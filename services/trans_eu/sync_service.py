@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -235,11 +236,9 @@ class OrderSyncService:
     ) -> dict:
         """Process a freight_orders.* webhook event."""
         freight_id = data.get("freight_id")
-        status = data.get("status")
 
         if event_name == "freight_orders.order.created":
-            logger.info("Order created for freight %s", freight_id)
-            return {"status": "synced", "action": "order_created"}
+            return self._handle_order_created(company_id, data)
 
         if event_name == "freight_orders.order.delivery_was_confirmed":
             return self._update_linked_trip(company_id, freight_id, "Delivered")
@@ -251,6 +250,140 @@ class OrderSyncService:
             return self._update_linked_trip(company_id, freight_id, "Delivered")
 
         return {"status": "skipped", "reason": f"unhandled_event:{event_name}"}
+
+    def _handle_order_created(self, company_id: int, data: dict) -> dict:
+        """Persist a Trans.eu ``freight_orders.order.created`` event locally.
+
+        Maps the Trans.eu order payload onto the ``freight_orders`` table::
+
+            trans_eu_order_id   ← data.id / data.order_id
+            trans_eu_freight_id ← data.freight_id
+            order_number        ← data.order_number / freight_reference_number
+                                  / shipment_external_id
+            price_amount        ← data.price.amount (or scalar data.price)
+            price_currency      ← data.price.currency (default EUR)
+            payment_type        ← data.payment_type
+            execution_data      ← full event data serialized as JSON
+
+        Dedupe relies on ``UNIQUE(company_id, trans_eu_order_id)``: an existing
+        row is updated, otherwise a new row is created.  When the linked
+        freight offer has an ``operion_trip_id`` the order is linked to that
+        trip via :meth:`FreightOrderRepository.link_trip`.
+
+        Errors are logged and returned as ``{"status": "failed", ...}`` — the
+        ingestion pipeline keeps the always-200 webhook contract and routes
+        any unhandled exception to the dead letter queue.
+        """
+        from repositories.trans_eu_domain_repository import FreightOrderRepository
+
+        order_id = data.get("id") or data.get("order_id")
+        freight_id = data.get("freight_id")
+
+        if not order_id or freight_id is None:
+            logger.warning(
+                "Order sync skipped: missing order_id/freight_id (company=%s data=%s)",
+                company_id, data,
+            )
+            return {"status": "skipped", "reason": "missing_order_id_or_freight_id"}
+
+        try:
+            freight_id = int(freight_id)
+        except (ValueError, TypeError):
+            logger.warning("Order sync skipped: invalid freight_id %r", freight_id)
+            return {"status": "skipped", "reason": "invalid_freight_id"}
+
+        order_number = (
+            data.get("order_number")
+            or data.get("freight_reference_number")
+            or data.get("shipment_external_id")
+            or ""
+        )
+        price_amount, price_currency = self._extract_price(data.get("price"))
+        payment_type = data.get("payment_type") or ""
+        execution_data = json.dumps(data, default=str)
+        status = data.get("status") or "created"
+
+        repo = FreightOrderRepository(self.db)
+        try:
+            existing = repo.get_by_trans_eu_order_id(company_id, str(order_id))
+            if existing:
+                repo.update_status(company_id, str(order_id), status)
+                self.db.conn.execute(
+                    """UPDATE freight_orders
+                       SET trans_eu_freight_id = ?, order_number = ?,
+                           price_amount = ?, price_currency = ?,
+                           payment_type = ?, execution_data = ?, updated_at = ?
+                       WHERE company_id = ? AND trans_eu_order_id = ?""",
+                    (freight_id, order_number, price_amount, price_currency,
+                     payment_type, execution_data,
+                     datetime.now(timezone.utc).isoformat(),
+                     company_id, str(order_id)),
+                )
+                self.db.conn.commit()
+                action = "updated"
+            else:
+                repo.create({
+                    "id": str(uuid.uuid4()),
+                    "company_id": company_id,
+                    "trans_eu_order_id": str(order_id),
+                    "trans_eu_freight_id": freight_id,
+                    "order_number": order_number,
+                    "status": status,
+                    "price_amount": price_amount,
+                    "price_currency": price_currency,
+                    "payment_type": payment_type,
+                    "execution_data": execution_data,
+                })
+                action = "created"
+        except Exception as e:
+            logger.exception(
+                "Order sync failed for order %s (company=%s)", order_id, company_id,
+            )
+            return {"status": "failed", "order_id": str(order_id), "error": str(e)}
+
+        # Trip linking via trans_eu_freight_offers.operion_trip_id
+        try:
+            row = self.db.conn.execute(
+                "SELECT operion_trip_id FROM trans_eu_freight_offers "
+                "WHERE trans_eu_freight_id = ? AND company_id = ? "
+                "AND operion_trip_id IS NOT NULL",
+                (freight_id, company_id),
+            ).fetchone()
+            if row and row[0]:
+                repo.link_trip(company_id, str(order_id), int(row[0]))
+                logger.info("Order %s linked to trip %s", order_id, row[0])
+        except Exception as e:
+            logger.warning(
+                "Order sync: failed to link trip for order %s (company=%s): %s",
+                order_id, company_id, e,
+            )
+
+        return {
+            "status": "synced",
+            "order_id": str(order_id),
+            "freight_id": freight_id,
+            "action": action,
+        }
+
+    @staticmethod
+    def _extract_price(price: Any) -> tuple[Any, str]:
+        """Normalize a Trans.eu price value into ``(amount, currency)``.
+
+        Accepts a plain scalar (``price=560.20``) or a mapping with
+        ``amount`` / ``currency`` keys (``{"amount": 560.20, "currency": "EUR"}``).
+        """
+        if isinstance(price, dict):
+            amount = price.get("amount", price.get("value"))
+            currency = price.get("currency") or "EUR"
+        else:
+            amount = price
+            currency = "EUR"
+        if amount is None:
+            return None, currency
+        try:
+            return float(amount), currency
+        except (TypeError, ValueError):
+            return None, currency
 
     def _update_linked_trip(
         self, company_id: int, freight_id: int | None, new_status: str,

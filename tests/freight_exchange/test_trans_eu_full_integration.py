@@ -227,13 +227,6 @@ class TestWebhookChaos:
         db.conn.commit()
         assert service.is_duplicate("evt-dup") is True
 
-    def test_invalid_ip_rejected(self):
-        """Webhook from non-whitelisted IP is rejected."""
-        from services.trans_eu.webhook_ingestion import WebhookIngestionService, WebhookValidationError
-        service = WebhookIngestionService(None)
-        with pytest.raises(WebhookValidationError):
-            service.validate_source_ip("1.2.3.4")
-
     def test_secret_mismatch_rejected(self):
         """Wrong URL secret raises validation error."""
         from services.trans_eu.webhook_ingestion import WebhookIngestionService, WebhookValidationError

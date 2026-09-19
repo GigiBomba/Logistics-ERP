@@ -300,15 +300,30 @@ async def _dispatch_webhook(
     """
     HANDLERS: dict[str, Callable] = {
         "timocom": _handle_timocom_webhook,
-        "trans-eu": _handle_trans_eu_webhook,
     }
+
+    if partner == "trans-eu":
+        # Trans.eu webhooks have a dedicated company-scoped receiver
+        # (POST /webhooks/trans-eu/{company_id}) — see receive_trans_eu_webhook.
+        # The generic legacy route must NOT dispatch these; emit a clear
+        # "moved" marker instead of publishing a garbage webhook.trans-eu.*
+        # event on the bus.
+        logger.warning(
+            "Trans.eu webhook received on legacy generic route POST /webhooks/%s "
+            "— use POST /api/v1/webhooks/trans-eu/{company_id} (event=%s id=%s)",
+            partner, event_type, event_id,
+        )
+        return {
+            "status": "moved",
+            "details": (
+                "Trans.eu webhooks moved to POST /api/v1/webhooks/trans-eu/{company_id}; "
+                "the generic /webhooks/{partner} route no longer handles trans-eu"
+            ),
+        }
 
     handler = HANDLERS.get(partner)
     if handler:
-        if partner == "timocom":
-            return handler(db, event_type, payload)
-        # trans-eu handler is async and requires different arguments
-        return await handler(payload=payload, db=db, event_id=event_id)
+        return handler(db, event_type, payload)
 
     # Generic fallback — publish to the internal event bus
     return _publish_event_bus_event(db, f"webhook.{partner}.{event_type}", payload)
@@ -357,60 +372,29 @@ def _handle_timocom_webhook(db, event_type: str, payload: dict) -> dict:
 
 
 async def _handle_trans_eu_webhook(payload: dict, db, event_id: int) -> dict:
-    """Handle a Trans.eu webhook event.
+    """Legacy Trans.eu webhook handler — **moved**.
 
-    Trans.eu webhook format:
-    {
-        "id": "87795",
-        "event_name": "freights.proposal_request.accepted",
-        "occurred_at": "2026-01-25T11:41:11+00:00",
-        "data": {"price": 560.20}
-    }
+    Trans.eu webhooks are now processed by the dedicated company-scoped
+    receiver :func:`receive_trans_eu_webhook`
+    (``POST /api/v1/webhooks/trans-eu/{company_id}``).  ``_dispatch_webhook``
+    returns a ``moved`` marker for the ``trans-eu`` partner so the generic
+    ``POST /webhooks/{partner}`` route never dispatches these events.
 
-    Trans.eu doesn't include company_id in the webhook payload.
-    We look up the company from the freight_id/order_id in the
-    event data by querying our local FreightOffer table.
+    Kept as a thin marker so any stale direct callers get an explicit
+    migration signal instead of silent garbage handling.
     """
-    from services.trans_eu.webhook_ingestion import WebhookIngestionService
-
-    event_name = payload.get("event_name", "")
-    trans_eu_event_id = str(payload.get("id", ""))
-    occurred_at = payload.get("occurred_at", "")
-    data = payload.get("data", {})
-
-    if not trans_eu_event_id or not event_name:
-        return {"status": "skipped", "reason": "missing event_id or event_name"}
-
-    # Extract company_id from the event data
-    # Trans.eu doesn't send company_id — derive it from freight_id lookups
-    company_id = _extract_company_from_trans_eu_event(payload, db)
-    if company_id is None:
-        # Try to find from the freight_id or order_id in event data
-        freight_id = payload.get("id")  # "id" is freight_id for freight events
-        if freight_id:
-            try:
-                row = db.conn.execute(
-                    "SELECT company_id FROM trans_eu_freight_offers WHERE trans_eu_freight_id = ?",
-                    (int(freight_id),),
-                ).fetchone()
-                if row:
-                    company_id = row[0]
-            except Exception:
-                logger.warning("Failed to resolve company_id for Trans.eu event %s", trans_eu_event_id, exc_info=True)
-                pass
-
-    if company_id is None:
-        logger.warning("Cannot determine company_id for Trans.eu event %s", trans_eu_event_id)
-        return {"status": "skipped", "reason": "unknown_company"}
-
-    service = WebhookIngestionService(db)
-    return await service.process_webhook(
-        company_id=company_id,
-        event_id=trans_eu_event_id,
-        event_name=event_name,
-        occurred_at=occurred_at,
-        payload=payload,
+    logger.warning(
+        "Legacy _handle_trans_eu_webhook called (event_id=%s) — Trans.eu "
+        "webhooks moved to POST /api/v1/webhooks/trans-eu/{company_id}",
+        event_id,
     )
+    return {
+        "status": "moved",
+        "details": (
+            "Trans.eu webhooks moved to POST /api/v1/webhooks/trans-eu/{company_id}; "
+            "the generic /webhooks/{partner} route no longer handles trans-eu"
+        ),
+    }
 
 
 def _extract_company_from_trans_eu_event(payload: dict, db) -> int | None:

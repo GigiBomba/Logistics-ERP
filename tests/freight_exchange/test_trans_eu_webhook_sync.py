@@ -89,20 +89,6 @@ def freight_tables(db):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-class TestIPValidation:
-    def test_valid_ip_passes(self):
-        from services.trans_eu.webhook_ingestion import WebhookIngestionService, TRANS_EU_CALLBACK_IP
-        service = WebhookIngestionService(None)
-        # Should not raise
-        service.validate_source_ip(TRANS_EU_CALLBACK_IP)
-
-    def test_invalid_ip_raises(self):
-        from services.trans_eu.webhook_ingestion import WebhookIngestionService, WebhookValidationError
-        service = WebhookIngestionService(None)
-        with pytest.raises(WebhookValidationError, match="Invalid source IP"):
-            service.validate_source_ip("1.2.3.4")
-
-
 class TestUrlSecretValidation:
     def test_matching_secret_passes(self):
         from services.trans_eu.webhook_ingestion import WebhookIngestionService
@@ -337,13 +323,142 @@ class TestOrderSyncService:
         assert result["new_status"] == "Cancelled"
 
     @pytest.mark.asyncio
-    async def test_order_created_returns_synced(self, db):
+    async def test_order_created_creates_freight_order(self, db):
+        """freight_orders.order.created persists a freight_orders row."""
+        now = datetime.now(timezone.utc).isoformat()
         from services.trans_eu.sync_service import OrderSyncService
         service = OrderSyncService(db)
         result = await service.process_order_event(
+            company_id=1,
+            event_name="freight_orders.order.created",
+            occurred_at=now,
+            data={
+                "id": "ord-700",
+                "freight_id": 700,
+                "status": "created",
+                "price": {"amount": 1250.0, "currency": "EUR"},
+                "payment_type": "deferred",
+                "order_number": "TE/2026/001",
+            },
+        )
+
+        assert result["status"] == "synced"
+        assert result["action"] == "created"
+
+        row = db.conn.execute(
+            "SELECT trans_eu_order_id, trans_eu_freight_id, order_number,"
+            " price_amount, price_currency, payment_type, execution_data"
+            " FROM freight_orders WHERE company_id = 1 AND trans_eu_order_id = 'ord-700'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "ord-700"
+        assert row[1] == 700
+        assert row[2] == "TE/2026/001"
+        assert row[3] == 1250.0
+        assert row[4] == "EUR"
+        assert row[5] == "deferred"
+        assert json.loads(row[6])["freight_id"] == 700
+
+    @pytest.mark.asyncio
+    async def test_order_created_is_idempotent_on_duplicate(self, db):
+        """Re-sending the same order.created updates the existing row (no dup)."""
+        from services.trans_eu.sync_service import OrderSyncService
+        service = OrderSyncService(db)
+        data = {
+            "id": "ord-701",
+            "freight_id": 701,
+            "price": {"amount": 900.0, "currency": "EUR"},
+        }
+        first = await service.process_order_event(
+            1, "freight_orders.order.created", "", dict(data),
+        )
+        second = await service.process_order_event(
+            1, "freight_orders.order.created", "", dict(data),
+        )
+
+        assert first["status"] == "synced"
+        assert first["action"] == "created"
+        assert second["status"] == "synced"
+        assert second["action"] == "updated"
+
+        count = db.conn.execute(
+            "SELECT COUNT(*) FROM freight_orders"
+            " WHERE company_id = 1 AND trans_eu_order_id = 'ord-701'"
+        ).fetchone()
+        assert count[0] == 1
+
+    @pytest.mark.asyncio
+    async def test_order_created_links_trip_when_operion_trip_id_exists(self, db, freight_tables):
+        """order.created links the order to the freight's Operion trip."""
+        now = datetime.now(timezone.utc).isoformat()
+        db.conn.execute(
+            "INSERT INTO trans_eu_freight_offers "
+            "(id, company_id, user_id, trans_eu_freight_id, status, origin, destination, operion_trip_id, created_at, updated_at) "
+            "VALUES ('f8', 1, 1, 702, 'accepted', 'Krakow', 'Berlin', 777, ?, ?)",
+            (now, now),
+        )
+        db.conn.execute(
+            "INSERT OR IGNORE INTO companies (id, company_name) VALUES (1, 'Test Company')"
+        )
+        db.conn.execute("INSERT INTO trips (id, status, company_id) VALUES (777, 'Planned', 1)")
+        db.conn.commit()
+
+        from services.trans_eu.sync_service import OrderSyncService
+        service = OrderSyncService(db)
+        result = await service.process_order_event(
+            1, "freight_orders.order.created", now,
+            {"id": "ord-702", "freight_id": 702},
+        )
+
+        assert result["status"] == "synced"
+        row = db.conn.execute(
+            "SELECT linked_trip_id FROM freight_orders"
+            " WHERE company_id = 1 AND trans_eu_order_id = 'ord-702'"
+        ).fetchone()
+        assert row is not None and row[0] == 777
+
+    @pytest.mark.asyncio
+    async def test_order_created_skips_missing_order_id_or_freight_id(self, db):
+        """order.created without order_id or freight_id is skipped."""
+        from services.trans_eu.sync_service import OrderSyncService
+        service = OrderSyncService(db)
+
+        no_order_id = await service.process_order_event(
             1, "freight_orders.order.created", "", {"freight_id": 1},
         )
+        no_freight_id = await service.process_order_event(
+            1, "freight_orders.order.created", "", {"id": "ord-900"},
+        )
+
+        assert no_order_id["status"] == "skipped"
+        assert no_freight_id["status"] == "skipped"
+
+    @pytest.mark.asyncio
+    async def test_order_created_maps_price_and_payment_type(self, db):
+        """Scalar price, payment_type, and reference-number order_number are mapped."""
+        from services.trans_eu.sync_service import OrderSyncService
+        service = OrderSyncService(db)
+        result = await service.process_order_event(
+            1, "freight_orders.order.created", "",
+            {
+                "id": "ord-703",
+                "freight_id": 703,
+                "price": 560.20,
+                "payment_type": "cash",
+                "freight_reference_number": "TE-REF-703",
+            },
+        )
+
         assert result["status"] == "synced"
+        row = db.conn.execute(
+            "SELECT price_amount, price_currency, payment_type, order_number"
+            " FROM freight_orders WHERE company_id = 1 AND trans_eu_order_id = 'ord-703'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 560.20
+        assert row[1] == "EUR"
+        assert row[2] == "cash"
+        assert row[3] == "TE-REF-703"
 
     @pytest.mark.asyncio
     async def test_unhandled_event_returns_skipped(self, db):

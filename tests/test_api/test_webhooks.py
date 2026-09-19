@@ -199,6 +199,24 @@ class TestDispatchWebhook:
             )
             assert result == {"status": "dispatched"}
 
+    @pytest.mark.asyncio
+    async def test_trans_eu_partner_returns_moved(self):
+        """Partner 'trans-eu' on the generic route returns a 'moved' marker.
+
+        Trans.eu webhooks are handled by the dedicated company-scoped receiver
+        (POST /api/v1/webhooks/trans-eu/{company_id}) — the generic route must
+        NOT dispatch them or publish a garbage ``webhook.trans-eu.*`` event.
+        """
+        with patch("backend.api.v1.webhooks._publish_event_bus_event") as pub:
+            db = MagicMock()
+            result = await _dispatch_webhook(
+                db, "trans-eu", "freights.freight.update", {"id": "1"}, event_id=7,
+            )
+
+            assert result["status"] == "moved"
+            assert "trans-eu" in result["details"]
+            pub.assert_not_called()
+
 
 # ======================================================================
 # _handle_timocom_webhook
