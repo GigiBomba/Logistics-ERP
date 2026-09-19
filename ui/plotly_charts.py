@@ -207,6 +207,10 @@ def make_bar_chart(
 
     bar_width = max_bar_width if max_bar_width > 0 else 0.6
 
+    # A single full-width bar clips "outside" value text; place the label
+    # inside the bar for single-bar datasets (single-bar guard).
+    text_position = "inside" if len(values) == 1 else "outside"
+
     if horizontal:
         # Sort descending so biggest bar at top
         paired = sorted(zip(labels, values, colors, text_vals), key=lambda x: x[1], reverse=True)
@@ -222,8 +226,9 @@ def make_bar_chart(
                 orientation="h",
                 marker={"color": colors},
                 text=text_vals,
-                textposition="outside",
+                textposition=text_position,
                 textfont={"color": TEXT_PRIMARY, "size": 10, "family": FONT_MONO},
+                hovertemplate="%{y}<br>%{text}<extra></extra>",
                 width=bar_width,
             )
         )
@@ -234,8 +239,9 @@ def make_bar_chart(
                 y=values,
                 marker={"color": colors},
                 text=text_vals,
-                textposition="outside",
+                textposition=text_position,
                 textfont={"color": TEXT_PRIMARY, "size": 10, "family": FONT_MONO},
+                hovertemplate="%{x}<br>%{text}<extra></extra>",
                 width=bar_width,
             )
         )
@@ -337,6 +343,12 @@ def make_pie_chart(
             textfont={"color": TEXT_SECONDARY, "size": 10, "family": FONT_FAMILY},
             insidetextfont={"color": TEXT_PRIMARY, "size": 10, "family": FONT_FAMILY},
             insidetextorientation="auto",
+            hovertemplate="%{label}<br>%{percent:.1%}<br>%{value:,.0f}<extra></extra>",
+            # Let outside slice labels push the layout margins so small
+            # slices' text isn't clipped at the fixed 10px margins (donut
+            # label overlap fix).  ``textmargin`` is not a Pie property in
+            # plotly 6.x — ``automargin`` is the supported mechanism.
+            automargin=True,
             sort=False,
         )
     )
@@ -362,7 +374,13 @@ def make_pie_chart(
             "yanchor": "middle",
         },
     )
+    # ``automargin`` (set on the trace) lets outside labels push the layout
+    # margins open; give top/bottom/left a little extra room to reduce the
+    # chance of overlap between adjacent outside labels and the canvas edge.
     fig.update_traces(textposition="outside")
+    fig.update_layout(
+        margin={"t": 20, "b": 20, "l": 20, "r": 10},
+    )
     return fig
 
 

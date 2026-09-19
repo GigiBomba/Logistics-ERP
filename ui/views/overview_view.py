@@ -678,8 +678,16 @@ class QtOverviewView(BaseView):
             except Exception:
                 trips = []
 
-        non_active = ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced", "LOADING")
-        active = [t for t in trips if t.get("status", "") not in non_active]
+        # Real terminal statuses — never shown as "active" trips.
+        non_active = ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced")
+        # Placeholder statuses (pre-fetch sentinels) must never render as a
+        # trip row nor be counted (BUG-08).
+        placeholder_statuses = ("LOADING",)
+        active = [
+            t for t in trips
+            if t.get("status", "") not in non_active
+            and t.get("status", "") not in placeholder_statuses
+        ]
         self._trips_count.setText(str(len(active)))
 
         if not active:

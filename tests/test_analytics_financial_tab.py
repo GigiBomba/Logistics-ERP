@@ -437,3 +437,84 @@ class TestFinancialAnalyticsTabKPIMetrics:
         assert len(dso_value_labels) == 1, "expected exactly one DSO value label"
         card = dso_value_labels[0].parentWidget()
         assert card.findChildren(_SparklineLabel) == []
+
+
+# ── Plotly chart regressions (P2-AN) ────────────────────────────────────
+
+
+class TestPlotlyChartRegressions:
+    """Single-bar guard, donut text margin, hovertemplate tooltips."""
+
+    def test_bar_chart_single_value_uses_inside_text(self):
+        """One full-width bar must not clip 'outside' labels (single-bar guard)."""
+        from ui.plotly_charts import make_bar_chart
+
+        fig = make_bar_chart(labels=["Only"], values=[500])
+        assert fig.data[0].textposition == "inside"
+
+    def test_bar_chart_single_value_horizontal_uses_inside_text(self):
+        from ui.plotly_charts import make_bar_chart
+
+        fig = make_bar_chart(labels=["Only"], values=[500], horizontal=False)
+        assert fig.data[0].textposition == "inside"
+
+    def test_bar_chart_multi_value_keeps_outside_text(self):
+        """Multi-bar datasets keep the previous outside annotation style."""
+        from ui.plotly_charts import make_bar_chart
+
+        fig = make_bar_chart(labels=["A", "B"], values=[10, 20])
+        assert fig.data[0].textposition == "outside"
+
+    def test_bar_chart_hovertemplate_set(self):
+        from ui.plotly_charts import make_bar_chart
+
+        fig = make_bar_chart(labels=["A", "B"], values=[10, 20])
+        template = fig.data[0].hovertemplate
+        assert template is not None
+        assert "<extra></extra>" in template
+
+    def test_pie_chart_textmargin_set(self):
+        """Donut outside labels must not overlap/clip on small slices."""
+        from ui.plotly_charts import make_pie_chart
+
+        fig = make_pie_chart(sizes=[60, 30, 10], labels=["A", "B", "C"])
+        trace = fig.data[0]
+        assert trace.textposition == "outside"
+        # automargin lets outside labels push the layout margins open
+        # (plotly 6.x has no Pie ``textmargin`` property).
+        assert trace.automargin is True
+        layout_margin = fig.layout.margin
+        assert layout_margin.t >= 20 and layout_margin.b >= 20
+
+    def test_pie_chart_hovertemplate_set(self):
+        from ui.plotly_charts import make_pie_chart
+
+        fig = make_pie_chart(sizes=[60, 30, 10], labels=["A", "B", "C"])
+        template = fig.data[0].hovertemplate
+        assert template is not None
+        assert "<extra></extra>" in template
+
+
+class TestFinancialAnalyticsTabSmoke:
+    """Headless smoke: render, grab, and scan for the BUG-08 LOADING placeholder."""
+
+    def test_render_grab_and_no_loading_text(self, qt_widget, qtbot, realistic_svc):
+        from PySide6.QtTest import QTest
+
+        tab = FinancialAnalyticsTab(parent=qt_widget, service=realistic_svc)
+        qtbot.addWidget(tab)
+        tab.resize(900, 700)
+        tab.show()
+        tab.refresh(force=True)
+        QTest.qWait(150)
+
+        pixmap = tab.grab()
+        assert pixmap is not None and not pixmap.isNull()
+
+        # BUG-08 regression: the "LOADING" placeholder must never surface
+        # as text anywhere in the rendered widget tree.
+        loading_labels = [
+            lbl.text() for lbl in tab.findChildren(QLabel)
+            if "LOADING" in lbl.text().upper()
+        ]
+        assert loading_labels == []
