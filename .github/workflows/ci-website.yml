@@ -9,13 +9,23 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/ci-website.yml"
+  schedule:
+    # Weekly visual-baseline drift check (soft gate only — see visual-soft-gate).
+    - cron: "0 6 * * 1"
   workflow_dispatch:
+    inputs:
+      run-visual:
+        description: "Run the visual-regression suite (non-blocking soft gate)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   # ──────────────────────────────────────────────────────────────────
   # S-Grade §16.10 stages 1-6 — blocking fast-fail gate
   #   1. lint   2. typecheck   3. unit (vitest)   4. i18n audit
-  #   5. test-manifest   6. build + critical E2E
+  #   5. hardcoded-strings audit (enforced)   6. test-manifest
+  #   7. build + critical/a11y/security E2E
   # ──────────────────────────────────────────────────────────────────
   fast-gates:
     name: Fast Gates (lint → build → critical E2E)
@@ -50,6 +60,9 @@ jobs:
       - name: i18n audit
         run: npm run i18n:audit
 
+      - name: Hardcoded strings audit (enforced)
+        run: npm run audit:hardcoded -- --fail
+
       - name: Verify UI test manifest
         run: npm run test:manifest
 
@@ -64,7 +77,24 @@ jobs:
         env:
           CI: "true"
 
-      - name: Upload critical E2E report
+      # Dedicated accessibility gate: the axe-core scan (9 pages) inside
+      # e2e/critical/accessibility-basics.spec.ts gets its own named, blocking
+      # step so a11y regressions surface with a clear signal instead of being
+      # buried in the generic critical run.
+      - name: Accessibility gate (axe-core scan)
+        run: npx playwright test e2e/critical/accessibility-basics.spec.ts
+        env:
+          CI: "true"
+
+      # Security regression suite (e2e/security): token-storage hygiene, CSP
+      # policy, and XSS-surface vectors. Blocking — deterministic, no
+      # screenshot baselines.
+      - name: Security regression (token storage, CSP, XSS surface)
+        run: npx playwright test e2e/security
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -112,12 +142,15 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   # D6/D7: visual regression is a soft gate (baseline drift across
   # OS/font rendering must not fail the pipeline). Windows runner
-  # matches the committed snapshots.
+  # matches the committed snapshots. Kept out of the blocking
+  # push/PR path — runs on the weekly schedule or via manual
+  # dispatch with run-visual=true, and always continues on error.
   # ──────────────────────────────────────────────────────────────────
   visual-soft-gate:
     name: Visual regression (soft, non-blocking)
     runs-on: windows-latest
     continue-on-error: true
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run-visual == 'true')
 
     defaults:
       run:
