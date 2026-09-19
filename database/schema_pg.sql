@@ -1704,3 +1704,178 @@ BEGIN
     END IF;
 END $$;
 
+-- =============================================================================
+-- §TRANS.EU DOMAIN (Phase 3): orders, negotiation, dock scheduler, providers.
+-- Mirrors database/schema.py TABLE_* constants and the Alembic migration
+-- p1q2r3s4t5u7 (TransEU_Architecture.md §5.1/§9.13; TransEU_KnowledgeBase.md
+-- §6.8/§6.9/§7.2-§7.7).  JSON fields store the raw Trans.eu KB object shapes
+-- as JSONB.  Idempotent (IF NOT EXISTS) — safe on re-runs and on databases
+-- that already received the tables via the matching Alembic migration.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS freight_orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_order_id TEXT NOT NULL,
+    trans_eu_freight_id INTEGER NOT NULL,
+    order_number TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'created',
+    price_amount NUMERIC(12,2),
+    price_currency TEXT DEFAULT 'EUR',
+    payment_type TEXT DEFAULT '',
+    execution_data JSONB,
+    linked_trip_id BIGINT REFERENCES trips(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_freight_orders_company ON freight_orders(company_id);
+CREATE INDEX IF NOT EXISTS idx_freight_orders_freight_id ON freight_orders(company_id, trans_eu_freight_id);
+CREATE INDEX IF NOT EXISTS idx_freight_orders_trip ON freight_orders(linked_trip_id);
+
+CREATE TABLE IF NOT EXISTS negotiation_offers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_freight_id INTEGER NOT NULL,
+    offer_id TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    status TEXT NOT NULL DEFAULT 'negotiation',
+    price NUMERIC(12,2),
+    currency TEXT DEFAULT 'EUR',
+    counterparty_name TEXT DEFAULT '',
+    counterparty_id TEXT DEFAULT '',
+    author TEXT DEFAULT '',
+    parent_offer_id UUID REFERENCES negotiation_offers(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, offer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_negotiation_offers_freight ON negotiation_offers(company_id, trans_eu_freight_id);
+
+CREATE TABLE IF NOT EXISTS dock_warehouses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_warehouse_id INTEGER NOT NULL,
+    name TEXT DEFAULT '',
+    address JSONB,
+    ramps JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_warehouse_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dock_warehouses_company ON dock_warehouses(company_id);
+
+CREATE TABLE IF NOT EXISTS dock_time_windows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_window_id INTEGER NOT NULL,
+    warehouse_id INTEGER NOT NULL,
+    valid_from DATE,
+    valid_to DATE,
+    start_time TEXT,
+    end_time TEXT,
+    range_type TEXT DEFAULT '',
+    external_number TEXT DEFAULT '',
+    carrier_id INTEGER,
+    purchase_order JSONB,
+    route JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_window_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dock_time_windows_warehouse ON dock_time_windows(company_id, warehouse_id);
+
+CREATE TABLE IF NOT EXISTS dock_announcements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_announcement_id INTEGER NOT NULL,
+    reference_number TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'CONFIRMED',
+    stage TEXT DEFAULT 'Vehicle_Arrived',
+    date_from DATE,
+    date_to DATE,
+    operation_type TEXT DEFAULT '',
+    operation_time TEXT DEFAULT '',
+    carrier_id INTEGER,
+    carrier_name TEXT DEFAULT '',
+    shipper_id INTEGER,
+    driver JSONB,
+    vehicle JSONB,
+    ramp_id INTEGER,
+    warehouse_id INTEGER,
+    route JSONB,
+    notes JSONB,
+    external_reference_number TEXT DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_announcement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dock_announcements_company ON dock_announcements(company_id);
+CREATE INDEX IF NOT EXISTS idx_dock_announcements_status ON dock_announcements(company_id, status);
+
+CREATE TABLE IF NOT EXISTS provider_contracts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_contract_id TEXT NOT NULL,
+    contract_type TEXT NOT NULL DEFAULT 'fixed',
+    carrier_id INTEGER,
+    carrier_name TEXT DEFAULT '',
+    order_terms JSONB,
+    status TEXT DEFAULT 'registered',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_contract_id)
+);
+CREATE INDEX IF NOT EXISTS idx_provider_contracts_company ON provider_contracts(company_id);
+
+CREATE TABLE IF NOT EXISTS provider_partners (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_partner_id INTEGER NOT NULL,
+    legal_name TEXT DEFAULT '',
+    vat_id TEXT DEFAULT '',
+    cooperation_status TEXT DEFAULT 'active',
+    groups JSONB,
+    trans_eu_employee_ids JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_partner_id)
+);
+CREATE INDEX IF NOT EXISTS idx_provider_partners_company ON provider_partners(company_id);
+
+CREATE TABLE IF NOT EXISTS provider_vehicles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_vehicle_id INTEGER NOT NULL,
+    plate_number TEXT DEFAULT '',
+    vehicle_manufacturer TEXT DEFAULT '',
+    chassis_number TEXT DEFAULT '',
+    registration_country TEXT DEFAULT '',
+    vin TEXT DEFAULT '',
+    truck_trailer_plates JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_vehicle_id)
+);
+CREATE INDEX IF NOT EXISTS idx_provider_vehicles_company ON provider_vehicles(company_id);
+
+CREATE TABLE IF NOT EXISTS trans_eu_vehicle_offers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id BIGINT NOT NULL REFERENCES companies(id),
+    trans_eu_offer_id INTEGER NOT NULL,
+    vehicle_id INTEGER,
+    offer_type TEXT DEFAULT '',
+    available_from DATE,
+    available_to DATE,
+    origin JSONB,
+    destination JSONB,
+    price NUMERIC(12,2),
+    currency TEXT DEFAULT 'EUR',
+    loading_country TEXT DEFAULT '',
+    unloading_country TEXT DEFAULT '',
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, trans_eu_offer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_trans_eu_vehicle_offers_company ON trans_eu_vehicle_offers(company_id);
+

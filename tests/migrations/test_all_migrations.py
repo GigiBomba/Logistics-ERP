@@ -250,6 +250,31 @@ ALL_REVISIONS: list[dict] = [
         "adds_columns": {},
         "indexes": [],
     },
+    {
+        "id": "p1q2r3s4t5u7",
+        "down": "o8g9b0c2e5f6",
+        "doc": "Trans.eu domain - orders, negotiation, dock scheduler, provider tables",
+        "creates_tables": [
+            "freight_orders", "negotiation_offers", "dock_warehouses",
+            "dock_time_windows", "dock_announcements", "provider_contracts",
+            "provider_partners", "provider_vehicles", "trans_eu_vehicle_offers",
+        ],
+        "adds_columns": {},
+        "indexes": [
+            "idx_freight_orders_company",
+            "idx_freight_orders_freight_id",
+            "idx_freight_orders_trip",
+            "idx_negotiation_offers_freight",
+            "idx_dock_warehouses_company",
+            "idx_dock_time_windows_warehouse",
+            "idx_dock_announcements_company",
+            "idx_dock_announcements_status",
+            "idx_provider_contracts_company",
+            "idx_provider_partners_company",
+            "idx_provider_vehicles_company",
+            "idx_trans_eu_vehicle_offers_company",
+        ],
+    },
 ]
 
 # Base tables that must exist before running migrations (referenced by FK / ADD COLUMN)
@@ -408,6 +433,55 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     "copilot_autonomy_approvals": {
         "id", "company_id", "workflow", "enabled",
         "created_by", "created_at", "updated_at",
+    },
+    "freight_orders": {
+        "id", "company_id", "trans_eu_order_id", "trans_eu_freight_id",
+        "order_number", "status", "price_amount", "price_currency",
+        "payment_type", "execution_data", "linked_trip_id",
+        "created_at", "updated_at",
+    },
+    "negotiation_offers": {
+        "id", "company_id", "trans_eu_freight_id", "offer_id", "direction",
+        "status", "price", "currency", "counterparty_name", "counterparty_id",
+        "author", "parent_offer_id", "created_at", "updated_at",
+    },
+    "dock_warehouses": {
+        "id", "company_id", "trans_eu_warehouse_id", "name", "address",
+        "ramps", "created_at", "updated_at",
+    },
+    "dock_time_windows": {
+        "id", "company_id", "trans_eu_window_id", "warehouse_id",
+        "valid_from", "valid_to", "start_time", "end_time", "range_type",
+        "external_number", "carrier_id", "purchase_order", "route",
+        "created_at", "updated_at",
+    },
+    "dock_announcements": {
+        "id", "company_id", "trans_eu_announcement_id", "reference_number",
+        "status", "stage", "date_from", "date_to", "operation_type",
+        "operation_time", "carrier_id", "carrier_name", "shipper_id",
+        "driver", "vehicle", "ramp_id", "warehouse_id", "route", "notes",
+        "external_reference_number", "created_at", "updated_at",
+    },
+    "provider_contracts": {
+        "id", "company_id", "trans_eu_contract_id", "contract_type",
+        "carrier_id", "carrier_name", "order_terms", "status",
+        "created_at", "updated_at",
+    },
+    "provider_partners": {
+        "id", "company_id", "trans_eu_partner_id", "legal_name", "vat_id",
+        "cooperation_status", "groups", "trans_eu_employee_ids",
+        "created_at", "updated_at",
+    },
+    "provider_vehicles": {
+        "id", "company_id", "trans_eu_vehicle_id", "plate_number",
+        "vehicle_manufacturer", "chassis_number", "registration_country",
+        "vin", "truck_trailer_plates", "created_at", "updated_at",
+    },
+    "trans_eu_vehicle_offers": {
+        "id", "company_id", "trans_eu_offer_id", "vehicle_id", "offer_type",
+        "available_from", "available_to", "origin", "destination", "price",
+        "currency", "loading_country", "unloading_country", "status",
+        "created_at", "updated_at",
     },
 }
 
@@ -600,8 +674,8 @@ class TestUpgradeAll:
             version = result.scalar()
         engine.dispose()
         assert version is not None, "alembic_version is empty"
-        # The sole head is o8g9b0c2e5f6
-        assert version == "o8g9b0c2e5f6", (
+        # The sole head is p1q2r3s4t5u7
+        assert version == "p1q2r3s4t5u7", (
             f"Unexpected alembic_version: {version}"
         )
 
@@ -1032,7 +1106,7 @@ class TestRevisionChain:
 
         script = ScriptDirectory(ALEMBIC_DIR)
         heads = set(script.get_heads())
-        expected_heads = {"o8g9b0c2e5f6"}
+        expected_heads = {"p1q2r3s4t5u7"}
         assert heads == expected_heads, (
             f"Expected heads {expected_heads}, got {heads}"
         )

@@ -58,6 +58,21 @@ class TestInit:
         for required in ("trips", "trucks", "drivers", "clients", "invoices", "settings"):
             assert required in tables, f"Missing table: {required}"
 
+    def test_init_creates_trans_eu_domain_tables(self, db):
+        """Fresh SQLite DBs get the 9 Trans.eu domain tables (Phase 3)."""
+        tables = {
+            r[0]
+            for r in db.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        for required in (
+            "freight_orders", "negotiation_offers", "dock_warehouses",
+            "dock_time_windows", "dock_announcements", "provider_contracts",
+            "provider_partners", "provider_vehicles", "trans_eu_vehicle_offers",
+        ):
+            assert required in tables, f"Missing table: {required}"
+
     def test_init_creates_indexes(self, db):
         indexes = {
             r[0]
