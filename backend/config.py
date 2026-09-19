@@ -132,6 +132,19 @@ class BackendSettings(BaseSettings):
     # ── Field-level encryption (used for SMTP passwords etc.) ─────────────
     encryption_key: str = ""
 
+    # ── MFA (TOTP two-factor) ──────────────────────────────────────────────
+    # Issuer shown in the authenticator app label ("Operion:<email>").
+    # Env: OPERION_MFA_ISSUER.
+    mfa_issuer: str = "Operion"
+    # TOTP acceptance window in steps (each step = 30s).  1 = current step
+    # plus one step of clock skew either way.
+    mfa_totp_window_steps: int = 1
+    # Number of single-use recovery codes returned once at confirm time.
+    mfa_backup_codes_count: int = 10
+    # Optional dedicated key for encrypting TOTP secrets at rest; falls back
+    # to jwt_secret_key when empty.  Env: OPERION_MFA_SECRET_ENCRYPTION_KEY.
+    mfa_secret_encryption_key: str = ""
+
     # ── bcrypt ─────────────────────────────────────────────────────────────
     bcrypt_rounds: int = 12
 

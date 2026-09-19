@@ -911,6 +911,9 @@ class DatabaseManager:
             S.TABLE_USERS,
             S.INDEX_USERS_EMAIL,
             S.INDEX_USERS_COMPANY,
+            # MFA (TOTP two-factor): single-use recovery backup codes
+            S.TABLE_MFA_BACKUP_CODES,
+            S.INDEX_MFA_BACKUP_CODES_USER,
             S.INDEX_AUTOMAIL_SCHEDULES_TEMPLATE,
             S.INDEX_AUTOMAIL_SCHEDULES_ACTIVE_SORT,
             S.INDEX_AUTOMAIL_CLIENT_OVERRIDES_CLIENT,
@@ -1502,6 +1505,17 @@ class DatabaseManager:
         self._ensure_column(
             "users", "display_name",
             "ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT ''"
+        )
+        # ── MFA (TOTP two-factor): users.mfa_enabled / users.mfa_secret ──
+        # Fresh DBs get these from TABLE_USERS in schema.py; legacy DBs get
+        # them here (idempotent via _ensure_column).
+        self._ensure_column(
+            "users", "mfa_enabled",
+            "ALTER TABLE users ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0",
+        )
+        self._ensure_column(
+            "users", "mfa_secret",
+            "ALTER TABLE users ADD COLUMN mfa_secret TEXT",
         )
 
         # ── Multi-tenant: add company_id to all business tables ──────────

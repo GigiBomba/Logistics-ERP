@@ -1177,12 +1177,18 @@ CREATE TABLE IF NOT EXISTS users (
     is_active INTEGER NOT NULL DEFAULT 1,
     display_name TEXT DEFAULT '',
     driver_id INTEGER REFERENCES drivers(id),
+    mfa_enabled INTEGER NOT NULL DEFAULT 0,
+    mfa_secret TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 """
 
 ALTER_USERS_ADD_DISPLAY_NAME = "ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT ''"
 ALTER_USERS_ADD_DRIVER_ID = "ALTER TABLE users ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"
+ALTER_USERS_ADD_MFA_ENABLED = (
+    "ALTER TABLE users ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0"
+)
+ALTER_USERS_ADD_MFA_SECRET = "ALTER TABLE users ADD COLUMN mfa_secret TEXT"
 
 INDEX_USERS_EMAIL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
@@ -1190,6 +1196,27 @@ INDEX_USERS_EMAIL = (
 
 INDEX_USERS_COMPANY = (
     "CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)"
+)
+
+# ── MFA (TOTP two-factor): single-use recovery backup codes ────────────────
+# Backup codes are stored ONLY as bcrypt hashes (never plaintext); the
+# ``used_at`` stamp is set with an atomic conditional UPDATE
+# (``... WHERE used_at IS NULL``) so a code can be claimed exactly once even
+# under concurrent requests.  Not part of SYNCABLE_TABLES — credential
+# material must never leave the server.
+TABLE_MFA_BACKUP_CODES = """
+CREATE TABLE IF NOT EXISTS mfa_backup_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_MFA_BACKUP_CODES_USER = (
+    "CREATE INDEX IF NOT EXISTS idx_mfa_backup_codes_user "
+    "ON mfa_backup_codes(user_id)"
 )
 
 TABLE_GPS_TELEMETRY = """

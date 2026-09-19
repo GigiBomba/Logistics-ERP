@@ -25,6 +25,7 @@ from backend.api.v1 import (
     migration,
     mobile,
     mobile_pairing,
+    mfa,
     oauth2,
     ocr,
     organizations,
@@ -90,4 +91,9 @@ api_v1_router.include_router(mobile.router)
 api_v1_router.include_router(mobile.mobile_router)
 # Mobile QR pairing-token endpoints (blueprint §5.3).
 api_v1_router.include_router(mobile_pairing.router)
+# MFA (TOTP two-factor) — enrollment/verify routers.  Plain includes: if the
+# auth.py helpers they import are missing, an ImportError at startup is the
+# correct failure signal.
+api_v1_router.include_router(mfa.mfa_router)
+api_v1_router.include_router(mfa.mfa_me_router)
 

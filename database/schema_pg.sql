@@ -1024,6 +1024,20 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
 
+-- ── MFA (TOTP two-factor): single-use recovery backup codes ──────────────
+-- users.mfa_enabled / users.mfa_secret already exist in the users DDL above.
+-- Backup codes are stored ONLY as bcrypt hashes; ``used_at`` is stamped with
+-- an atomic conditional UPDATE (``... WHERE used_at IS NULL``) so a code can
+-- be claimed exactly once even under concurrent requests.
+CREATE TABLE IF NOT EXISTS mfa_backup_codes (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_backup_codes_user ON mfa_backup_codes(user_id);
+
 -- Add user_id to drivers (created in §Drivers above) now that users table exists
 ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
 CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id);

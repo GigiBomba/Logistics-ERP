@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import time
 from datetime import timedelta
 from typing import Any, Dict, Optional
@@ -280,6 +281,164 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# ── MFA session store (mid-login second-factor challenge) ─────────────────
+# POST /auth/token returns a short-lived single-use ``mfa_session_token``
+# when the account has MFA enabled; the client completes the login via
+# POST /auth/mfa/verify or POST /auth/mfa/backup-code.  Only the SHA-256
+# hash of the token is stored (Redis preferred, in-memory fallback — same
+# pattern as the refresh-token store).  The session expires after 5 minutes,
+# is single-use (consumed atomically at read), and is locked after
+# ``MFA_MAX_FAILED_ATTEMPTS`` wrong codes (the lock is bounded by the
+# session TTL).
+MFA_SESSION_TTL_SECONDS = 300          # 5 minutes
+MFA_MAX_FAILED_ATTEMPTS = 3
+_mfa_sessions: Dict[str, Dict[str, Any]] = {}     # token_hash -> payload
+_mfa_fail_counts: Dict[str, Dict[str, Any]] = {}  # token_hash -> {count, expires_at}
+_mfa_locks: Dict[str, Dict[str, Any]] = {}        # token_hash -> {expires_at}
+
+
+def _mfa_session_key(token_hash: str) -> str:
+    return f"mfa:{token_hash}"
+
+
+def _mfa_fail_key(token_hash: str) -> str:
+    return f"mfa_fail:{token_hash}"
+
+
+def _create_mfa_session(email: str, role: str) -> str:
+    """Create a short-lived single-use MFA session token for *email*.
+
+    Returns the plaintext token (shown to the client once).  Only its
+    SHA-256 hash is stored; the session expires after
+    ``MFA_SESSION_TTL_SECONDS``.
+    """
+    token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(token)
+    payload: Dict[str, Any] = {
+        "email": email,
+        "role": role,
+        "expires_at": time.time() + MFA_SESSION_TTL_SECONDS,
+    }
+    r = _get_redis()
+    if r is not None:
+        try:
+            r.setex(_mfa_session_key(token_hash), MFA_SESSION_TTL_SECONDS, json.dumps(payload))
+            return token
+        except Exception:
+            logger.debug("Redis unavailable for MFA session — using in-memory.", exc_info=True)
+    _mfa_sessions[token_hash] = payload
+    return token
+
+
+def _is_mfa_locked(token_hash: str) -> bool:
+    """True when *token_hash* is inside its per-token failure-lock window."""
+    r = _get_redis()
+    if r is not None:
+        try:
+            if r.exists(_mfa_fail_key(token_hash) + ":lock"):
+                return True
+            return False
+        except Exception:
+            pass
+    lock = _mfa_locks.get(token_hash)
+    if lock is None:
+        return False
+    if time.time() >= lock["expires_at"]:
+        _mfa_locks.pop(token_hash, None)
+        return False
+    return True
+
+
+def _consume_mfa_session(token: str) -> Optional[Dict[str, Any]]:
+    """Validate *token* and atomically claim its MFA session (single-use).
+
+    Returns the session payload when the token is valid, unexpired and not
+    locked; ``None`` otherwise.  A valid session is deleted from the store
+    at read time (atomic pop for the in-memory dict, ``GETDEL`` for Redis)
+    so a replayed token can never complete a second login.  On the *failure*
+    path the caller restores the session (while the failure budget is not
+    exhausted) via :func:`_record_mfa_failure`.
+    """
+    if not token:
+        return None
+    token_hash = _hash_token(token)
+    if _is_mfa_locked(token_hash):
+        return None
+
+    r = _get_redis()
+    if r is not None:
+        try:
+            key = _mfa_session_key(token_hash)
+            raw: Any = None
+            if hasattr(r, "getdel"):
+                try:
+                    raw = r.getdel(key)
+                except Exception:
+                    raw = None
+            if raw is None:
+                raw = r.get(key)
+                r.delete(key)
+            if not raw:
+                return None
+            payload = json.loads(raw)
+            if time.time() >= float(payload.get("expires_at", 0)):
+                return None
+            return payload
+        except Exception:
+            logger.debug("Redis MFA session consume failed — falling back to in-memory.", exc_info=True)
+
+    payload = _mfa_sessions.pop(token_hash, None)
+    if payload is None:
+        return None
+    if time.time() >= float(payload.get("expires_at", 0)):
+        return None
+    return payload
+
+
+def _record_mfa_failure(token: str, session: Dict[str, Any]) -> None:
+    """Count one failed second-factor attempt for *token*.
+
+    Restores the consumed session so the user can retry — until
+    ``MFA_MAX_FAILED_ATTEMPTS`` failures lock the token.  Once locked, any
+    further presentation of the token (correct code or not) fails with the
+    same 401.  The lock expires with the session TTL (it is keyed on the
+    token, not the IP).
+    """
+    if not token:
+        return
+    token_hash = _hash_token(token)
+    r = _get_redis()
+    if r is not None:
+        try:
+            key = _mfa_fail_key(token_hash)
+            count = r.incr(key)
+            if count == 1:
+                r.expire(key, MFA_SESSION_TTL_SECONDS)
+            if count >= MFA_MAX_FAILED_ATTEMPTS:
+                r.delete(key)
+                r.setex(_mfa_fail_key(token_hash) + ":lock", MFA_SESSION_TTL_SECONDS, "1")
+                r.delete(_mfa_session_key(token_hash))
+                return
+            # Restore the consumed session for retries.
+            r.setex(_mfa_session_key(token_hash), MFA_SESSION_TTL_SECONDS, json.dumps(session))
+            return
+        except Exception:
+            logger.debug("Redis MFA failure record failed — falling back to in-memory.", exc_info=True)
+
+    now = time.time()
+    entry = _mfa_fail_counts.get(token_hash)
+    if entry is None or now >= entry["expires_at"]:
+        entry = {"count": 0, "expires_at": now + MFA_SESSION_TTL_SECONDS}
+    entry["count"] += 1
+    if entry["count"] >= MFA_MAX_FAILED_ATTEMPTS:
+        _mfa_fail_counts.pop(token_hash, None)
+        _mfa_locks[token_hash] = {"expires_at": now + MFA_SESSION_TTL_SECONDS}
+        _mfa_sessions.pop(token_hash, None)
+        return
+    _mfa_fail_counts[token_hash] = entry
+    _mfa_sessions[token_hash] = session
+
+
 def _set_refresh_cookie(
     response: Response, refresh_token: str, max_age_days: int
 ) -> None:
@@ -317,6 +476,7 @@ def _issue_tokens(
     company_id: int = 0,
     db: Optional[Any] = None,
     remember: bool = True,
+    include_refresh_in_body: bool = True,
 ) -> Dict[str, Any]:
     """Create and persist an access token + refresh token pair.
 
@@ -378,12 +538,19 @@ def _issue_tokens(
             ),
         )
 
-    return {
+    result: Dict[str, Any] = {
         "access_token": access_token,
-        "refresh_token": refresh_token,
         "token_type": "bearer",  # nosec B105
         "expires_in": settings.access_token_expire_minutes * 60,
     }
+    # The desktop client reads the refresh token from the response body;
+    # the web frontend reads it from the httpOnly cookie.  MFA logins pass
+    # ``include_refresh_in_body=False`` so the refresh token is delivered
+    # only via the cookie (XSS-hardened) and never lands in a JS-visible
+    # response body.
+    if include_refresh_in_body:
+        result["refresh_token"] = refresh_token
+    return result
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -454,8 +621,8 @@ async def login_for_access_token(
     async for db in get_db():
         try:
             user = UserRepository(db)._fetchone(
-                "SELECT id, email, password_hash, role, company_id FROM users "
-                "WHERE email = ? AND is_active = 1",
+                "SELECT id, email, password_hash, role, company_id, mfa_enabled "
+                "FROM users WHERE email = ? AND is_active = 1",
                 (email,),
             )
             if user is None:
@@ -500,6 +667,24 @@ async def login_for_access_token(
 
         _clear_lockout(email)
         logger.info("Login successful for %s from %s", email, client_ip)
+
+        # ── MFA challenge (mid-login second factor) ────────────────────
+        # When the account has MFA enabled, DO NOT issue any tokens yet.
+        # Return a short-lived single-use session token the client must
+        # exchange for the real token pair at /auth/mfa/verify (TOTP) or
+        # /auth/mfa/backup-code (recovery).  The env-var admin gateway is
+        # bypassed by construction (it never reaches this DB-user path).
+        if user.get("mfa_enabled"):
+            mfa_token = _create_mfa_session(
+                user["email"], user.get("role", "dispatcher")
+            )
+            logger.info("MFA challenge issued for %s from %s", email, client_ip)
+            return {
+                "mfa_required": True,
+                "mfa_session_token": mfa_token,
+                "token_type": "bearer",
+            }
+
         return _issue_tokens(
             user["email"], user.get("role", "dispatcher"), response,
             device_id, device_name=device_name,

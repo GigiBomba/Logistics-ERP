@@ -31,6 +31,14 @@ class ErrorCode(str, Enum):
     API_KEY_EXPIRED = "auth/api-key-expired"
     API_KEY_REVOKED = "auth/api-key-revoked"
 
+    # MFA (TOTP two-factor)
+    # NOTE: runtime 401s from /auth/mfa/verify and /auth/mfa/backup-code
+    # deliberately collapse to MFA_INVALID_CODE (identical body for invalid
+    # session vs invalid code) so a client cannot oracle the session state.
+    MFA_SESSION_INVALID = "auth/mfa-session-invalid"
+    MFA_INVALID_CODE = "auth/mfa-invalid-code"
+    MFA_ALREADY_ENABLED = "auth/mfa-already-enabled"
+
     # Resources
     CLIENT_NOT_FOUND = "resource/client-not-found"
     TRIP_NOT_FOUND = "resource/trip-not-found"

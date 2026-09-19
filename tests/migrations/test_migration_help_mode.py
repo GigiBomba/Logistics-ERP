@@ -146,10 +146,10 @@ class TestMigrationUserWorkflowFamiliarity:
         assert doc_rev.down_revision == "a7b8c9d0e1f7"
         assert wf_rev.down_revision == REV_DOC_CHUNKS
         # user_workflow_familiarity has been merged into f7b8c9d0e1f8;
-        # the sole head is now p1q2r3s4t5u7
+        # the sole head is now q0r1s2t3u4v8
         heads = script.get_heads()
-        assert "p1q2r3s4t5u7" in heads, (
-            f"Expected p1q2r3s4t5u7 in heads, got {heads}"
+        assert "q0r1s2t3u4v8" in heads, (
+            f"Expected q0r1s2t3u4v8 in heads, got {heads}"
         )
         assert wf_rev.revision not in heads, (
             f"{self.REVISION} is no longer a head; heads are {heads}"

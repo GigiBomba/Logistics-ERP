@@ -13,7 +13,7 @@ Routers
     - GET  /auth/me/mfa-status     (auth)   Whether the caller has MFA on.
 
 TOTP is implemented with the stdlib only (RFC 6238, HMAC-SHA1, 30s step,
-6 digits). The TOTP secret is XOR-encrypted at rest using the server key
+6 digits). The TOTP secret is encrypted at rest with AES-256-GCM
 (see ``backend.security.encrypt_at_rest``) and backup codes are stored as
 bcrypt hashes with single-use enforcement.
 """
@@ -21,17 +21,20 @@ from __future__ import annotations
 
 
 import asyncio
+import base64
+import io
 import secrets
 from typing import Any, Dict, List, Optional
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-# ⚠️ DEPENDENCY GAP (Gate-34 A1): `_consume_mfa_session` does NOT exist in auth.py yet —
-# this module MUST NOT be included in router.py until that helper is implemented,
-# otherwise create_app() raises ImportError at startup (concurrent-agent work-in-progress).
-from backend.api.v1.auth import _consume_mfa_session, _issue_tokens
+# MFA session helpers live in auth.py: `_consume_mfa_session` validates and
+# atomically claims the single-use session token, `_record_mfa_failure`
+# implements the per-token 3-attempt lock, and `_issue_tokens` issues the
+# real token pair after a successful second factor.
+from backend.api.v1.auth import _consume_mfa_session, _issue_tokens, _record_mfa_failure
 from backend.config import get_settings
 from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user
@@ -58,6 +61,12 @@ mfa_me_router = APIRouter(prefix="/auth/me", tags=["mfa"])
 _BACKUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _BACKUP_CODE_LENGTH = 8
 _BACKUP_CODE_BCRYPT_ROUNDS = 10
+
+# Uniform 401 detail for every failed second-factor check (invalid session,
+# expired session, locked session, wrong code).  The identical body for all
+# failures removes any oracle that would let an attacker distinguish "this
+# session token is dead" from "this code is wrong".
+_MFA_FAIL_DETAIL = "Invalid or expired verification code."
 
 
 # ── Request schemas ───────────────────────────────────────────────────────
@@ -87,6 +96,22 @@ class MFABackupCodeRequest(BaseModel):
 def _encryption_key() -> str:
     settings = get_settings()
     return settings.mfa_secret_encryption_key or settings.jwt_secret_key
+
+
+def _qr_data_uri(data: str) -> str:
+    """Render *data* as a PNG QR code and return it as a ``data:`` URI.
+
+    The frontend renders the QR from the payload directly (``<img
+    src="data:image/png;base64,...">``) without needing the ``qrcode``
+    package on the client.  ``qrcode`` is a declared server dependency
+    (``qrcode[pil]`` in requirements).
+    """
+    import qrcode
+
+    img = qrcode.make(data)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _reject_admin(current_user: Dict[str, Any]) -> None:
@@ -138,8 +163,18 @@ async def _verify_backup_code(user_id: int, candidate: str, db) -> bool:
     matched code is claimed with a conditional ``UPDATE`` that only wins
     while ``used_at IS NULL``, so two concurrent requests presenting the
     same code cannot both pass a read-check and issue tokens.
+
+    Cross-engine (F1): both statements go through ``db.execute`` so ``?``
+    placeholders are adapted for PostgreSQL, and the ``used_at`` stamp is
+    bound from Python (``database.time_utils.utc_now_iso()`` — the same
+    canonical ``YYYY-MM-DDTHH:MM:SSZ`` string the repos write for
+    ``updated_at`` on both engines) instead of SQLite-only
+    ``datetime('now')``.  The column is TEXT on SQLite and TIMESTAMPTZ on
+    PostgreSQL; both accept the ISO-8601 string on parameter bind.
     """
-    rows = db.conn.execute(
+    from database.time_utils import utc_now_iso
+
+    rows = db.execute(
         "SELECT id, code_hash FROM mfa_backup_codes "
         "WHERE user_id = ? AND used_at IS NULL",
         (user_id,),
@@ -157,12 +192,12 @@ async def _verify_backup_code(user_id: int, candidate: str, db) -> bool:
         # while it is still unused. rowcount == 1 ⇒ we won the race and
         # the code is now consumed; rowcount == 0 ⇒ a concurrent request
         # already claimed it, so this code is already used → reject.
-        cursor = db.conn.execute(
-            "UPDATE mfa_backup_codes SET used_at = datetime('now') "
+        cursor = db.execute(
+            "UPDATE mfa_backup_codes SET used_at = ? "
             "WHERE id = ? AND used_at IS NULL",
-            (row["id"],),
+            (utc_now_iso(), row["id"]),
         )
-        db.conn.commit()
+        db.commit()
         if cursor.rowcount == 1:
             return True
         return False
@@ -188,9 +223,10 @@ async def mfa_enroll(
     """Generate + persist a TOTP secret for the caller (not yet enabled).
 
     Returns the plaintext ``secret``, the ``otpauth_uri`` and a
-    ``qr_payload`` (the otpauth URI) for the frontend QR renderer.
-    The secret is XOR-encrypted at rest; ``mfa_enabled`` stays false
-    until the code is confirmed via POST /confirm.
+    ``qr_payload`` (a PNG data-URI rendering the otpauth URI) for the
+    frontend QR renderer.  The secret is encrypted at rest with AES-256-GCM;
+    ``mfa_enabled`` stays false until the code is confirmed via POST
+    /confirm.
     """
     _reject_admin(current_user)
     settings = get_settings()
@@ -215,7 +251,11 @@ async def mfa_enroll(
         )
         db.conn.commit()
         logger.info("MFA enrollment started for %s", current_user["email"])
-        return {"secret": secret, "otpauth_uri": uri, "qr_payload": uri}
+        return {
+            "secret": secret,
+            "otpauth_uri": uri,
+            "qr_payload": _qr_data_uri(uri),
+        }
 
     raise _problem(500, ErrorCode.INTERNAL_ERROR, "MFA service unavailable.")
 
@@ -306,16 +346,35 @@ async def mfa_disable(
 # ═════════════════════════════════════════════════════════════════════════
 
 
-async def _complete_login(session: Dict[str, Any], response: Response) -> Dict[str, Any]:
-    """Issue the full token pair after a successful second-factor check."""
+async def _complete_login(
+    session: Dict[str, Any],
+    response: Response,
+    db: Optional[Any] = None,
+    company_id: int = 0,
+    ip_address: str = "",
+) -> Dict[str, Any]:
+    """Issue the full token pair after a successful second-factor check.
+
+    Mirrors the normal login call site (auth.py ``_issue_tokens``) so MFA
+    logins also record an ``auth_sessions`` row (session list + per-session
+    revocation + device tracking).  ``db``/``company_id``/``ip_address`` are
+    derived by the (unauthenticated) verify/backup-code handlers: the db
+    session they already hold, the user's company_id, and the request IP.
+    """
     email: str = session["email"]
     role: str = session.get("role", "dispatcher")
-    return _issue_tokens(email, role, response, include_refresh_in_body=False)
+    return _issue_tokens(
+        email, role, response,
+        ip_address=ip_address,
+        company_id=company_id,
+        db=db,
+        include_refresh_in_body=False,
+    )
 
 
 def _load_mfa_user(db, email: str):
-    return db.conn.execute(
-        "SELECT id, email, mfa_enabled, mfa_secret FROM users "
+    return db.execute(
+        "SELECT id, email, mfa_enabled, mfa_secret, company_id FROM users "
         "WHERE email = ? AND is_active = 1",
         (email,),
     ).fetchone()
@@ -325,6 +384,7 @@ def _load_mfa_user(db, email: str):
 async def mfa_verify(
     body: MFAVerifyRequest,
     response: Response,
+    request: Request,
 ) -> Dict[str, Any]:
     """Complete login with a TOTP code.
 
@@ -336,19 +396,27 @@ async def mfa_verify(
     settings = get_settings()
     session = _consume_mfa_session(body.mfa_session_token)
     if session is None:
-        raise _problem(401, ErrorCode.MFA_SESSION_INVALID, "Invalid or expired MFA session.")
+        raise _problem(401, ErrorCode.MFA_INVALID_CODE, _MFA_FAIL_DETAIL)
+
+    client_ip = request.client.host if request.client else ""
 
     async for db in get_db():
         row = _load_mfa_user(db, session["email"])
         if row is None or not row["mfa_enabled"]:
-            raise _problem(401, ErrorCode.MFA_SESSION_INVALID, "MFA is not enabled for this account.")
+            raise _problem(401, ErrorCode.MFA_INVALID_CODE, _MFA_FAIL_DETAIL)
 
         secret = decrypt_at_rest(row["mfa_secret"], _encryption_key())
         if not verify_totp(secret, body.code, window_steps=settings.mfa_totp_window_steps):
-            raise _problem(401, ErrorCode.MFA_INVALID_CODE, "Invalid or expired verification code.")
+            _record_mfa_failure(body.mfa_session_token, session)
+            raise _problem(401, ErrorCode.MFA_INVALID_CODE, _MFA_FAIL_DETAIL)
 
         logger.info("MFA login verified for %s", session["email"])
-        return await _complete_login(session, response)
+        return await _complete_login(
+            session, response,
+            db=db,
+            company_id=int(row["company_id"] or 0),
+            ip_address=client_ip,
+        )
 
     raise _problem(500, ErrorCode.INTERNAL_ERROR, "MFA service unavailable.")
 
@@ -357,28 +425,33 @@ async def mfa_verify(
 async def mfa_backup_code(
     body: MFABackupCodeRequest,
     response: Response,
+    request: Request,
 ) -> Dict[str, Any]:
     """Complete login with a single-use recovery backup code."""
     session = _consume_mfa_session(body.mfa_session_token)
     if session is None:
-        raise _problem(401, ErrorCode.MFA_SESSION_INVALID, "Invalid or expired MFA session.")
+        raise _problem(401, ErrorCode.MFA_INVALID_CODE, _MFA_FAIL_DETAIL)
+
+    client_ip = request.client.host if request.client else ""
 
     async for db in get_db():
         row = _load_mfa_user(db, session["email"])
         if row is None or not row["mfa_enabled"]:
-            raise _problem(401, ErrorCode.MFA_SESSION_INVALID, "MFA is not enabled for this account.")
+            raise _problem(401, ErrorCode.MFA_INVALID_CODE, _MFA_FAIL_DETAIL)
 
         candidate = body.backup_code.strip().upper()
         used = await _verify_backup_code(row["id"], candidate, db)
         if not used:
-            raise _problem(
-                401,
-                ErrorCode.MFA_INVALID_CODE,
-                "Invalid, already used, or exhausted backup code.",
-            )
+            _record_mfa_failure(body.mfa_session_token, session)
+            raise _problem(401, ErrorCode.MFA_INVALID_CODE, _MFA_FAIL_DETAIL)
 
         logger.info("MFA backup-code login verified for %s", session["email"])
-        return await _complete_login(session, response)
+        return await _complete_login(
+            session, response,
+            db=db,
+            company_id=int(row["company_id"] or 0),
+            ip_address=client_ip,
+        )
 
     raise _problem(500, ErrorCode.INTERNAL_ERROR, "MFA service unavailable.")
 

@@ -275,6 +275,14 @@ ALL_REVISIONS: list[dict] = [
             "idx_trans_eu_vehicle_offers_company",
         ],
     },
+    {
+        "id": "q0r1s2t3u4v8",
+        "down": "p1q2r3s4t5u7",
+        "doc": "MFA - users mfa_enabled/mfa_secret columns + single-use backup codes table",
+        "creates_tables": ["mfa_backup_codes"],
+        "adds_columns": {"users": ["mfa_enabled", "mfa_secret"]},
+        "indexes": ["idx_mfa_backup_codes_user"],
+    },
 ]
 
 # Base tables that must exist before running migrations (referenced by FK / ADD COLUMN)
@@ -483,6 +491,9 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "currency", "loading_country", "unloading_country", "status",
         "created_at", "updated_at",
     },
+    "mfa_backup_codes": {
+        "id", "user_id", "code_hash", "used_at", "created_at",
+    },
 }
 
 
@@ -674,8 +685,8 @@ class TestUpgradeAll:
             version = result.scalar()
         engine.dispose()
         assert version is not None, "alembic_version is empty"
-        # The sole head is p1q2r3s4t5u7
-        assert version == "p1q2r3s4t5u7", (
+        # The sole head is q0r1s2t3u4v8
+        assert version == "q0r1s2t3u4v8", (
             f"Unexpected alembic_version: {version}"
         )
 
@@ -1106,7 +1117,7 @@ class TestRevisionChain:
 
         script = ScriptDirectory(ALEMBIC_DIR)
         heads = set(script.get_heads())
-        expected_heads = {"p1q2r3s4t5u7"}
+        expected_heads = {"q0r1s2t3u4v8"}
         assert heads == expected_heads, (
             f"Expected heads {expected_heads}, got {heads}"
         )
