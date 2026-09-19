@@ -23,9 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Deepwork state files (git-local, not committed)
-.slim/deepwork/
-
 test-results/
 playwright-report/
 coverage/

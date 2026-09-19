@@ -97,13 +97,11 @@ data/country_borders.json
 data/avoid_countries.json
 invoices/*.pdf
 reports/
-.slim/deepwork/
 
 data/efactura/
 tests/workflow_integrity/financial/test_probe_tmp.py
 
 data/staging.db
-.slim/deepwork/
 
 data/server.db
 data/cashflow.db.bak-*
