@@ -6,11 +6,11 @@ What this proves
 ----------------
 The mobile ``FreightLoad`` model (``freight_load.dart``) consumes EXACTLY the
 provider-agnostic keys ``id, origin, destination, cargo_type, price, currency,
-pickup_date, deadline_date, weight_kg, distance_km`` (plus the optional
-``provider_id`` segment parsed by ``fromJson``).  The backend load-board
-contract (``FreightLoadListItem`` in ``backend/api/v1/freight_exchange.py``)
-must return the SAME shape regardless of which freight-exchange provider is the
-ACTIVE adapter — no TIMOCOM/Trans.eu field name ever leaks into the wire.
+pickup_date, deadline_date, weight_kg, distance_km, provider_id,
+provider_load_id``.  The backend load-board contract (``FreightLoadListItem``
+in ``backend/api/v1/freight_exchange.py``) must return the SAME shape
+regardless of which freight-exchange provider is the ACTIVE adapter — no
+TIMOCOM/Trans.eu field name ever leaks into the wire.
 
 The adapter factory mechanism (found in this session)
 ------------------------------------------------------
@@ -59,23 +59,24 @@ from tests.test_helpers import InMemoryDB
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Mobile contract keys — sourced from the mobile repo
-# (mobile/lib/features/freight_exchange/models/freight_load.dart and
-#  mobile/test/features/freight_exchange/test_freight_provider_agnostic.dart)
+# (mobile_app/lib/features/freight_exchange/models/freight_load.dart and
+#  mobile_app/test/features/freight_exchange/freight_exchange_models_test.dart)
 # ═══════════════════════════════════════════════════════════════════════════
 
 # The fixed provider-agnostic contract field names (Dart _contractFieldNames).
 MOBILE_FIXED_CONTRACT_KEYS = {
     "id", "origin", "destination", "cargo_type", "price", "currency",
     "pickup_date", "deadline_date", "weight_kg", "distance_km",
+    "provider_id", "provider_load_id",
 }
 
-# Every key the Dart ``FreightLoad.fromJson`` reads — the superset the model
-# can parse (includes the optional provider_id segment).
-MOBILE_FROM_JSON_KEYS = MOBILE_FIXED_CONTRACT_KEYS | {"provider_id"}
+# Every key the Dart ``FreightLoad.fromJson`` reads — the fixed contract
+# fields (provider_id / provider_load_id are required in the Dart model).
+MOBILE_FROM_JSON_KEYS = MOBILE_FIXED_CONTRACT_KEYS
 
 # Provider-specific field names that must NEVER appear on the wire (§6.3).
 FORBIDDEN_KEYS = {
-    "provider_id", "provider_load_id", "result_id",
+    "result_id",
     "trailer_type", "pickup_window", "delivery_window", "raw_payload", "adr",
     "loading", "unloading", "publication", "requirements", "loads",
     "loadingPlace", "unloadingPlace", "loadingDateFrom", "unloadingDateTo",
@@ -298,8 +299,8 @@ class TestProviderSwap:
             f"Trans.eu-configured response leaked keys: "
             f"{sorted(set(item.keys()) - MOBILE_FIXED_CONTRACT_KEYS)}"
         )
-        # Every key is parseable by the Dart model's fromJson (the optional
-        # provider_id is simply absent — the mobile model defaults it to null).
+        # Every key is parseable by the Dart model's fromJson (provider_id /
+        # provider_load_id are required fields in the mobile model).
         assert set(item.keys()) <= MOBILE_FROM_JSON_KEYS
         # No provider-specific field names (TIMOCOM/Trans.eu/Teleroute/Wtransnet).
         assert FORBIDDEN_KEYS.isdisjoint(item.keys())
