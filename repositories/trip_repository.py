@@ -24,6 +24,7 @@ class TripRepository(BaseRepository):
         "transport_order_number", "dispatch_reference",
         "company_id",
         "source", "source_provider_id", "source_reference_id",
+        "externally_managed",
     ]
     COLUMNS_CMR_COUNTER = ["id", "year", "sequence_number"]
 

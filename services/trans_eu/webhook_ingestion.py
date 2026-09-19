@@ -12,7 +12,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from services.trans_eu.sync_service import FreightSyncService, OrderSyncService
+from services.trans_eu.sync_service import (
+    DockSyncService,
+    FreightSyncService,
+    OrderSyncService,
+    TransportSyncService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,8 +201,24 @@ class WebhookIngestionService:
                 sync_result = await OrderSyncService(self.db).process_order_event(
                     company_id, event_name, occurred_at, data,
                 )
+            elif category == "transport":
+                # Transport events (e.g. ``transports.transport.devices_set_changed``)
+                # sync the Trans.eu-assigned truck/driver onto the linked trip
+                # (TransEU_Architecture.md §9.3; TransEU_KnowledgeBase.md §8.5).
+                sync_result = await TransportSyncService(self.db).process_transport_event(
+                    company_id, event_name, occurred_at, data,
+                )
+            elif category == "dock":
+                # Dock-scheduler events (announcements / time windows) upsert the
+                # dock tables via the existing dock repositories
+                # (TransEU_Architecture.md §9.13; TransEU_KnowledgeBase.md §8.6).
+                sync_result = await DockSyncService(self.db).process_dock_event(
+                    company_id, event_name, occurred_at, data,
+                )
             else:
-                # transport / dock — no sync service yet; acknowledge only
+                # Unreachable in practice — route_event returns 'unknown' for
+                # anything outside the four known prefixes, and 'unknown' is
+                # short-circuited above.  Keep the defensive ack-only fallback.
                 sync_result = {"status": "processed", "category": category}
 
             self.mark_processed(row_id)

@@ -115,6 +115,10 @@ class TripResult(BaseModel):
     notes: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Trans.eu externally-managed flag (TransEU_Architecture.md §9.3):
+    # 1 = dispatch changes are read-only in Operion.  Read-only in this
+    # model — it is set by the Trans.eu sync services, never by manual edits.
+    externally_managed: int = 0
 
 
 TripCreateResult = ServiceResult[TripResult]

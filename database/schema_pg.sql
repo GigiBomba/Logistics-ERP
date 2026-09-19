@@ -71,7 +71,12 @@ CREATE TABLE IF NOT EXISTS trips (
     cmr_status TEXT DEFAULT 'draft',
     cmr_remarks TEXT,
     company_id INTEGER,
-    deleted_at TEXT
+    deleted_at TEXT,
+    -- Trans.eu externally-managed flag (TransEU_Architecture.md §9.3):
+    -- 1 = dispatch changes are read-only in Operion (Trans.eu owns the
+    -- assignment).  Mirror of the SQLite ALTER_TRIPS_ADD_EXTERNALLY_MANAGED
+    -- / Alembic migration r1s2t3u4v5w9.
+    externally_managed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_trips_date ON trips(created_at);
 CREATE INDEX IF NOT EXISTS idx_trips_truck ON trips(truck_number);

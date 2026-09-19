@@ -636,3 +636,418 @@ class TestOAuthLoopbackServer:
             server.stop()
         # If port 19999 is occupied, the server may fail to start
         # That's acceptable — test that start/stop don't crash
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 5. Transport / Dock sync (lane B.1) + externally_managed gate (B.2)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _insert_freight_with_trip(db, freight_id, trip_id):
+    """Insert a trans_eu_freight_offers row linked to a trips row."""
+    now = datetime.now(timezone.utc).isoformat()
+    db.conn.execute(
+        "INSERT INTO trans_eu_freight_offers "
+        "(id, company_id, user_id, trans_eu_freight_id, status, origin, destination, operion_trip_id, created_at, updated_at) "
+        "VALUES (?, 1, 1, ?, 'accepted', 'Krakow', 'Berlin', ?, ?, ?)",
+        (f"f-laneB-{freight_id}", freight_id, trip_id, now, now),
+    )
+    db.conn.execute(
+        "INSERT OR IGNORE INTO companies (id, company_name) VALUES (1, 'Test Company')"
+    )
+    db.conn.commit()
+
+
+class TestTransportSyncService:
+    """transports.* events sync the Trans.eu-assigned truck/driver to the trip."""
+
+    @pytest.mark.asyncio
+    async def test_devices_set_changed_updates_trip_assignment(self, db, freight_tables):
+        """transports.transport.devices_set_changed updates truck/driver on the
+        linked trip and stamps externally_managed=1 (Trans.eu owns the assignment)."""
+        _insert_freight_with_trip(db, freight_id=1000, trip_id=1001)
+        db.conn.execute(
+            "INSERT INTO trucks (id, plate_number, company_id) VALUES (1, 'TE-123', 1)"
+        )
+        db.conn.execute(
+            "INSERT INTO drivers (id, name, phone, company_id, created_at, updated_at) "
+            "VALUES (1, 'Jan Kowalski', '+48123456789', 1, '2026-01-01', '2026-01-01')"
+        )
+        db.conn.execute(
+            "INSERT INTO trips (id, status, company_id, truck_number, driver_name) "
+            "VALUES (1001, 'Planned', 1, '', '')"
+        )
+        db.conn.commit()
+
+        from services.trans_eu.sync_service import TransportSyncService
+        service = TransportSyncService(db)
+        result = await service.process_transport_event(
+            company_id=1,
+            event_name="transports.transport.devices_set_changed",
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+            data={
+                "freight_id": 1000,
+                "truck_plate_number": "TE-123",
+                "executor_name": "Jan Kowalski",
+                "executor_phone": "+48123456789",
+            },
+        )
+
+        assert result["status"] == "synced"
+        assert result["action"] == "assignment_synced"
+        trip = db.conn.execute(
+            "SELECT truck_id, truck_number, driver_id, driver_name, externally_managed"
+            " FROM trips WHERE id = 1001"
+        ).fetchone()
+        assert trip is not None
+        assert trip[0] == 1
+        assert trip[1] == "TE-123"
+        assert trip[2] == 1
+        assert trip[3] == "Jan Kowalski"
+        assert trip[4] == 1
+
+    @pytest.mark.asyncio
+    async def test_devices_set_changed_without_linked_trip_is_skipped(self, db, freight_tables):
+        from services.trans_eu.sync_service import TransportSyncService
+        service = TransportSyncService(db)
+        result = await service.process_transport_event(
+            company_id=1,
+            event_name="transports.transport.devices_set_changed",
+            occurred_at="",
+            data={"freight_id": 999999, "truck_plate_number": "XX-1"},
+        )
+        assert result["status"] == "skipped"
+        assert result["reason"] == "no_linked_trip"
+
+    @pytest.mark.asyncio
+    async def test_webhook_dispatches_transport_event_to_sync(self, db, freight_tables):
+        """process_webhook routes transports.* to TransportSyncService."""
+        _insert_freight_with_trip(db, freight_id=1100, trip_id=1101)
+        db.conn.execute("INSERT INTO trips (id, status, company_id) VALUES (1101, 'Planned', 1)")
+        db.conn.commit()
+
+        from services.trans_eu.webhook_ingestion import WebhookIngestionService
+        from services.trans_eu.sync_service import TransportSyncService
+
+        service = WebhookIngestionService(db)
+        with patch.object(
+            TransportSyncService,
+            "process_transport_event",
+            new=AsyncMock(return_value={"status": "synced", "action": "assignment_synced"}),
+        ) as mock_process:
+            result = await service.process_webhook(
+                company_id=1,
+                event_id="evt-transport-1",
+                event_name="transports.transport.devices_set_changed",
+                occurred_at="2026-01-25T11:41:11+00:00",
+                payload={
+                    "id": "evt-transport-1",
+                    "event_name": "transports.transport.devices_set_changed",
+                    "occurred_at": "2026-01-25T11:41:11+00:00",
+                    "data": {"freight_id": 1100, "truck_plate_number": "TE-123"},
+                },
+            )
+
+        mock_process.assert_awaited_once_with(
+            1, "transports.transport.devices_set_changed",
+            "2026-01-25T11:41:11+00:00", {"freight_id": 1100, "truck_plate_number": "TE-123"},
+        )
+        assert result["status"] == "processed"
+        assert result["category"] == "transport"
+
+
+class TestDockSyncService:
+    """time_slot_management.* events upsert/delete the dock tables."""
+
+    @pytest.mark.asyncio
+    async def test_announcement_created_upserts_dock_tables(self, db, freight_tables):
+        """announcement.created upserts dock_announcements + dock_warehouses."""
+        from services.trans_eu.sync_service import DockSyncService
+        service = DockSyncService(db)
+        result = await service.process_dock_event(
+            company_id=1,
+            event_name="time_slot_management.announcement.created",
+            occurred_at="2026-01-25T11:41:11+00:00",
+            data={
+                "id": 38602,
+                "reference_number": "DS/16365BE/1",
+                "status": "CONFIRMED",
+                "stage": "Vehicle_Arrived",
+                "date_from": "2023-07-14T08:00:00",
+                "date_to": "2023-07-14T10:00:00",
+                "operation_type": "loading",
+                "operation_time": "PT2H",
+                "carrier": {"id": 1013865, "legal_name": "Firma Testowa Przewoźnik"},
+                "shipper": {"id": 1007386, "legal_name": "Firma Testowa Załadowca"},
+                "driver": {"full_name": "Jan Kowalski", "phone_number": "+48888123456"},
+                "vehicle": {"truck_plate_number": "123string", "trailer_plate_number": "456string"},
+                "ramp": {"id": 2006, "name": "Suwnica A 1", "ramp_type": "GANTRY"},
+                "warehouse": {"id": 1567, "name": "Magazyn Stali"},
+                "route": {"spots": [{"order": 1}]},
+                "notes": [{"id": 26504, "note": "notatka", "type": "SHIPPER"}],
+                "external_reference_number": "123test",
+            },
+        )
+
+        assert result["status"] == "synced"
+        assert result["action"] == "upserted"
+
+        ann = db.conn.execute(
+            "SELECT trans_eu_announcement_id, reference_number, status,"
+            " carrier_id, carrier_name, warehouse_id, ramp_id, external_reference_number"
+            " FROM dock_announcements WHERE company_id = 1 AND trans_eu_announcement_id = 38602"
+        ).fetchone()
+        assert ann is not None
+        assert ann[0] == 38602
+        assert ann[1] == "DS/16365BE/1"
+        assert ann[2] == "CONFIRMED"
+        assert ann[3] == 1013865
+        assert ann[4] == "Firma Testowa Przewoźnik"
+        assert ann[5] == 1567
+        assert ann[6] == 2006
+        assert ann[7] == "123test"
+
+        wh = db.conn.execute(
+            "SELECT trans_eu_warehouse_id, name FROM dock_warehouses"
+            " WHERE company_id = 1 AND trans_eu_warehouse_id = 1567"
+        ).fetchone()
+        assert wh is not None
+        assert wh[1] == "Magazyn Stali"
+
+    @pytest.mark.asyncio
+    async def test_announcement_created_is_idempotent(self, db, freight_tables):
+        """Re-sending announcement.created REPLACES the row (no duplicate)."""
+        from services.trans_eu.sync_service import DockSyncService
+        service = DockSyncService(db)
+        payload = {"id": 38603, "reference_number": "DS/2", "status": "CONFIRMED",
+                   "warehouse": {"id": 1568, "name": "Wh"}}
+        await service.process_dock_event(
+            1, "time_slot_management.announcement.created", "", dict(payload),
+        )
+        await service.process_dock_event(
+            1, "time_slot_management.announcement.updated", "",
+            dict(payload, reference_number="DS/2-REV", status="FINISHED"),
+        )
+
+        rows = db.conn.execute(
+            "SELECT COUNT(*) FROM dock_announcements"
+            " WHERE company_id = 1 AND trans_eu_announcement_id = 38603"
+        ).fetchone()
+        assert rows[0] == 1
+        row = db.conn.execute(
+            "SELECT reference_number, status FROM dock_announcements"
+            " WHERE company_id = 1 AND trans_eu_announcement_id = 38603"
+        ).fetchone()
+        assert row[0] == "DS/2-REV"
+        assert row[1] == "FINISHED"
+
+    @pytest.mark.asyncio
+    async def test_announcement_deleted_removes_row(self, db, freight_tables):
+        from services.trans_eu.sync_service import DockSyncService
+        service = DockSyncService(db)
+        await service.process_dock_event(
+            1, "time_slot_management.announcement.created", "",
+            {"id": 38604, "reference_number": "DS/4", "warehouse": {"id": 1569, "name": "Wh"}},
+        )
+        result = await service.process_dock_event(
+            1, "time_slot_management.announcement.deleted", "", {"id": 38604},
+        )
+        assert result["status"] == "synced"
+        assert result["action"] == "deleted"
+        rows = db.conn.execute(
+            "SELECT COUNT(*) FROM dock_announcements WHERE company_id = 1 AND trans_eu_announcement_id = 38604"
+        ).fetchone()
+        assert rows[0] == 0
+
+    @pytest.mark.asyncio
+    async def test_time_window_created_upserts_dock_table(self, db, freight_tables):
+        """time_window.created upserts dock_time_windows (warehouse from route spot)."""
+        from services.trans_eu.sync_service import DockSyncService
+        service = DockSyncService(db)
+        result = await service.process_dock_event(
+            company_id=1,
+            event_name="time_slot_management.time_window.created",
+            occurred_at="2026-01-25T11:41:11+00:00",
+            data={
+                "id": 42,
+                "valid_from": "2025-09-08",
+                "valid_to": "2025-09-08",
+                "start_time": "12:00:00",
+                "end_time": "18:00:00",
+                "range_type": "CYCLE",
+                "external_number": "1DX124DAW7871",
+                "carrier": {"id": 956529},
+                "purchase_order": {"number": "PO-123"},
+                "route": {"spots": [{"warehouse_id": 6596, "order": 1}]},
+            },
+        )
+
+        assert result["status"] == "synced"
+        row = db.conn.execute(
+            "SELECT trans_eu_window_id, warehouse_id, valid_from, valid_to,"
+            " start_time, end_time, range_type, external_number, carrier_id"
+            " FROM dock_time_windows WHERE company_id = 1 AND trans_eu_window_id = 42"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 42
+        assert row[1] == 6596
+        assert row[2] == "2025-09-08"
+        assert row[3] == "2025-09-08"
+        assert row[4] == "12:00:00"
+        assert row[5] == "18:00:00"
+        assert row[6] == "CYCLE"
+        assert row[7] == "1DX124DAW7871"
+        assert row[8] == 956529
+
+    @pytest.mark.asyncio
+    async def test_webhook_dispatches_dock_event_to_sync(self, db, freight_tables):
+        """process_webhook routes time_slot_management.* to DockSyncService."""
+        from services.trans_eu.webhook_ingestion import WebhookIngestionService
+        from services.trans_eu.sync_service import DockSyncService
+
+        service = WebhookIngestionService(db)
+        with patch.object(
+            DockSyncService,
+            "process_dock_event",
+            new=AsyncMock(return_value={"status": "synced", "action": "upserted"}),
+        ) as mock_process:
+            result = await service.process_webhook(
+                company_id=1,
+                event_id="evt-dock-1",
+                event_name="time_slot_management.announcement.created",
+                occurred_at="2026-01-25T11:41:11+00:00",
+                payload={
+                    "id": "evt-dock-1",
+                    "event_name": "time_slot_management.announcement.created",
+                    "occurred_at": "2026-01-25T11:41:11+00:00",
+                    "data": {"id": 700, "reference_number": "DS/700"},
+                },
+            )
+
+        mock_process.assert_awaited_once_with(
+            1, "time_slot_management.announcement.created",
+            "2026-01-25T11:41:11+00:00", {"id": 700, "reference_number": "DS/700"},
+        )
+        assert result["status"] == "processed"
+        assert result["category"] == "dock"
+
+
+class TestExternallyManagedDispatchGate:
+    """trips.externally_managed=1 → manual dispatch edits rejected, sync allowed."""
+
+    def _make_external_trip(self, db, trip_id=2000):
+        db.conn.execute(
+            "INSERT OR IGNORE INTO companies (id, company_name) VALUES (1, 'Test Company')"
+        )
+        db.conn.execute(
+            "INSERT INTO trips (id, status, company_id, externally_managed)"
+            " VALUES (?, 'Planned', 1, 1)",
+            (trip_id,),
+        )
+        db.conn.commit()
+
+    def test_manual_assignment_edit_rejected(self, db, freight_tables):
+        """Manual truck assignment on an externally-managed trip is rejected."""
+        self._make_external_trip(db)
+        db.conn.execute("INSERT INTO trucks (id, plate_number, company_id) VALUES (1, 'TE-1', 1)")
+        db.conn.commit()
+
+        from models.trip_models import TripUpdate
+        from services.trip_service import TripService
+
+        service = TripService(db)
+        result = service.update(2000, TripUpdate(truck_id=1), company_id=1)
+
+        assert result.success is False
+        assert result.errors[0].code == "externally_managed"
+        # Rejection is read-only — the trip is unchanged.
+        row = db.conn.execute("SELECT truck_id FROM trips WHERE id = 2000").fetchone()
+        assert row[0] is None
+
+    def test_manual_status_transition_rejected(self, db, freight_tables):
+        """Manual status transition on an externally-managed trip is rejected."""
+        self._make_external_trip(db)
+        from models.trip_models import TripUpdate
+        from services.trip_service import TripService
+
+        service = TripService(db)
+        result = service.update(2000, TripUpdate(status="In Transit"), company_id=1)
+
+        assert result.success is False
+        assert result.errors[0].code == "externally_managed"
+        row = db.conn.execute("SELECT status FROM trips WHERE id = 2000").fetchone()
+        assert row[0] == "Planned"
+
+    def test_manual_driver_edit_rejected_via_dict_path(self, db, freight_tables):
+        """The deprecated dict path applies the same gate."""
+        self._make_external_trip(db)
+        from services.trip_service import TripService
+
+        service = TripService(db)
+        result = service.update(2000, {"driver_name": "Hacker"}, company_id=1)
+
+        assert result.success is False
+        assert result.errors[0].code == "externally_managed"
+
+    def test_non_dispatch_edit_still_allowed(self, db, freight_tables):
+        """Non-dispatch edits (e.g. pricing) are NOT blocked by the gate."""
+        from decimal import Decimal
+
+        self._make_external_trip(db)
+        from models.trip_models import TripUpdate
+        from services.trip_service import TripService
+
+        service = TripService(db)
+        result = service.update(2000, TripUpdate(price_eur=Decimal("1500")), company_id=1)
+
+        assert result.success is True
+        row = db.conn.execute("SELECT total_price_eur FROM trips WHERE id = 2000").fetchone()
+        assert float(row[0]) == 1500.0
+
+    @pytest.mark.asyncio
+    async def test_sync_path_write_still_allowed(self, db, freight_tables):
+        """The Trans.eu sync path (raw SQL) is NOT blocked by the manual gate."""
+        self._make_external_trip(db, trip_id=2001)
+        _insert_freight_with_trip(db, freight_id=2001, trip_id=2001)
+        db.conn.execute("INSERT INTO trucks (id, plate_number, company_id) VALUES (2, 'TE-999', 1)")
+        db.conn.commit()
+
+        from services.trans_eu.sync_service import TransportSyncService
+
+        service = TransportSyncService(db)
+        result = await service.process_transport_event(
+            company_id=1,
+            event_name="transports.transport.devices_set_changed",
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+            data={"freight_id": 2001, "truck_plate_number": "TE-999"},
+        )
+
+        assert result["status"] == "synced"
+        row = db.conn.execute(
+            "SELECT truck_number, externally_managed FROM trips WHERE id = 2001"
+        ).fetchone()
+        assert row[0] == "TE-999"
+        assert row[1] == 1
+
+    @pytest.mark.asyncio
+    async def test_order_link_marks_trip_externally_managed(self, db, freight_tables):
+        """freight_orders.order.created → linked trip gets externally_managed=1."""
+        _insert_freight_with_trip(db, freight_id=3000, trip_id=3001)
+        db.conn.execute("INSERT INTO trips (id, status, company_id) VALUES (3001, 'Planned', 1)")
+        db.conn.commit()
+
+        from services.trans_eu.sync_service import OrderSyncService
+
+        service = OrderSyncService(db)
+        result = await service.process_order_event(
+            company_id=1,
+            event_name="freight_orders.order.created",
+            occurred_at="2026-01-25T11:41:11+00:00",
+            data={"id": "ord-3000", "freight_id": 3000},
+        )
+
+        assert result["status"] == "synced"
+        row = db.conn.execute(
+            "SELECT externally_managed FROM trips WHERE id = 3001"
+        ).fetchone()
+        assert row[0] == 1

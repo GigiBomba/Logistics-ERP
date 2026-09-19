@@ -1213,3 +1213,107 @@ def _get_headers_for_driver(real_client: TestClient) -> Dict[str, str]:
     """Return auth headers for the driver user (used in pagination test)."""
     token = _get_token(real_client, _DRIVER_EMAIL, _PASSWORD)
     return {"Authorization": f"Bearer {token}"}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Externally-managed dispatch gate (TransEU_Architecture.md §9.3)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestExternallyManagedGate:
+    """Mobile dispatch endpoints respect the trips.externally_managed gate.
+
+    The PATCH /mobile/transports/{id}/status and
+    POST /mobile/dispatcher/jobs/{id}/reassign endpoints write trips.status /
+    trips.driver_id directly — the same gated fields the manual dispatch path
+    protects.  Externally-managed trips (flag = 1) must reject the write with
+    the same convention as ``TripService.update`` (HTTP 400 + clear detail)
+    and leave the row untouched; the non-managed path still succeeds.
+    """
+
+    def _company_id(self) -> int:
+        rows = _db_select(
+            "SELECT id FROM companies WHERE company_name = ?", (_COMPANY_NAME,)
+        )
+        return rows[0]["id"] if rows else 1
+
+    def _mark_externally_managed(self, trip_id: int, flag: int = 1) -> None:
+        _db_execute(
+            "UPDATE trips SET externally_managed = ? WHERE id = ?", (flag, trip_id)
+        )
+
+    def test_status_patch_rejected_on_externally_managed_trip(self, client):
+        trip_id = 1000
+        self._mark_externally_managed(trip_id)
+
+        resp = client.patch(
+            f"/api/v1/mobile/transports/{trip_id}/status",
+            json={"status": "In Transit"},
+        )
+
+        assert resp.status_code == 400, resp.text
+        assert "externally managed" in resp.json()["detail"].lower()
+        rows = _db_select("SELECT status FROM trips WHERE id = ?", (trip_id,))
+        assert rows[0]["status"] == "Planned"  # row unchanged
+
+    def test_status_patch_succeeds_on_normal_trip(self, client):
+        trip_id = 1001
+        self._mark_externally_managed(trip_id, 0)
+
+        resp = client.patch(
+            f"/api/v1/mobile/transports/{trip_id}/status",
+            json={"status": "In Transit"},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "In Transit"
+        rows = _db_select("SELECT status FROM trips WHERE id = ?", (trip_id,))
+        assert rows[0]["status"] == "In Transit"
+
+    def test_reassign_rejected_on_externally_managed_trip(self, client):
+        trip_id = 1002
+        self._mark_externally_managed(trip_id)
+        before = _db_select(
+            "SELECT driver_id FROM trips WHERE id = ?", (trip_id,)
+        )[0]["driver_id"]
+        driver_id = _db_select(
+            "SELECT id FROM drivers WHERE company_id = ? AND is_active = 1 LIMIT 1",
+            (self._company_id(),),
+        )[0]["id"]
+
+        resp = client.post(
+            f"/api/v1/mobile/dispatcher/jobs/{trip_id}/reassign",
+            json={"driver_id": driver_id},
+        )
+
+        assert resp.status_code == 400, resp.text
+        assert "externally managed" in resp.json()["detail"].lower()
+        rows = _db_select("SELECT driver_id FROM trips WHERE id = ?", (trip_id,))
+        assert rows[0]["driver_id"] == before  # row unchanged
+
+    def test_reassign_succeeds_on_normal_trip(self, client):
+        trip_id = 1003
+        self._mark_externally_managed(trip_id, 0)
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cid = self._company_id()
+        # A second active driver so the reassignment is a real change.
+        _db_execute(
+            "INSERT INTO drivers (name, email, company_id, is_active, created_at, updated_at) "
+            "VALUES ('Gate Target Driver', ?, ?, 1, ?, ?)",
+            (f"gate-target-{uuid.uuid4().hex[:8]}@test.xyz", cid, now, now),
+        )
+        driver_id = _db_select(
+            "SELECT id FROM drivers WHERE company_id = ? AND is_active = 1 "
+            "ORDER BY id DESC LIMIT 1",
+            (cid,),
+        )[0]["id"]
+
+        resp = client.post(
+            f"/api/v1/mobile/dispatcher/jobs/{trip_id}/reassign",
+            json={"driver_id": driver_id},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["driver_id"] == driver_id
+        rows = _db_select("SELECT driver_id FROM trips WHERE id = ?", (trip_id,))
+        assert rows[0]["driver_id"] == driver_id

@@ -126,6 +126,35 @@ def _db_to_trip_result(row: dict) -> TripResult:
     return TripResult(**mapped)
 
 
+# ── Externally-managed dispatch gate (TransEU_Architecture.md §9.3) ────────
+# "New column ``externally_managed: bool`` on trips: when true, dispatch
+# changes are read-only in Operion (Trans.eu owns the assignment)".  The
+# gate rejects manual (API / dispatch-board) edits that touch dispatch
+# fields on externally-managed trips.  The Trans.eu sync services write via
+# raw SQL (``db.conn.execute``) and are intentionally NOT routed through
+# ``TripService.update``, so the gate never blocks the webhook sync path
+# (lane B.1).  DB column names, as produced by ``_model_to_db`` / the
+# legacy dict path.
+_DISPATCH_FIELDS = frozenset({
+    "truck_id", "truck_number", "driver_id", "driver_name", "status",
+})
+
+
+def _externally_managed_rejection(trip_row: Optional[dict], data: dict) -> Optional[str]:
+    """Return a rejection message when *trip_row* is externally managed and
+    *data* touches dispatch fields, else ``None``."""
+    if not trip_row:
+        return None
+    if int(trip_row.get("externally_managed") or 0) != 1:
+        return None
+    if not _DISPATCH_FIELDS.intersection(data):
+        return None
+    return (
+        "This trip is externally managed by Trans.eu — dispatch changes are "
+        "read-only in Operion (Trans.eu owns the assignment)."
+    )
+
+
 class TripService:
     """Trip business logic with typed Pydantic models."""
 
@@ -249,10 +278,23 @@ class TripService:
             try:
                 # Tenant scoping: never update a trip outside the caller's
                 # company (company_id resolved from the JWT by the API layer).
-                if company_id is not None and not self._trip_repo.get_by_id(trip_id, company_id=company_id):
+                trip_row = self._trip_repo.get_by_id(trip_id, company_id=company_id)
+                if company_id is not None and not trip_row:
                     return ServiceResult(
                         success=False,
                         errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
+                    )
+                # Externally-managed gate (TransEU_Architecture.md §9.3): reject
+                # manual dispatch edits on Trans.eu-managed trips.
+                rejection = _externally_managed_rejection(trip_row, dict(request))
+                if rejection:
+                    logger.warning(
+                        "Rejected dispatch edit on externally-managed trip #%s (fields=%s)",
+                        trip_id, sorted(dict(request)),
+                    )
+                    return ServiceResult(
+                        success=False,
+                        errors=[ErrorDetail(message=f"Trip {trip_id}: {rejection}", code="externally_managed")],
                     )
                 self._trip_repo.update(trip_id, dict(request), company_id=company_id)
                 self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": request})
@@ -305,7 +347,8 @@ class TripService:
                 self._validate_external_refs(driver_id=trip_update.driver_id)
 
             # ── Tenant scoping: the trip must belong to the caller's company ──
-            if company_id is not None and not self._trip_repo.get_by_id(trip_id, company_id=company_id):
+            trip_row = self._trip_repo.get_by_id(trip_id, company_id=company_id)
+            if company_id is not None and not trip_row:
                 return ServiceResult(
                     success=False,
                     errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
@@ -317,6 +360,22 @@ class TripService:
                 return ServiceResult(
                     success=False,
                     errors=[ErrorDetail(message="No fields to update", code="empty_update")],
+                )
+
+            # ── Externally-managed dispatch gate (TransEU_Architecture.md
+            #    §9.3) ── "when true, dispatch changes are read-only in
+            #    Operion (Trans.eu owns the assignment)".  Manual edits to a
+            #    Trans.eu-managed trip's truck/driver/status are rejected; the
+            #    Trans.eu sync services bypass this gate by writing via raw SQL.
+            rejection = _externally_managed_rejection(trip_row, data)
+            if rejection:
+                logger.warning(
+                    "Rejected dispatch edit on externally-managed trip #%s (fields=%s)",
+                    trip_id, sorted(data),
+                )
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(message=f"Trip {trip_id}: {rejection}", code="externally_managed")],
                 )
 
             self._trip_repo.update(trip_id, data, company_id=company_id)

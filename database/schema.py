@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS trips (
     -- route_history_v2_id INTEGER REFERENCES route_history_v2(id),  (added by migration)
     -- truck_consumption_l_per_100km REAL,                          (added by migration)
     -- context_json TEXT                                             (added by migration)
+    -- externally_managed INTEGER NOT NULL DEFAULT 0,                (added by migration)
+    --   Trips whose dispatch assignment is owned by Trans.eu (Trans.eu-managed
+    --   orders) are flagged 1 — dispatch changes then become read-only in
+    --   Operion (TransEU_Architecture.md §9.3/§10.1).
 );
 """
 
@@ -1776,6 +1780,13 @@ ALTER_TRIPS_ADD_SOURCE_PROVIDER = (
 
 ALTER_TRIPS_ADD_SOURCE_REFERENCE = (
     "ALTER TABLE trips ADD COLUMN source_reference_id TEXT;"
+)
+
+
+# ── Trans.eu: trips externally-managed flag (TransEU_Architecture.md §9.3) ─
+# 1 = dispatch changes read-only in Operion (Trans.eu owns the assignment).
+ALTER_TRIPS_ADD_EXTERNALLY_MANAGED = (
+    "ALTER TABLE trips ADD COLUMN externally_managed INTEGER NOT NULL DEFAULT 0;"
 )
 
 

@@ -602,12 +602,26 @@ def update_transport_status(
 
     # Verify the transport exists and belongs to this company
     existing = db.execute(
-        "SELECT id, driver_id FROM trips WHERE id = ? AND company_id = ?",
+        "SELECT id, driver_id, externally_managed FROM trips "
+        "WHERE id = ? AND company_id = ?",
         (transport_id, company_id),
     ).fetchone()
 
     if not existing:
         raise HTTPException(status_code=404, detail="Transport not found")
+
+    # Externally-managed dispatch gate (TransEU_Architecture.md §9.3):
+    # trips whose dispatch is owned by Trans.eu are read-only in Operion —
+    # mirrors the code="externally_managed" rejection in TripService.update
+    # (surfaced as HTTP 400 by the dispatch API).
+    if int(existing["externally_managed"] or 0) == 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Transport is externally managed by Trans.eu — status changes "
+                "are read-only in Operion (Trans.eu owns the assignment)."
+            ),
+        )
 
     # If the current user is a driver, verify they own this transport
     if current_user.get("role") == "driver":
@@ -1453,11 +1467,24 @@ def reassign_transport(
     company_id = current_user["company_id"]
 
     trip = db.execute(
-        "SELECT id FROM trips WHERE id = ? AND company_id = ?",
+        "SELECT id, externally_managed FROM trips WHERE id = ? AND company_id = ?",
         (transport_id, company_id),
     ).fetchone()
     if not trip:
         raise HTTPException(status_code=404, detail="Transport not found")
+
+    # Externally-managed dispatch gate (TransEU_Architecture.md §9.3):
+    # trips whose dispatch is owned by Trans.eu are read-only in Operion —
+    # mirrors the code="externally_managed" rejection in TripService.update
+    # (surfaced as HTTP 400 by the dispatch API).
+    if int(trip["externally_managed"] or 0) == 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Transport is externally managed by Trans.eu — reassignment "
+                "is read-only in Operion (Trans.eu owns the assignment)."
+            ),
+        )
 
     driver = db.execute(
         "SELECT id FROM drivers WHERE id = ? AND company_id = ? AND is_active = 1",

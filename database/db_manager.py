@@ -635,6 +635,10 @@ class DatabaseManager:
             "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'",
             "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_provider_id TEXT",
             "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_reference_id TEXT",
+            # Trans.eu externally-managed flag (Alembic migration
+            # r1s2t3u4v5w9; TransEU_Architecture.md §9.3) — dispatch
+            # changes read-only in Operion when 1.
+            "ALTER TABLE trips ADD COLUMN IF NOT EXISTS externally_managed INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)",
             "CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)",
             # SQLite-schema parity columns (drill-verified: the app reads
@@ -1263,6 +1267,10 @@ class DatabaseManager:
             ("transport_order_number", "ALTER TABLE trips ADD COLUMN transport_order_number TEXT DEFAULT ''"),
             ("dispatch_reference", "ALTER TABLE trips ADD COLUMN dispatch_reference TEXT DEFAULT ''"),
             ("promised_date", "ALTER TABLE trips ADD COLUMN promised_date TEXT"),
+            # Trans.eu externally-managed flag (TransEU_Architecture.md §9.3):
+            # trips whose dispatch assignment is owned by Trans.eu are flagged
+            # 1 — dispatch changes are read-only in Operion.
+            ("externally_managed", S.ALTER_TRIPS_ADD_EXTERNALLY_MANAGED),
         ])
         try:
             self.conn.execute(S.INDEX_TRIPS_TRUCK_ID)
