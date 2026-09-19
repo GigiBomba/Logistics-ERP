@@ -345,6 +345,77 @@ class TestPublicJoin:
         })
         assert resp.status_code == 422
 
+    # ── Welcome email (Email 1) — async/non-blocking via EmailProvider ──
+
+    def test_join_enqueues_welcome_email(self, client):
+        """Successful join sends the welcome email with the referral code."""
+        with patch("backend.api.v1.waitlist.get_email_provider") as mock_get:
+            mock_provider = MagicMock()
+            mock_provider.send.return_value = True
+            mock_get.return_value = mock_provider
+
+            resp = client.post(f"{BASE}/join", json={
+                "company_name": "Email Co",
+                "email": "welcome@test.com",
+            })
+            assert resp.status_code == 201
+            data = resp.json()
+
+            mock_provider.send.assert_called_once()
+            call = mock_provider.send.call_args
+            assert call.kwargs["to"] == "welcome@test.com"          # to
+            assert call.kwargs["template_id"] == "waitlist-welcome"  # template_id
+            assert call.kwargs["variables"]["referral_code"] == data["referral_code"]
+            assert call.kwargs["variables"]["unsubscribe_token"] == data["referral_code"]
+            assert data["referral_code"] in call.kwargs["variables"]["unsubscribe_url"]
+
+    def test_join_welcome_email_failure_is_non_blocking(self, client):
+        """Provider returning False (send failed) never fails the join."""
+        with patch("backend.api.v1.waitlist.get_email_provider") as mock_get:
+            mock_get.return_value.send.return_value = False
+
+            resp = client.post(f"{BASE}/join", json={
+                "company_name": "Fail Co",
+                "email": "fail@test.com",
+            })
+            assert resp.status_code == 201
+            assert resp.json()["status"] == "joined"
+
+    def test_join_welcome_email_exception_is_non_blocking(self, client):
+        """Provider raising never fails the join (row is already committed)."""
+        with patch("backend.api.v1.waitlist.get_email_provider") as mock_get:
+            mock_get.return_value.send.side_effect = Exception("SMTP down")
+
+            resp = client.post(f"{BASE}/join", json={
+                "company_name": "Boom Co",
+                "email": "boom@test.com",
+            })
+            assert resp.status_code == 201
+            assert resp.json()["status"] == "joined"
+
+            # The join row must still exist despite the email failure.
+            from backend.db import DatabaseManager
+            d = DatabaseManager(_current_db_path(), pool_min=1, pool_max=2)
+            row = d.conn.execute(
+                "SELECT email FROM waitlist_entries WHERE email = ?",
+                ("boom@test.com",),
+            ).fetchone()
+            d.close()
+            assert row is not None
+
+    def test_join_honeypot_does_not_send_email(self, client):
+        """Honeypot hits get a fake success but no real welcome email."""
+        with patch("backend.api.v1.waitlist.get_email_provider") as mock_get:
+            mock_get.return_value.send.return_value = True
+
+            resp = client.post(f"{BASE}/join", json={
+                "company_name": "Bot",
+                "email": "bot-hp@evil.com",
+                "hp_field": "I am a bot",
+            })
+            assert resp.status_code == 201
+            mock_get.return_value.send.assert_not_called()
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Admin: List Entries
@@ -713,12 +784,98 @@ class TestAdminCampaign:
 
 
 class TestUnsubscribe:
-    """GET /api/v1/waitlist/unsubscribe/{token}"""
+    """GET /api/v1/waitlist/unsubscribe/{token} — token = referral code."""
 
-    def test_unsubscribe_stub(self, client):
-        resp = client.get(f"{BASE}/unsubscribe/test-token-123")
+    @pytest.fixture(autouse=True)
+    def _reset_count_cache(self):
+        from backend.api.v1.waitlist import _count_cache
+        _count_cache["count"] = 0
+        _count_cache["cached_at"] = None
+        yield
+        _count_cache["count"] = 0
+        _count_cache["cached_at"] = None
+
+    def test_unsubscribe_transitions_db_row(self, client, db):
+        """Unsubscribe performs the real DB transition to 'unsubscribed'."""
+        eid = _seed_entry(db, company_name="Unsub Me", email="bye@test.com",
+                          referral_code="BYE001")
+
+        resp = client.get(f"{BASE}/unsubscribe/BYE001")
         assert resp.status_code == 200
         assert resp.json()["status"] == "unsubscribed"
+
+        row = db.conn.execute(
+            "SELECT status, unsubscribed_at FROM waitlist_entries WHERE id = ?",
+            (eid,),
+        ).fetchone()
+        assert row["status"] == "unsubscribed"
+        assert row["unsubscribed_at"] is not None
+
+    def test_unsubscribe_is_idempotent(self, client, db):
+        """Clicking the unsubscribe link twice doesn't error (blueprint §3)."""
+        _seed_entry(db, company_name="Unsub Twice", email="twice@test.com",
+                    referral_code="TWI001")
+
+        resp1 = client.get(f"{BASE}/unsubscribe/TWI001")
+        assert resp1.status_code == 200
+        assert resp1.json()["status"] == "unsubscribed"
+
+        resp2 = client.get(f"{BASE}/unsubscribe/TWI001")
+        assert resp2.status_code == 200
+        assert resp2.json()["status"] == "unsubscribed"
+
+    def test_unsubscribe_from_invited_is_allowed(self, client, db):
+        """State machine allows invited → unsubscribed."""
+        eid = _seed_entry(db, company_name="Invited Unsub", email="inv@test.com",
+                          referral_code="INV003")
+        db.conn.execute(
+            "UPDATE waitlist_entries SET status = 'invited', "
+            "invited_at = datetime('now') WHERE id = ?",
+            (eid,),
+        )
+        db.conn.commit()
+
+        resp = client.get(f"{BASE}/unsubscribe/INV003")
+        assert resp.status_code == 200
+        row = db.conn.execute(
+            "SELECT status FROM waitlist_entries WHERE id = ?", (eid,)
+        ).fetchone()
+        assert row["status"] == "unsubscribed"
+
+    def test_unsubscribe_from_churned_is_rejected(self, client, db):
+        """State machine forbids churned → unsubscribed (no outgoing edges)."""
+        eid = _seed_entry(db, company_name="Churned", email="churned@test.com",
+                          referral_code="CHR001")
+        db.conn.execute(
+            "UPDATE waitlist_entries SET status = 'churned' WHERE id = ?",
+            (eid,),
+        )
+        db.conn.commit()
+
+        resp = client.get(f"{BASE}/unsubscribe/CHR001")
+        assert resp.status_code == 422
+
+        row = db.conn.execute(
+            "SELECT status FROM waitlist_entries WHERE id = ?", (eid,)
+        ).fetchone()
+        assert row["status"] == "churned"  # unchanged
+
+    def test_unsubscribe_unknown_token_returns_404(self, client):
+        resp = client.get(f"{BASE}/unsubscribe/NOPE1234")
+        assert resp.status_code == 404
+
+    def test_unsubscribe_excludes_entry_from_count(self, client, db):
+        """Live counter drops unsubscribed entries immediately."""
+        _seed_entry(db, company_name="Active", email="active@test.com",
+                    referral_code="ACT002")
+        _seed_entry(db, company_name="Unsub", email="unsub2@test.com",
+                    referral_code="USB003")
+
+        assert client.get(f"{BASE}/count").json()["count"] == 2
+
+        resp = client.get(f"{BASE}/unsubscribe/USB003")
+        assert resp.status_code == 200
+        assert client.get(f"{BASE}/count").json()["count"] == 1
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -1,8 +1,8 @@
 """Waitlist API — public join + admin management.
 
-POST  /api/waitlist/join                 — Public signup (Phase 1)
+POST  /api/waitlist/join                 — Public signup (Phase 1) + welcome email (Email 1)
 GET   /api/waitlist/count                — Live counter (blueprint §11.4)
-GET   /api/waitlist/unsubscribe/{token}  — Unsubscribe stub (Phase 3)
+GET   /api/waitlist/unsubscribe/{token}  — Unsubscribe (real status transition)
 
 Admin (Phase 2):
 GET    /api/waitlist/admin/entries        — list / filter / paginate
@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from backend.dependencies import get_db
 from backend.dependencies_security import require_admin
 from backend.db import DatabaseManager
+from database.time_utils import utc_now_iso
 from backend.schemas.waitlist import (
     VALID_TRANSITIONS,
     WAITLIST_STATUS_VALUES,
@@ -37,6 +38,7 @@ from backend.schemas.waitlist import (
     WaitlistJoinRequest,
     WaitlistJoinResponse,
 )
+from backend.services.email_provider import get_email_provider
 
 logger = logging.getLogger(__name__)
 
@@ -238,8 +240,29 @@ def join_waitlist(
         data.company_name, email, data.source, referral_code, referred_by,
     )
 
-    # ── TODO Phase 3: Enqueue Welcome email (async, not blocking) ──────
-    # Email 1 trigger goes here once EmailProvider is built.
+    # ── Welcome email (Email 1) — best-effort, never blocks/fails the join ──
+    # Follows the established contact-form convention (backend/api/v1/contact.py):
+    # call the EmailProvider synchronously but treat any failure as non-blocking —
+    # the waitlist row is already committed and the 201 response must not depend
+    # on email delivery.  LoggingEmailProvider logs in dev; ResendProvider catches
+    # send errors internally and returns False.  The unsubscribe token is the
+    # entry's unique referral code (no separate token column; the link is built
+    # from the same code returned in the join response).
+    try:
+        api_base = os.environ.get("OPERION_API_BASE_URL", "https://api.operionerp.xyz").rstrip("/")
+        get_email_provider().send(
+            to=email,
+            template_id="waitlist-welcome",
+            variables={
+                "email": email,
+                "company_name": data.company_name,
+                "referral_code": referral_code,
+                "unsubscribe_token": referral_code,
+                "unsubscribe_url": f"{api_base}/api/v1/waitlist/unsubscribe/{referral_code}",
+            },
+        )
+    except Exception:
+        logger.exception("Waitlist welcome email to %s failed (join preserved).", email)
 
     return {"status": "joined", "referral_code": referral_code}
 
@@ -267,11 +290,43 @@ def waitlist_count(db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
     return {"count": count, "cached_at": now}
 
 
-# ── Public: Unsubscribe (Phase 3 stub) ────────────────────────────────
+# ── Public: Unsubscribe ───────────────────────────────────────────────
 
 @router.get("/unsubscribe/{token}")
-def unsubscribe(token: str) -> Dict[str, Any]:
-    """Unsubscribe stub — real token lookup lands with the email provider."""
+def unsubscribe(token: str, db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+    """Public unsubscribe — token is the entry's unique referral code.
+
+    Performs the real DB status transition to ``unsubscribed`` (respecting
+    the state machine in ``backend/schemas/waitlist.py``) and is idempotent:
+    a second click on an already-unsubscribed link reports success instead
+    of erroring (blueprint §3).
+    """
+    row = db.execute(
+        "SELECT id, email, status FROM waitlist_entries WHERE referral_code = ?",
+        (token,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unsubscribe link not found.")
+
+    if row["status"] == "unsubscribed":
+        # Idempotent — nothing to change, report success.
+        return {"status": "unsubscribed"}
+
+    if "unsubscribed" not in VALID_TRANSITIONS.get(row["status"], set()):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot unsubscribe from status '{row['status']}'.",
+        )
+
+    db.execute(
+        "UPDATE waitlist_entries SET status = 'unsubscribed', "
+        "unsubscribed_at = ? WHERE id = ?",
+        (utc_now_iso(), row["id"]),
+    )
+    db.commit()
+    _invalidate_count_cache()
+
+    logger.info("Waitlist unsubscribe: email=%s token=%s", row["email"], token)
     return {"status": "unsubscribed"}
 
 
@@ -379,7 +434,9 @@ def update_waitlist_entry(
             "unsubscribed": "unsubscribed_at",
         }.get(update.status)
         if timestamp_col:
-            sets.append(f"{timestamp_col} = datetime('now')")
+            # Bound from Python — SQLite's datetime('now') breaks on PG.
+            sets.append(f"{timestamp_col} = ?")
+            params.append(utc_now_iso())
 
     if update.notes is not None:
         sets.append("notes = ?")
