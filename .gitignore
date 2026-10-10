@@ -153,3 +153,7 @@ data/translations/_*_untranslated.txt
 scripts/untranslated_keys.txt
 *.pyproj.user
 tests/baselines/**/*.bak
+
+# Standalone repos - live in their own GitHub repos (operion-website, operion-mobile-app)
+/website/
+/mobile_app/
