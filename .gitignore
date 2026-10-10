@@ -123,3 +123,33 @@ mutation-report/
 
 # uv-native lock trap (requirements.lock is canonical per ARCHITECTURALREWORK decision)
 uv.lock
+
+# Runtime artifacts that must not be committed
+celerybeat-schedule.*
+dump_windows_*.json
+
+# --- added by git cleanup 2026-10-10 ---
+*_pid.txt
+crashhunt_*.txt
+debug_pytest_*.txt
+final_pytest_*.txt
+full_diag.err
+full_diag.log
+live_failures_*.log
+baseline_pytest*.txt
+bandit_scan_*.txt
+npm_audit_before.json
+pip_audit_before.json
+reportmi_warnings.md
+.anchored_summary.md
+final_err.txt
+final_out.txt
+test_group1.db
+missing_translations.txt
+untranslated_keys*.txt
+remaining_keys*.txt
+data/translations/missing_translations.json
+data/translations/_*_untranslated.txt
+scripts/untranslated_keys.txt
+*.pyproj.user
+tests/baselines/**/*.bak
