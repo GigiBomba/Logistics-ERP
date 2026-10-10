@@ -9,6 +9,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 
+# ── Legacy env-name alias (2026-10-10) ──────────────────────────────────
+# ``OPERION_ENVIRONMENT`` was set by compose.prod.yaml and
+# .env.production.example, but no code ever read it — a deployment using only
+# that name silently ran in *development* mode (production guards disabled).
+# Normalise it to the canonical ``OPERION_ENV`` that every reader uses, with a
+# warning so the stale config still gets fixed. Only fills OPERION_ENV when it
+# is unset, so the canonical name always wins.
+if os.environ.get("OPERION_ENVIRONMENT") and not os.environ.get("OPERION_ENV"):
+    os.environ["OPERION_ENV"] = os.environ["OPERION_ENVIRONMENT"]
+    logger.warning(
+        "OPERION_ENVIRONMENT is deprecated (use OPERION_ENV instead); "
+        "treating %r as OPERION_ENV for this process.",
+        os.environ["OPERION_ENVIRONMENT"],
+    )
+
+
 # ── Process-global settings cache (F1) ──────────────────────────────────
 # ``BackendSettings()`` parses ``.env`` + every OPERION_* env var through
 # Pydantic on every construction — request hot paths (auth, mfa, admin,

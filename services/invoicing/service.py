@@ -344,10 +344,25 @@ class InvoiceService:
         conf = load_company_config()
         client_name = trip.get("client_name", t("invoice.default_client"))
         filename = os.path.basename(path)
-        subject = t("email.invoice_subject").format(filename=filename, client=client_name)
+        # Every shipped translation uses POSITIONAL auto-fields —
+        # en.json: invoice_subject = "Invoice {} - {}"; invoice_body =
+        # "...attached invoice {}.\n\nTotal amount: {:.2f} EUR\nDue date: {}\n...{}".
+        # The previous kwargs call (format(filename=..., client=...)) raised
+        # `IndexError: Replacement index 0 out of range for positional args
+        # tuple` at send time.  Field order: subject = (file, client);
+        # body = (file, amount — same `total_price_eur` key as
+        # generate_and_record() above, due date — mirrors its now+30d
+        # default unless trip_data supplies one, company).
+        subject = t("email.invoice_subject").format(filename, client_name)
+        due_date = str(
+            trip.get("due_date")
+            or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        )
         body = t("email.invoice_body").format(
-            trip_id=trip_id,
-            company=conf.get("company_name", ""),
+            filename,
+            float(trip.get("total_price_eur") or 0),
+            due_date,
+            conf.get("company_name", ""),
         )
 
         if nc.send_email(recipient, subject, body, attachments=[path]):

@@ -25,6 +25,16 @@ export default function ForgotPasswordPage() {
     resolver: zodResolver(schema),
   })
 
+  // The copy ships as one combined key ("Remember your password? Sign in"
+  // and translations). Split at the question mark so the trailing call to
+  // action becomes a real link while rendered text stays identical.
+  const rememberPassword = t("auth.rememberPassword")
+  const questionMarkIndex = rememberPassword.indexOf("?")
+  const passwordQuestion =
+    questionMarkIndex >= 0 ? rememberPassword.slice(0, questionMarkIndex + 1) : rememberPassword
+  const signInLabel =
+    questionMarkIndex >= 0 ? rememberPassword.slice(questionMarkIndex + 1).trim() : ""
+
   function onSubmit(data: FormData) {
     authApi.forgotPassword(data.email).then(() => {
       toast.success(t("auth.resetLinkSent"))
@@ -75,7 +85,13 @@ export default function ForgotPasswordPage() {
             </CardContent>
             <CardFooter className="justify-center">
               <p className="text-sm text-muted-foreground">
-                {t("auth.rememberPassword")}
+                {passwordQuestion}
+                {signInLabel && (
+                  <>
+                    {" "}
+                    <Link to="/login" className="text-primary hover:underline font-medium">{signInLabel}</Link>
+                  </>
+                )}
               </p>
             </CardFooter>
           </Card>

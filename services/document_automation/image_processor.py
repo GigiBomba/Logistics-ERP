@@ -40,6 +40,16 @@ class ProcessingError(Exception):
     """Raised when an input cannot be processed."""
 
 
+class UnreadableDocumentError(ProcessingError):
+    """Raised when an input file is corrupt or cannot be opened at all.
+
+    Unlike general :class:`ProcessingError` failures (which may be
+    transient, e.g. disk full or a crashed OCR engine), this marks a
+    source file that can never be processed as-is; callers may record
+    the attempt as terminal instead of retrying it forever.
+    """
+
+
 def _safe_import_cv2():
     """Return cv2 module, or None if not installed."""
     try:
@@ -116,7 +126,8 @@ def _order_points(pts) -> list[tuple[float, float]]:
 
 
 def _detect_document_quad(
-    image_bgr, cv2, np, debug_dir: str | None = None, image_name: str = ""
+    image_bgr, cv2, np, debug_dir: str | None = None, image_name: str = "",
+    quiet_failure: bool = False,
 ) -> list | None:
     """Detect the document quadrilateral in ``image_bgr``.
 
@@ -224,10 +235,16 @@ def _detect_document_quad(
             chosen = _canny_detect()
 
     if chosen is None:
-        logger.warning(
-            "_detect_document_quad: both bg_distance and canny detection "
-            "failed for %s", image_name or "unknown"
-        )
+        if quiet_failure:
+            logger.debug(
+                "_detect_document_quad: no document quad found for %s "
+                "(full page kept)", image_name or "unknown",
+            )
+        else:
+            logger.warning(
+                "_detect_document_quad: both bg_distance and canny detection "
+                "failed for %s", image_name or "unknown"
+            )
     elif debug_dir:
         _save_debug_image(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), debug_dir, f"{image_name}_07_selected_quad.jpg")
     return chosen
@@ -330,13 +347,19 @@ def _estimate_blur(image_gray, cv2_mod) -> float:
     return float(np.array(cv2_mod.Laplacian(image_gray, cv2_mod.CV_64F)).var())
 
 
-def _enhance_single_image(image_path: str, output_png_path: str) -> tuple[tuple[int, int], bool, list]:
+def _enhance_single_image(
+    image_path: str, output_png_path: str, *, quiet_quad_failure: bool = False
+) -> tuple[tuple[int, int], bool, list]:
     """Process one image: rectify, deskew, enhance, save PNG.
 
     Returns ``(orig_size, enhanced_flag, enhanced_paths)``.
     The ``enhanced_paths`` list contains any intermediate sidecars
     (always includes the final PNG).  ``enhanced_flag`` is False if
     OpenCV isn't available or the image couldn't be processed.
+
+    ``quiet_quad_failure`` demotes the "no document quad found"
+    diagnostic to DEBUG — used for digitally rendered PDF pages where
+    a missing quad (full page kept) is expected, not a problem.
     """
     cv2 = _safe_import_cv2()
     if cv2 is None:
@@ -352,6 +375,8 @@ def _enhance_single_image(image_path: str, output_png_path: str) -> tuple[tuple[
                 img.save(output_png_path, "PNG")
         except (OSError, ValueError) as exc:
             logger.warning("Image load failed for %s: %s", image_path, exc)
+            if type(exc).__name__ == "UnidentifiedImageError":
+                raise UnreadableDocumentError(f"Cannot load image: {image_path}") from exc
             raise ProcessingError(f"Cannot load image: {image_path}") from exc
         return orig_size, False, [output_png_path]
 
@@ -369,6 +394,8 @@ def _enhance_single_image(image_path: str, output_png_path: str) -> tuple[tuple[
             image_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
     except (OSError, ValueError) as exc:
         logger.warning("Image load failed for %s: %s", image_path, exc)
+        if type(exc).__name__ == "UnidentifiedImageError":
+            raise UnreadableDocumentError(f"Cannot load image: {image_path}") from exc
         raise ProcessingError(f"Cannot load image: {image_path}") from exc
 
     # ── Document quad detection (downscaled, then mapped back) ────────
@@ -393,7 +420,10 @@ def _enhance_single_image(image_path: str, output_png_path: str) -> tuple[tuple[
         _save_debug_image(image_bgr, debug_dir, f"{src_name}_00_original.jpg")
         _save_debug_image(small, debug_dir, f"{src_name}_01_resized.jpg")
 
-    quad = _detect_document_quad(small, cv2, np, debug_dir=debug_dir, image_name=src_name)
+    quad = _detect_document_quad(
+        small, cv2, np, debug_dir=debug_dir, image_name=src_name,
+        quiet_failure=quiet_quad_failure,
+    )
 
     enhanced_flag = False
     if quad is not None:
@@ -573,6 +603,22 @@ def _safe_import_fitz():
         return None
 
 
+def _is_permanently_unreadable_pdf_error(exc: BaseException) -> bool:
+    """Return True only for content-level PDF corruption.
+
+    ``fitz.open`` raises ``FileDataError`` both for corrupt bytes and
+    for transient system conditions (Windows sharing violations,
+    permission errors, ...), so the top-level type alone is not enough:
+    a format-level cause (``FzErrorFormat``) or an empty file means the
+    bytes themselves are unreadable.  Anything undecidable stays
+    retryable so a transient lock is never recorded as terminal.
+    """
+    if type(exc).__name__ == "EmptyFileError":
+        return True
+    cause = getattr(exc, "__cause__", None)
+    return type(cause).__name__ == "FzErrorFormat"
+
+
 def _render_pdf_pages_to_images(
     pdf_path: str, enhanced_dir: str, job_id: str, max_pages: int = 20,
 ) -> tuple[list[str], bool]:
@@ -600,7 +646,16 @@ def _render_pdf_pages_to_images(
 
     doc = None
     try:
-        doc = fitz.open(pdf_path)
+        try:
+            doc = fitz.open(pdf_path)
+        except Exception as exc:
+            if _is_permanently_unreadable_pdf_error(exc):
+                logger.warning("Unreadable or corrupt PDF %s: %s", pdf_path, exc)
+                raise UnreadableDocumentError(
+                    f"Unreadable or corrupt PDF: {pdf_path} ({exc})"
+                ) from exc
+            logger.warning("PDF open failed for %s: %s", pdf_path, exc)
+            raise ProcessingError(f"PDF open failed: {pdf_path} ({exc})") from exc
         total_pages = min(max_pages, len(doc))
         for idx in range(total_pages):
             page = doc.load_page(idx)
@@ -615,7 +670,9 @@ def _render_pdf_pages_to_images(
             # Enhance (crop, deskew, contrast)
             out_png = os.path.join(enhanced_dir, f"{job_id}_pdf_{idx:04d}.png")
             try:
-                _orig_size, flag, sidecars = _enhance_single_image(raw_png, out_png)
+                _orig_size, flag, sidecars = _enhance_single_image(
+                    raw_png, out_png, quiet_quad_failure=True
+                )
                 enhanced_paths.extend(sidecars)
                 any_enhanced = any_enhanced or flag
             except (ProcessingError, Exception) as exc:
@@ -632,6 +689,8 @@ def _render_pdf_pages_to_images(
             "Rendered %d PDF pages from %s (%d enhanced, %d total)",
             total_pages, pdf_path, sum(1 for _ in enhanced_paths), total_pages,
         )
+    except (UnreadableDocumentError, ProcessingError):
+        raise
     except Exception as exc:
         logger.warning("PDF page rendering failed for %s: %s", pdf_path, exc)
         raise ProcessingError(f"PDF page rendering failed: {pdf_path} ({exc})") from exc
@@ -733,6 +792,7 @@ class ImageProcessor:
         enhanced_paths: list[str] = []
         enhanced_flag = False
         orig_size: tuple[int, int] = (0, 0)
+        unreadable_image: UnreadableDocumentError | None = None
 
         # ── Process images ──────────────────────────────────────────────
         if images:
@@ -742,6 +802,11 @@ class ImageProcessor:
                 out_png = os.path.join(enhanced_dir, f"{job_id}_{idx:03d}_{base}.png")
                 try:
                     size, flag, sidecars = _enhance_single_image(img_path, out_png)
+                except UnreadableDocumentError as exc:
+                    logger.warning("Skipping unreadable image %s: %s", img_path, exc)
+                    if unreadable_image is None:
+                        unreadable_image = exc
+                    continue
                 except ProcessingError as exc:
                     logger.warning("Skipping %s: %s", img_path, exc)
                     continue
@@ -750,6 +815,8 @@ class ImageProcessor:
                 if idx == 0:
                     orig_size = size
             if not enhanced_paths and not pdfs:
+                if unreadable_image is not None:
+                    raise unreadable_image
                 raise ProcessingError("All images failed to process; nothing to produce.")
 
         # ── Process PDFs — render pages to images, enhance, reassemble ──

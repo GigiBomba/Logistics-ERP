@@ -881,15 +881,27 @@ class _SilentChromium:
 
 
 _PERSISTENT_PROFILE_DIR: str = os.path.join(
-    tempfile.gettempdir(), "operion_chrome_profile"
+    tempfile.gettempdir(), f"operion_chrome_profile-{os.getpid()}"
 )
-"""Persistent Chromium user-data directory.
+"""Persistent Chromium user-data directory — stable per process, unique across.
 
 Using a fixed (non-temporary) profile means Chrome skips the first-time
 setup / telemetry / what's-new UI checks that execute when it detects a
 brand new profile.  The first-ever boot still runs that initialisation,
-but subsequent app launches reuse the cached profile and avoid the
-transient windows those checks create.
+but subsequent boots within the same process reuse the cached profile and
+avoid the transient windows those checks create.  (The ``--no-first-run``
+/ ``--no-default-browser-check`` CLI flags cover the same checks for a
+fresh pid's profile.)
+
+The ``-<pid>`` suffix isolates concurrent processes — notably the two
+pytest-xdist workers under ``-n 2``: Chrome exits immediately when a
+second instance finds the same user-data-dir locked ("browser seemed to
+close immediately after starting"), which caused 30–100 s blocking
+retries and the mass E-at-setup errors in full-suite runs.  The value is
+a module-level constant, so ``_ensure_profile_dir()`` stays idempotent
+and every consumer (CLI ``--user-data-dir``, ``_browser_kwargs()``, the
+debug log) reads this single source — nothing else references the old
+literal path, so existing cleanup/teardown paths are unaffected.
 """
 
 

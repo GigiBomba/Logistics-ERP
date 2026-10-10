@@ -3641,6 +3641,7 @@
   "waitlist.form.fleetSize": "Mărimea flotei",
   "waitlist.form.fleetSizePlaceholder": "Selectează mărimea flotei",
   "waitlist.form.joining": "Se procesează...",
+  "waitlist.form.lessDetails": "Mai puține detalii",
   "waitlist.form.moreDetails": "Mai multe detalii (opțional)",
   "waitlist.form.moreDetailsHint": "Ne ajută să prioritizăm integrarea ta",
   "waitlist.getOnList": "Înscrie-te pe listă",

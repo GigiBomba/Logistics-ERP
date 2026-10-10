@@ -3641,6 +3641,7 @@
   "waitlist.form.fleetSize": "Tamaño de la flota",
   "waitlist.form.fleetSizePlaceholder": "Selecciona el tamaño de flota",
   "waitlist.form.joining": "Procesando...",
+  "waitlist.form.lessDetails": "Menos detalles",
   "waitlist.form.moreDetails": "Más detalles (opcional)",
   "waitlist.form.moreDetailsHint": "Nos ayuda a priorizar tu incorporación",
   "waitlist.getOnList": "Apúntese a la lista",

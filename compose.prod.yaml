@@ -37,6 +37,11 @@ services:
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
     ports:
       - "8000:8000"
+    volumes:
+      # Secrets/runtime config (admin gateway, support auth, Resend, Stripe):
+      # read at startup by backend.main / BackendSettings — never baked into
+      # the image (see .dockerignore). Mirrors compose.local.yaml.
+      - ./.env:/app/.env:ro
     environment:
       - OPERION_DB_ENGINE=postgresql
       - OPERION_POSTGRES_DSN=postgresql://operion:${OPERION_DB_PASSWORD:-changeme}@postgres:5432/operion
@@ -46,7 +51,7 @@ services:
       - OPERION_ENCRYPTION_KEY=${OPERION_ENCRYPTION_KEY:-}
       - OPERION_CORS_ORIGINS=${OPERION_CORS_ORIGINS:-https://operionerp.xyz,https://app.operionerp.xyz}
       - OPERION_RATE_LIMIT=${OPERION_RATE_LIMIT:-100}
-      - OPERION_ENVIRONMENT=production
+      - OPERION_ENV=production
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,13 +68,16 @@ services:
   celery_worker:
     build: .
     command: celery -A backend.celery_app worker --loglevel=info --concurrency=4
+    volumes:
+      # Runtime secrets (Resend/Stripe/support auth) — never baked into the image.
+      - ./.env:/app/.env:ro
     environment:
       - OPERION_DB_ENGINE=postgresql
       - OPERION_POSTGRES_DSN=postgresql://operion:${OPERION_DB_PASSWORD:-changeme}@postgres:5432/operion
       - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
       - OPERION_JWT_SECRET_KEY=${OPERION_JWT_SECRET_KEY:-}
       - OPERION_ENCRYPTION_KEY=${OPERION_ENCRYPTION_KEY:-}
-      - OPERION_ENVIRONMENT=production
+      - OPERION_ENV=production
       - CELERY_BROKER_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/2
     depends_on:
@@ -83,13 +91,16 @@ services:
   celery_beat:
     build: .
     command: celery -A backend.celery_app beat --loglevel=info
+    volumes:
+      # Runtime secrets (Resend/Stripe/support auth) — never baked into the image.
+      - ./.env:/app/.env:ro
     environment:
       - OPERION_DB_ENGINE=postgresql
       - OPERION_POSTGRES_DSN=postgresql://operion:${OPERION_DB_PASSWORD:-changeme}@postgres:5432/operion
       - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
       - CELERY_BROKER_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/2
-      - OPERION_ENVIRONMENT=production
+      - OPERION_ENV=production
     depends_on:
       postgres:
         condition: service_healthy

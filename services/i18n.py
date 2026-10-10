@@ -179,8 +179,17 @@ def set_language(lang: str) -> None:
             notified += 1
         except Exception as exc:
             failed += 1
-            logger.warning("set_language: listener %s failed: %s",
-                           getattr(cb, "__name__", str(cb)[:60]), exc)
+            # The diagnostic label must never raise. A stale listener can be a
+            # bound method of a DELETED Qt (shiboken) wrapper, where both
+            # ``cb.__name__`` and ``str(cb)`` raise RuntimeError — an exception
+            # raised here would escape set_language and fail the caller
+            # (language switch in app code or whatever test triggered it).
+            try:
+                label = getattr(cb, "__name__", None) or type(cb).__name__
+                label = str(label)[:60]
+            except Exception:
+                label = type(cb).__name__
+            logger.warning("set_language: listener %s failed: %s", label, exc)
     elapsed = time.perf_counter() - start
     logger.info("language %s->%s | %d listener(s) notified in %.1fms (%d failed)",
                 old, lang, notified, elapsed * 1000, failed)

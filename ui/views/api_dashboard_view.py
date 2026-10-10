@@ -131,11 +131,24 @@ class QtApiDashboardView(QWidget):
         self._refresh_status()
 
     def wakeup(self) -> None:
-        self._refresh_status()
+        """Resume the refresh cycle after a sleep/stop, then poll immediately.
 
-    def _refresh_status(self) -> None:
-        """Poll API status off the UI thread; skip if a poll is in flight."""
-        if self._refreshing:
+        ``shutdown()`` stops the auto-refresh timer; a later wakeup (power
+        resume) must restart it, and the in-flight guard must not swallow the
+        resume poll — a poll suspended by the OS sleep would otherwise leave
+        the dashboard stale until the next timer tick.
+        """
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start(30_000)
+        self._refresh_status(force=True)
+
+    def _refresh_status(self, force: bool = False) -> None:
+        """Poll API status off the UI thread; skip if a poll is in flight.
+
+        ``force=True`` (wakeup) starts a poll even when a previous one is
+        still tracked as in flight.
+        """
+        if self._refreshing and not force:
             return
         self._refreshing = True
         WorkerPool.run(

@@ -62,6 +62,40 @@ def _publish_ocr_retry_event(doc_id: int, stage: str, exc: BaseException) -> Non
     )
 
 
+def _mark_ocr_attempt_failed(db: Any, doc_id: int) -> None:
+    """Record a terminal OCR attempt so startup scans stop retrying.
+
+    Only used for permanently unreadable source files.  Stamps
+    ``ocr_run_at`` (so ``OcrService.retry_pending_ocr`` no longer
+    matches the row) and ``ocr_engine='failed'`` for display.  Manual
+    Re-run OCR stays available.  Best-effort — never raises.
+
+    Guard: never overwrites prior successful provenance — if the row is
+    not visible or already carries an ``ocr_run_at`` marker from an
+    earlier (successful) run, the stamp is skipped.
+    """
+    try:
+        from repositories.document_repository import DocumentRepository
+
+        repo = DocumentRepository(db)
+        current = repo.get_by_id(doc_id)
+        if current is None or current.get("ocr_run_at"):
+            logger.debug(
+                "Skipping failed-attempt stamp for document %d "
+                "(no visible row or a prior run marker exists)", doc_id,
+            )
+            return
+        repo.update(
+            doc_id,
+            ocr_run_at=datetime.now().isoformat(timespec="seconds"),
+            ocr_engine="failed",
+        )
+    except Exception:
+        logger.debug(
+            "Failed to mark OCR attempt for document %d", doc_id, exc_info=True
+        )
+
+
 def run_for_existing_document(
     db: Any,
     doc_id: int,
@@ -84,7 +118,7 @@ def run_for_existing_document(
     """
     from repositories.document_repository import DocumentRepository
 
-    from .image_processor import ImageProcessor, ProcessingError
+    from .image_processor import ImageProcessor, ProcessingError, UnreadableDocumentError
     from .ocr_extractor import (
         OcrExtractor,
         set_paddle_config,
@@ -129,6 +163,14 @@ def run_for_existing_document(
             output_dir=temp_output_dir,
             job_id=job_id,
         )
+    except UnreadableDocumentError as exc:
+        logger.error(
+            "Document %d has an unreadable source file — OCR skipped: %s",
+            doc_id, exc,
+        )
+        _publish_ocr_retry_event(doc_id, "image_processing", exc)
+        _mark_ocr_attempt_failed(db, doc_id)
+        raise
     except ProcessingError as exc:
         logger.exception("ImageProcessor failed for document %d", doc_id)
         _publish_ocr_retry_event(doc_id, "image_processing", exc)

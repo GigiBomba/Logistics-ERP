@@ -136,11 +136,20 @@ class JsonFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
+        # ``logging.Formatter.format`` documents that it always sets
+        # ``record.message``; subclasses are expected to honour that contract
+        # (``caplog.records``-style consumers read ``rec.message``).  The
+        # backend's JSON formatter is installed onto *existing* root handlers
+        # by ``configure_backend_logging`` — including pytest's shared caplog
+        # handler — so skipping this made every later ``rec.message``
+        # assertion raise AttributeError (evidence: tests asserting on
+        # "malformed start_date" after an app boot in the same process).
+        record.message = record.getMessage()
         entry = {
             "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": redact_pii(record.getMessage()),
+            "message": redact_pii(record.message),
         }
         for key, value in _correlation_extras().items():
             if value not in (None, "", 0):

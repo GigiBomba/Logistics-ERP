@@ -275,7 +275,13 @@ def _notify_listeners(tc: TripContext, changed_fields: list):
         try:
             cb(tc, changed_fields)
         except (TypeError, ValueError):
-            name = getattr(cb, "__name__", str(cb)[:40])
+            # Safe label: cb may be a stale bound method of a deleted Qt
+            # object — both __name__ and str(cb) can raise (same hazard fixed
+            # in services/i18n.py).
+            try:
+                name = getattr(cb, "__name__", None) or str(cb)[:40]
+            except Exception:
+                name = type(cb).__name__
             logger.warning("TripContext listener %s failed", name, exc_info=True)
 
 

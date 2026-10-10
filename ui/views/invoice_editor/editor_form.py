@@ -327,11 +327,20 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
 
     def _deferred_gen_invoice_number(self) -> None:
         """Generate the real invoice number after init completes (deferred from __init__)."""
+        # The deferred single-shot can fire AFTER the editor was torn down
+        # (widget deleted without shutdown()): touching child widgets of a
+        # deleted C++ object raises RuntimeError which escapes into the Qt
+        # event loop and fails whatever test/app step is running at that
+        # moment.  Drop the callback instead (same guard as guided_overlay).
+        import shiboken6
+
+        if not shiboken6.isValid(self):
+            return
         self._invoice_number = self._gen_invoice_number()
         # If the UI widgets already exist, update them in-place
-        if hasattr(self, "_inv_num_edit"):
+        if hasattr(self, "_inv_num_edit") and shiboken6.isValid(self._inv_num_edit):
             self._inv_num_edit.setText(self._invoice_number)
-        if hasattr(self, "_inv_num_label"):
+        if hasattr(self, "_inv_num_label") and shiboken6.isValid(self._inv_num_label):
             self._inv_num_label.setText(self._invoice_number)
 
     def _on_settings_updated(self, ev: Any) -> None:
@@ -1700,13 +1709,22 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             )
 
             filename = os.path.basename(path)
+            # Shipped translations use POSITIONAL {} fields — kwargs raised
+            # IndexError at send time. Order: subject = (file, client);
+            # body = (file, amount, due date, company).
             subject = t("email.invoice_subject").format(
-                filename=filename,
-                client=data["client"].get("name", t("invoice.default_client")),
+                filename,
+                data["client"].get("name", t("invoice.default_client")),
+            )
+            due_date = str(
+                data.get("due_date")
+                or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
             )
             body = t("email.invoice_body").format(
-                trip_id=data.get("trip_id", 0),
-                company=data["company"].get("company_name", ""),
+                filename,
+                float(data.get("grand_total") or 0),
+                due_date,
+                data["company"].get("company_name", ""),
             )
 
             if nc.send_email(recipient, subject, body, attachments=[path]):

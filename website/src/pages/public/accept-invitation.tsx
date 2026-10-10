@@ -16,7 +16,7 @@ export default function AcceptInvitationPage() {
   const { t } = useLocale()
   const [searchParams] = useSearchParams()
   const token = searchParams.get("token")
-  const { mutate, isPending } = useAcceptInvitation()
+  const { mutateAsync } = useAcceptInvitation()
   const [status, setStatus] = useState<Status>("idle")
   const [errorMessage, setErrorMessage] = useState("")
   const firedRef = useRef(false)
@@ -31,11 +31,21 @@ export default function AcceptInvitationPage() {
     firedRef.current = true
 
     setStatus("loading")
-    mutate(token, {
-      onSuccess: () => {
+    // Drive the status machine from the mutation promise, NOT from the
+    // per-mutate onSuccess/onError callbacks. Under React StrictMode the
+    // useSyncExternalStore subscription is torn down and re-created around
+    // this mount-time effect; MutationObserver.onUnsubscribe detaches the
+    // observer from the in-flight mutation, and `firedRef` (correctly)
+    // prevents the second effect pass from re-calling mutate(). When the
+    // request resolves, Mutation.execute dispatches "success" to zero
+    // observers, so mutate-level callbacks never fire and the hook's
+    // isPending stays frozen at true. The promise returned by mutateAsync
+    // resolves from execute() itself and is unaffected by detachment.
+    mutateAsync(token).then(
+      () => {
         setStatus("success")
       },
-      onError: (error) => {
+      (error) => {
         if (error instanceof AxiosError) {
           const data = error.response?.data as
             | { detail?: string; error_code?: string }
@@ -70,10 +80,12 @@ export default function AcceptInvitationPage() {
         setErrorMessage(t("organization.invite.genericErrorDesc"))
         setStatus("error")
       },
-    })
-  }, [token, mutate, t])
+    )
+  }, [token, mutateAsync, t])
 
-  const isLoading = status === "loading" || isPending
+  // Status machine only: the hook's isPending can freeze at true under
+  // StrictMode (observer detached from the in-flight mutation — see effect).
+  const isLoading = status === "loading"
 
   if (!token) {
     return (

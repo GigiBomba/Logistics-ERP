@@ -42,3 +42,19 @@ website/coverage/
 website/playwright-report/
 mobile_app/build/
 mutation-report/
+
+# ── Secrets: never bake credential files into images ─────────────────────
+# Runtime secrets are provided at container start (compose.local/prod mount
+# ./.env:/app/.env:ro) or via the environment — never via `COPY . /app`.
+.env
+**/.env
+**/.env.*
+**/admin.env
+**/securityprompt.env
+**/securityreworkplan.env
+*.pem
+*.key
+
+# Runtime/tooling artifacts that must not enter the build context
+celerybeat-schedule.*
+dump_windows_*.json

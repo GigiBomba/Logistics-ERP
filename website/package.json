@@ -23,6 +23,7 @@
     "test:coverage": "vitest run --coverage",
     "test:manifest": "npx tsx scripts/verify-ui-test-manifest.ts",
     "test:visual": "npx playwright test e2e/visual-regression.spec.ts",
+    "test:e2e:chromium": "npx playwright test -c e2e/playwright.config.ts --project=chromium",
     "test:mutation": "npx stryker run src/__tests__/mutation/stryker.conf.json",
     "test:mutation:record": "npm run test:mutation && npx tsx scripts/record-mutation-score.ts"
   },

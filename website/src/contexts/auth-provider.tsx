@@ -16,6 +16,12 @@ import { apiConfig } from "@/config/site"
 
 const AVATAR_STORAGE_KEY = "operion-avatar-url"
 
+// Upper bound for the bootstrap token refresh. The bare axios.post below
+// otherwise has no timeout (axios default is 0 = wait forever), so an
+// offline/flaky/proxied API would leave isLoading stuck true and protected
+// routes would spin forever instead of redirecting to /login.
+const AUTH_REFRESH_TIMEOUT_MS = 10_000
+
 function getStoredAvatarUrl(): string | null {
   try {
     return localStorage.getItem(AVATAR_STORAGE_KEY)
@@ -73,7 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data } = await axios.post<Pick<AuthResponse, "access_token">>(
         `${apiConfig.baseUrl}/api/v1/auth/refresh`,
         null,
-        { withCredentials: true }
+        // timeout rejects like any other failure (ECONNABORTED), so a hung
+        // API falls through to the same unauthenticated path in catch below.
+        { withCredentials: true, timeout: AUTH_REFRESH_TIMEOUT_MS }
       )
       setAccessToken(data.access_token)
 

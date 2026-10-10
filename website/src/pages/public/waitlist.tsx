@@ -377,7 +377,9 @@ export default function WaitlistPage() {
                                 showDetails && "rotate-180"
                               )}
                             />
-                            {t("waitlist.form.moreDetails")}
+                            {showDetails
+                              ? t("waitlist.form.lessDetails")
+                              : t("waitlist.form.moreDetails")}
                           </button>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {t("waitlist.form.moreDetailsHint")}

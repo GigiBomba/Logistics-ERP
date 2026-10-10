@@ -708,7 +708,17 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         right_layout.addWidget(field(right, t("receipt.branch_label"), self._branch_entry))
 
         # Number format combo
-        format_display = [f"{key} ({example})" for key, (_, example) in RECEIPT_NUMBER_FORMATS.items()]
+        # Entries are normally (template, example) pairs, but the shared dict
+        # can pick up a malformed row (e.g. a bare template string written by
+        # other code/tests).  Never let one bad row abort the whole editor
+        # construction — fall back to the raw value as the "example".
+        format_display: list[str] = []
+        for key, value in RECEIPT_NUMBER_FORMATS.items():
+            if isinstance(value, (tuple, list)) and len(value) > 1:
+                example = value[1]
+            else:
+                example = value
+            format_display.append(f"{key} ({example})")
         self._format_combo = StyledComboBox(right, values=format_display)
         self._format_combo.currentTextChanged.connect(self._on_format_changed)
         right_layout.addWidget(field(right, t("receipt.number_format_label"), self._format_combo))

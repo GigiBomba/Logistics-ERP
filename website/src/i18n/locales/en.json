@@ -2469,6 +2469,7 @@
   "waitlist.form.email": "Email",
   "waitlist.form.emailPlaceholder": "you@company.com",
   "waitlist.form.emailInvalid": "Please enter a valid email",
+  "waitlist.form.lessDetails": "Less details",
   "waitlist.form.moreDetails": "More details (optional)",
   "waitlist.form.moreDetailsHint": "Helps us prioritize your onboarding",
   "waitlist.form.contactName": "Contact name",
