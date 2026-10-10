@@ -19,6 +19,9 @@ test.describe("Chaos — Rate Limiting & Rapid Requests", () => {
 
   test("rapid form submissions are handled without crashing", async ({ page }) => {
     await page.goto("/contact")
+    // vike dev compiles routes on demand (~7s first hit) — wait for hydration
+    // (including the contact route chunk) before asserting/clicking.
+    await waitForHydration(page)
     await expect(page.getByText(/get in touch/i)).toBeVisible()
 
     const submitRapidly = async () => {
@@ -42,10 +45,17 @@ test.describe("Chaos — Rate Limiting & Rapid Requests", () => {
     await page.route("**/*", (route) => {
       // Slow down responses to keep requests in-flight. Rapid navigations
       // abort in-flight requests and `unroute` can run before this timer
-      // fires — swallow the resulting "Route is already handled" rejections
-      // (they are expected browser behaviour, not an app defect).
+      // fires — swallow ONLY the resulting benign rejections ("Route is
+      // already handled", "Target closed"): they are expected browser
+      // behaviour, not an app defect. Anything else is logged and rethrown
+      // so real routing failures are not silently swallowed.
       setTimeout(() => {
-        route.continue().catch(() => {})
+        route.continue().catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err)
+          if (/already handled|Target closed/i.test(message)) return
+          console.error("[rate-limiting] unexpected route.continue() failure:", err)
+          throw err
+        })
       }, 500)
     })
 

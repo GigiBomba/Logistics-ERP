@@ -2,16 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import IntegrationsExplorerPage from "@/pages/public/integrations-explorer"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("IntegrationsExplorerPage", () => {
   it("renders the hero section", () => {
     render(<IntegrationsExplorerPage />)

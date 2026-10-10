@@ -1,5 +1,30 @@
-import { test, expect } from "@playwright/test"
-import { mockAuthAs, createUser, stabilizeHydration, waitForHydration } from "../helpers"
+import { test, expect, type Page } from "@playwright/test"
+import { setupAuthedContext, createUser, waitForHydration } from "../helpers"
+
+/**
+ * Wait for hydration AND for the lazily-loaded route component to replace the
+ * PageSuspense fallback inside <main>. waitForHydration can pass on the shell
+ * while the route chunk is still compiling in `vike dev` — on a cold first hit
+ * (~12s for /accept-invitation observed) the subsequent assertions would start
+ * their clock before the component even mounts.
+ */
+async function waitForRouteContent(page: Page): Promise<void> {
+  await waitForHydration(page)
+  await page.waitForFunction(
+    () => {
+      const main = document.querySelector("main")
+      if (!main) return false
+      // PageSuspense fallback renders only div > svg + sr-only span.
+      return (
+        main.querySelector(
+          "h1, h2, h3, h4, a, button, input, select, textarea, table, article, section, nav, form, ul, ol",
+        ) !== null
+      )
+    },
+    undefined,
+    { timeout: 25_000 },
+  )
+}
 
 /**
  * Organization Invite Cycle Tests
@@ -10,9 +35,11 @@ import { mockAuthAs, createUser, stabilizeHydration, waitForHydration } from "..
 
 test.describe("Organization Invite Cycle", () => {
   test.beforeEach(async ({ page }) => {
-    stabilizeHydration(page)
     // Authenticate as org admin via the cookie-only refresh bootstrap.
-    await mockAuthAs(page, createUser("admin", { id: "1", email: "admin@operionerp.xyz", name: "Admin User" }))
+    // setupAuthedContext = stabilizeHydration + mockAuthAs, before any goto.
+    await setupAuthedContext(page, {
+      user: createUser("admin", { id: "1", email: "admin@operionerp.xyz", name: "Admin User" }),
+    })
   })
 
   test("invite a teammate and see pending invitation", async ({ page }) => {
@@ -113,53 +140,57 @@ test.describe("Organization Invite Cycle", () => {
   test("accept invitation in second browser context", async ({ browser }) => {
     const inviteToken = "mock-invite-token-xyz"
     const context = await browser.newContext()
-    const page = await context.newPage()
+    try {
+      const page = await context.newPage()
 
-    stabilizeHydration(page)
+      // Mock the auth bootstrap (refresh + /me) in the new context BEFORE goto so
+      // the accept page's AuthProvider never hits the dev-server proxy — removes
+      // latent flake from unauthenticated network calls on page load.
+      // setupAuthedContext = stabilizeHydration + mockAuthAs.
+      await setupAuthedContext(page, {
+        user: createUser("member", { id: "99", email: "teammate@operionerp.xyz", name: "Teammate" }),
+      })
 
-    // Mock the auth bootstrap (refresh + /me) in the new context BEFORE goto so
-    // the accept page's AuthProvider never hits the dev-server proxy — removes
-    // latent flake from unauthenticated network calls on page load.
-    await mockAuthAs(
-      page,
-      createUser("member", { id: "99", email: "teammate@operionerp.xyz", name: "Teammate" }),
-    )
+      // Mock the accept invitation endpoint
+      await page.route(
+        `**/api/v1/organizations/invitations/${inviteToken}/accept`,
+        async (route) => {
+          if (route.request().method() === "POST") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                id: 99,
+                org_id: 1,
+                user_id: "user-99",
+                role: "member",
+                status: "active",
+                name: "Teammate",
+                email: "teammate@operionerp.xyz",
+                joined_at: new Date().toISOString(),
+              }),
+            })
+          } else {
+            await route.continue()
+          }
+        },
+      )
 
-    // Mock the accept invitation endpoint
-    await page.route(
-      `**/api/v1/organizations/invitations/${inviteToken}/accept`,
-      async (route) => {
-        if (route.request().method() === "POST") {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({
-              id: 99,
-              org_id: 1,
-              user_id: "user-99",
-              role: "member",
-              status: "active",
-              name: "Teammate",
-              email: "teammate@operionerp.xyz",
-              joined_at: new Date().toISOString(),
-            }),
-          })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+      await page.goto(`/accept-invitation?token=${inviteToken}`)
+      // Gate on route content: the heading assertions below only start their
+      // clock once the accept-invitation chunk has actually mounted.
+      await waitForRouteContent(page)
 
-    await page.goto(`/accept-invitation?token=${inviteToken}`)
-    await waitForHydration(page)
-
-    await expect(
-      page.getByRole("heading", { name: /invitation accepted/i }),
-    ).toBeVisible({ timeout: 10000 })
-    await expect(
-      page.getByRole("link", { name: /go to organizations/i }),
-    ).toBeVisible()
-
-    await context.close()
+      await expect(
+        page.getByRole("heading", { name: /invitation accepted/i }),
+      ).toBeVisible({ timeout: 15000 })
+      await expect(
+        page.getByRole("link", { name: /go to organizations/i }),
+      ).toBeVisible()
+    } finally {
+      // Always release the second context — a failed assertion above must not
+      // leak the context/page for the rest of the worker's lifetime.
+      await context.close()
+    }
   })
 })

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { mockAuthAs, createUser, stabilizeHydration, type MockUser } from "./helpers"
+import { mockAuthAs, createUser, stabilizeHydration, waitForHydration, type MockUser } from "./helpers"
 
 test.describe("Admin Blog Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -24,6 +24,9 @@ test.describe("Admin Blog Flow", () => {
 
   test("login page renders correctly", async ({ page }) => {
     await page.goto("/login")
+    // vike dev compiles routes on demand (~7s first hit) vs the 5s expect
+    // timeout — wait for hydration before asserting.
+    await waitForHydration(page)
     await expect(page.getByText("Welcome back")).toBeVisible()
     await expect(page.getByLabel("Email", { exact: true })).toBeVisible()
     await expect(page.getByLabel(/^password$/i)).toBeVisible()
@@ -31,9 +34,20 @@ test.describe("Admin Blog Flow", () => {
   })
 
   test("admin blog editor route is protected — redirects to /login without auth", async ({ page }) => {
-    // No auth mocks → cookie-refresh bootstrap fails → unauthenticated → guard redirects
+    // Mock the auth bootstrap to 401 for a deterministic unauthenticated
+    // state — unmocked, the cookie-refresh POST can hang against the real API
+    // and the guard never decides (the app-side fix adds a refresh timeout).
+    await page.route("**/api/v1/auth/refresh", (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Invalid refresh token" }),
+      })
+    )
     await page.goto("/admin/blog/editor")
-    await expect(page).toHaveURL(/\/login/)
+    // 15s: the guard only redirects after the route chunk hydrates and the
+    // mocked bootstrap resolves (cold compile ~7s under dev).
+    await expect(page).toHaveURL(/\/login/, { timeout: 15000 })
   })
 
   test("admin blog editor route redirects non-admin users to /dashboard", async ({ page }) => {

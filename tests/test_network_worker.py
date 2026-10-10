@@ -17,6 +17,17 @@ from PySide6.QtCore import QThread
 from client.network.network_worker import NetworkWorker
 
 
+# xdist gate (see tests/conftest.py + scripts/run_pytest_guarded.py):
+# worker 'gw0' died in qtbot.waitSignal.__exit__ at
+# TestNetworkWorkerSignalsError::test_error_on_http_404 (shard-3g run,
+# 2026-10-04) — native Qt access violation under xdist.  Runs via the guard's
+# serial pass (-n 0); deeper fix = Qt/event-loop teardown investigation.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="native Qt crash under xdist (gw0 died at test_error_on_http_404) — runs with -n 0",
+)
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 

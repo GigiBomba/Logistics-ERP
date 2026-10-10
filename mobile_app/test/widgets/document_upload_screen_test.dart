@@ -15,9 +15,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../shared/test_utils.dart';
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/sync/action_queue.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
@@ -28,18 +28,6 @@ import 'package:operion_mobile/shared/models/user.dart';
 // Mock utilities
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override Future<bool> hasTokens() async => false;
-  @override Future<String?> getAccessToken() async => null;
-  @override Future<String?> getRefreshToken() async => null;
-  @override Future<void> saveTokens(String a, String r) async {}
-  @override Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override Future<bool> isAvailable() async => false;
-  @override Future<bool> authenticate({required String reason}) async => false;
-}
 
 /// A stub ApiClient for testing — intercepts all HTTP requests.
 ///
@@ -88,8 +76,8 @@ class _MockActionQueue extends Fake implements ActionQueue {
 }
 
 List<Override> _testOverrides() => [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-  biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+  biometricServiceProvider.overrideWithValue(MockBiometricService()),
   apiClientProvider.overrideWithValue(_stubApiClient()),
   actionQueueProvider.overrideWith((ref) => _MockActionQueue()),
   isOfflineProvider.overrideWith((ref) => false),
@@ -116,51 +104,51 @@ void main() {
   group('DocumentUploadScreen — Step 1: Select Type', () {
     testWidgets('1. AppBar shows document upload title', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('2. shows "Select document type" heading', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Select document type'), findsOneWidget);
     });
 
     testWidgets('3. GridView with 4 document types', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(GridView), findsOneWidget);
     });
 
     testWidgets('4. CMR document card is visible', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('CMR'), findsOneWidget);
     });
 
     testWidgets('5. POD document card is visible', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('POD'), findsOneWidget);
     });
 
     testWidgets('6. Invoice document card is visible', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Invoice'), findsOneWidget);
     });
 
     testWidgets('7. Other document card is visible', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Other Document'), findsOneWidget);
     });
 
     testWidgets('8. tapping CMR advances to capture method step', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       // Now on capture method step — shows camera/gallery buttons
       // loc.document_capture = "Take Photo" in English locale
       expect(find.textContaining('Take Photo'), findsAny);
@@ -168,9 +156,9 @@ void main() {
 
     testWidgets('9. tapping POD advances to capture method', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('POD'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       // loc.document_selectGallery = "Choose from Gallery" in English locale
       expect(find.textContaining('Choose from Gallery'), findsAny);
     });
@@ -179,39 +167,39 @@ void main() {
   group('DocumentUploadScreen — Step 2: Capture method', () {
     testWidgets('10. selected doc type label is shown', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.textContaining('CMR'), findsAny);
     });
 
     testWidgets('11. Capture button with camera icon exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       // loc.document_capture = "Take Photo" in English locale
       expect(find.textContaining('Take Photo'), findsAny);
     });
 
     testWidgets('12. Gallery button with image icon exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       // loc.document_selectGallery = "Choose from Gallery" in English locale
       expect(find.textContaining('Choose from Gallery'), findsAny);
     });
 
     testWidgets('13. Cancel returns to type selection', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       // Use CMR (first visible row) instead of Invoice (off-screen at 800x600)
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       // Step 2 has a TextButton with loc.general_cancel = "Cancel" (English locale)
       await tester.tap(find.textContaining('Cancel'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Select document type'), findsOneWidget);
     });
   });
@@ -219,17 +207,17 @@ void main() {
   group('DocumentUploadScreen — Capture method layout', () {
     testWidgets('14. document icon displayed large', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(Icon), findsWidgets);
     });
 
     testWidgets('15. two buttons in row layout', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(Row), findsWidgets);
     });
   });
@@ -237,59 +225,59 @@ void main() {
   group('DocumentUploadScreen — Step 3: Preview', () {
     testWidgets('16. on capture method screen, buttons are tappable', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.textContaining('CMR'));
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.textContaining('Take Photo'), findsAny);
     });
   });
 
   group('DocumentUploadScreen — Upload progress', () {
     testWidgets('17. upload progress UI layout exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Select document type'), findsOneWidget);
     });
   });
 
   group('DocumentUploadScreen — Step 5: Done', () {
     testWidgets('18. success screen layout exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Select document type'), findsOneWidget);
     });
   });
 
   group('DocumentUploadScreen — Step 6: Error', () {
     testWidgets('19. error screen layout exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Select document type'), findsOneWidget);
     });
   });
 
   group('DocumentUploadScreen — Navigation', () {
     testWidgets('20. AppBar is present with title', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('21. SafeArea wraps body content', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(SafeArea), findsAtLeast(1));
     });
 
     testWidgets('22. Scaffold is present', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Select document type'), findsOneWidget);
     });
 
     testWidgets('23. transportId is received correctly', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(DocumentUploadScreen), findsOneWidget);
     });
   });
@@ -297,20 +285,20 @@ void main() {
   group('DocumentUploadScreen — Grid interaction', () {
     testWidgets('24. grid has 2 columns', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       // SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2)
       expect(find.byType(GridView), findsOneWidget);
     });
 
     testWidgets('25. all 4 cards have icon + label', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(Icon), findsWidgets);
     });
 
     testWidgets('26. card selection animation runs', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       // AnimatedContainer in _DocTypeCard
       expect(find.byType(GestureDetector), findsWidgets);
     });
@@ -319,13 +307,13 @@ void main() {
   group('DocumentUploadScreen — Step transitions', () {
     testWidgets('27. each step renders unique UI', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Select document type'), findsOneWidget);
     });
 
     testWidgets('28. flow does not crash on rapid taps', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       // Rapidly tap all cards
       for (final docLabel in ['CMR', 'POD', 'Invoice', 'Other']) {
         final hit = find.textContaining(docLabel);
@@ -341,23 +329,23 @@ void main() {
   group('DocumentUploadScreen — Localization', () {
     testWidgets('29. localized document type labels', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('CMR'), findsOneWidget);
     });
   });
 
   group('DocumentUploadScreen — OCR section', () {
     testWidgets('30. OCR result card integration point', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.text('Select document type'), findsOneWidget);
     });
   });
 
   group('DocumentUploadScreen — Edge cases', () {
     testWidgets('31. screen handles resize', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(tester.takeException(), isNull);
     });
 
@@ -372,26 +360,26 @@ void main() {
           home: const DocumentUploadScreen(transportId: '100'),
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('33. AppBar title is localized', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('34. no overflow errors at default 800x600', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       final ex = tester.takeException();
       expect(ex, isNull);
     });
 
     testWidgets('35. DocumentUploadScreen widget is renderable', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(DocumentUploadScreen), findsOneWidget);
     });
   });

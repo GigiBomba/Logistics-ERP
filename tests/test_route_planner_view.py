@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,6 +20,17 @@ import ui.widgets as _ui_widgets
 
 if not hasattr(_ui_widgets, "SP"):
     _ui_widgets.SP = _ui_widgets.S
+
+
+# xdist gate (see tests/conftest.py + scripts/run_pytest_guarded.py):
+# worker 'gw2' crashed at TestQtRoutePlannerViewLifecycle::test_shutdown_unsubscribes_event_bus
+# (shard-3e run, 2026-10-04) — Qt view lifecycle/teardown under xdist.  Runs via
+# the guard's serial pass (-n 0); deeper fix = investigate Qt teardown, then
+# remove this gate.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="native Qt crash under xdist (gw2 died at test_shutdown_unsubscribes_event_bus) — runs with -n 0",
+)
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────

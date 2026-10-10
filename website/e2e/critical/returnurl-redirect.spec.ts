@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { mockLoginFlow, createUser, stabilizeHydration, waitForHydration } from "../helpers"
+import { mockLoginFlow, submitLoginForm, createUser, stabilizeHydration, waitForHydration } from "../helpers"
 
 /**
  * returnUrl Redirect Tests
@@ -84,15 +84,18 @@ test.describe("returnUrl Redirect", () => {
     //    pre-authenticate the session and the returnUrl redirect would never fire.
     await mockLoginFlow(page, user, false)
 
-    // 3. Fill + submit the login form.
-    await waitForHydration(page)
-    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible()
-    await page.fill("#email", user.email)
-    await page.fill("#password", password)
-    await page.getByRole("button", { name: /sign in/i }).click()
+    // 3. Fill + submit the login form. submitLoginForm (not loginAs) — the page
+    //    is ALREADY on /login?returnUrl=… and a goto would drop the query
+    //    string. It gates on hydration, asserts the login card copy, then
+    //    submits and waits for the ORIGINAL protected page.
+    await submitLoginForm(page, {
+      email: user.email,
+      password,
+      heading: /welcome back/i,
+      expectUrl: /\/dashboard\/devices/,
+    })
 
     // 4. Land back on the ORIGINAL protected page — not the /dashboard default.
-    await expect(page).toHaveURL(/\/dashboard\/devices/, { timeout: 15000 })
     await waitForHydration(page)
     // The devices page actually rendered (h1 "Devices"), proving the full cycle.
     await expect(page.getByRole("heading", { name: /^devices$/i })).toBeVisible()

@@ -41,16 +41,6 @@ const financePosts = Array.from({ length: 9 }, (_, i) => ({
   published_at: "2026-04-01T10:00:00Z",
 }))
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 const mockUseParams = vi.fn()
 const mockUseSearchParams = vi.fn()
 

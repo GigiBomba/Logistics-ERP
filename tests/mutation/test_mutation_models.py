@@ -172,16 +172,15 @@ class TestMutationTripModel:
         trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=0)
         assert trip.price_eur == 0
 
-    def test_trip_price_accepts_inf(self):
-        """TripCreate.price_eur accepts inf (Pydantic v2 allows it)."""
-        trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=float("inf"))
-        assert trip.price_eur == float("inf")
+    def test_trip_price_rejects_inf(self):
+        """TripCreate.price_eur rejects inf (Pydantic finite_number)."""
+        with pytest.raises(ValidationError):
+            TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=float("inf"))
 
-    def test_trip_price_accepts_nan(self):
-        """TripCreate.price_eur accepts nan (Pydantic v2 allows it)."""
-        import math
-        trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=float("nan"))
-        assert math.isnan(trip.price_eur)
+    def test_trip_price_rejects_nan(self):
+        """TripCreate.price_eur rejects nan (Pydantic finite_number)."""
+        with pytest.raises(ValidationError):
+            TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=float("nan"))
 
     @pytest.mark.parametrize("bad_distance", [-1, 0, -0.5])
     def test_trip_distance_rejects_non_positive(self, bad_distance):

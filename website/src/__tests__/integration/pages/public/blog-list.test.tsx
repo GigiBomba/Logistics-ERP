@@ -14,12 +14,6 @@ vi.mock("@/contexts/auth-provider", () => ({
   useAuth: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-}))
-
 const mockPosts = [
   {
     id: 1,

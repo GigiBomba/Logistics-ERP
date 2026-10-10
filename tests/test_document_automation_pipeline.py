@@ -178,6 +178,36 @@ class TestRunForExistingDocument:
             run_for_existing_document(mock_db, 42)
             mock_ai_init.assert_called_once_with(mock_db)
 
+    @patch("repositories.document_repository.DocumentRepository")
+    @patch("services.document_automation.image_processor.ImageProcessor")
+    @patch("services.document_automation.pipeline.os.path.isfile", return_value=True)
+    @patch("services.document_automation.pipeline.os.makedirs")
+    @patch("services.document_automation.pipeline.shutil.rmtree")
+    def test_unreadable_source_stamps_terminal_attempt(
+        self, mock_rmtree, mock_makedirs, mock_isfile,
+        mock_processor_cls, mock_repo_cls, mock_db,
+    ):
+        from services.document_automation.image_processor import (
+            UnreadableDocumentError,
+        )
+
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = {
+            "id": 42, "file_path": "/docs/test.pdf", "ocr_run_at": "",
+        }
+        mock_repo_cls.return_value = mock_repo
+        mock_processor_cls.return_value.process.side_effect = (
+            UnreadableDocumentError("Unreadable or corrupt PDF")
+        )
+
+        with pytest.raises(UnreadableDocumentError):
+            run_for_existing_document(mock_db, 42)
+
+        assert mock_repo.update.call_count == 1
+        _, kwargs = mock_repo.update.call_args
+        assert kwargs["ocr_engine"] == "failed"
+        assert kwargs["ocr_run_at"]
+
 
 class TestTempDir:
     @patch("utils.resource_path.data_path")

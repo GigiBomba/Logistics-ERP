@@ -2,10 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@/test-utils"
 import DocumentationPage from "@/pages/dashboard/documentation"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 describe("DocumentationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()

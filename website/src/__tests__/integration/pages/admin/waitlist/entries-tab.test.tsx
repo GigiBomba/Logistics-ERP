@@ -4,13 +4,6 @@ import EntriesTab from "@/pages/admin/waitlist/entries-tab"
 import { waitlistApi } from "@/api/endpoints"
 import type { WaitlistPageResponse, WaitlistEntry } from "@/api/endpoints"
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 vi.mock("@/api/endpoints", () => ({
   waitlistApi: {
     listEntries: vi.fn(),

@@ -111,8 +111,9 @@ class TestShutdownBrowser:
     def test_shutdown_noop_when_no_engine(self):
         from utils.chart_export import shutdown_browser_sync
 
+        # shutdown_browser_sync() with no engine is a no-op — the call is the
+        # smoke test (must not raise).
         shutdown_browser_sync()
-        assert True  # no exception
 
 
 class TestRenderEngine:
@@ -122,19 +123,33 @@ class TestRenderEngine:
         from utils.chart_export import _RenderEngine
 
         engine = _RenderEngine()
-        with patch.object(engine, "_started") as mock_started:
-            mock_started.wait.return_value = True
-            engine.start(block=True)
-            mock_started.wait.assert_called_once_with(timeout=30)
+        # engine.start() spawns the REAL choreographer thread (only the
+        # _started wait is patched).  Without a shutdown() the daemon keeps
+        # retrying headless Chrome launches — which fail in this test env
+        # (shared operion_chrome_profile across xdist workers) and produce
+        # the retry storms / mass setup errors seen in full-suite runs
+        # (full_diag.err).  Always stop the engine we started.
+        try:
+            with patch.object(engine, "_started") as mock_started:
+                mock_started.wait.return_value = True
+                engine.start(block=True)
+                mock_started.wait.assert_called_once_with(timeout=30)
+        finally:
+            engine.shutdown()
 
     def test_raises_if_start_never_completes(self):
         from utils.chart_export import _RenderEngine
 
         engine = _RenderEngine()
-        with patch.object(engine, "_started") as mock_started:
-            mock_started.wait.return_value = False
-            with pytest.raises(RuntimeError, match="failed to start"):
-                engine.submit({"fig": None, "fmt": "svg", "width": 100, "height": 100})
+        # submit() calls start() internally → same real-thread leak as
+        # above; shut it down even though the wait failure is expected.
+        try:
+            with patch.object(engine, "_started") as mock_started:
+                mock_started.wait.return_value = False
+                with pytest.raises(RuntimeError, match="failed to start"):
+                    engine.submit({"fig": None, "fmt": "svg", "width": 100, "height": 100})
+        finally:
+            engine.shutdown()
 
     def test_start_lock_prevents_double_start(self):
         from utils.chart_export import _RenderEngine

@@ -2,16 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import ProductTourPage from "@/pages/public/product-tour"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("ProductTourPage", () => {
   it("renders the demo banner", () => {
     render(<ProductTourPage />)

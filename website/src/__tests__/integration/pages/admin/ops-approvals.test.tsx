@@ -12,19 +12,6 @@ vi.mock("@/services/queries", () => ({
   useOpsHandleApproval: useOpsHandleApprovalMock,
 }))
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const approvalItem = {
   issue_id: "ISSUE-42",
   summary: "Add rate-limit to auth",

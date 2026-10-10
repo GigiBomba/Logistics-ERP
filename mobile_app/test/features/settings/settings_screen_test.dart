@@ -9,9 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../shared/test_utils.dart';
+import '../../shared/mocks/mocks.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
 import 'package:operion_mobile/core/auth/auth_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/message_bus.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/features/settings/settings_screen.dart';
@@ -21,25 +22,6 @@ import 'package:operion_mobile/shared/models/user.dart';
 // Mock dependencies
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override
-  Future<bool> hasTokens() async => false;
-
-  @override
-  Future<String?> getAccessToken() async => null;
-
-  @override
-  Future<String?> getRefreshToken() async => null;
-
-  @override
-  Future<void> saveTokens(String access, String refresh) async {}
-
-  @override
-  Future<void> clearTokens() async {}
-
-  @override
-  Future<String> getOrCreateDeviceId() async => 'test-device-id';
-}
 
 /// Minimal [AuthService] stub that tracks logout calls.
 class _MockAuthService implements AuthService {
@@ -76,7 +58,7 @@ List<Override> _baseOverrides({
   Locale initialLocale = const Locale('en'),
   ThemeMode initialThemeMode = ThemeMode.system,
 }) => [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
   localeProvider.overrideWith((ref) => initialLocale),
   themeModeProvider.overrideWith((ref) => initialThemeMode),
   currentUserProvider.overrideWith((ref) => null),
@@ -113,35 +95,35 @@ void main() {
   group('SettingsScreen', () {
     testWidgets('1. renders AppBar with Settings title', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Settings'), findsOneWidget);
     });
 
     testWidgets('2. renders language section header', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('LANGUAGE'), findsOneWidget);
     });
 
     testWidgets('3. renders theme section header', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('THEME'), findsOneWidget);
     });
 
     testWidgets('4. renders app version section header', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('APP VERSION'), findsOneWidget);
     });
 
     testWidgets('5. shows version number 1.0.0+1', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('1.0.0+1'), findsOneWidget);
     });
@@ -150,7 +132,7 @@ void main() {
       // Use a taller surface so off-screen widgets are visible
       await tester.binding.setSurfaceSize(const Size(800, 1200));
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Button text via locale (skipOffstage: false to find off-screen widgets)
       expect(find.text('Sign Out', skipOffstage: false), findsOneWidget);
@@ -158,7 +140,7 @@ void main() {
 
     testWidgets('7. renders language radio options', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // "Română" appears twice: once as title (loc.settings_languageRo)
       // and once as subtitle (hardcoded 'Română')
@@ -169,7 +151,7 @@ void main() {
 
     testWidgets('8. renders theme radio options', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // "Light" appears as System subtitle AND as Light radio title
       expect(find.text('System'), findsOneWidget);
@@ -186,7 +168,7 @@ void main() {
           localeProvider.overrideWith((ref) => const Locale('ro')),
         ],
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Find the English RadioListTile by its value
       final englishListTile = find.descendant(
@@ -205,7 +187,7 @@ void main() {
     testWidgets('10. tapping Română radio selects Romanian locale',
         (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Find the Română RadioListTile by its value
       final romanianListTile = find.descendant(
@@ -229,7 +211,7 @@ void main() {
           themeModeProvider.overrideWith((ref) => ThemeMode.light),
         ],
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap the System radio
       await tester.tap(find.text('System'));
@@ -244,7 +226,7 @@ void main() {
     testWidgets('12. tapping Light theme radio sets ThemeMode.light',
         (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Use atLeast because "Light" may appear as System subtitle too
       final lightTiles = find.text('Light');
@@ -261,7 +243,7 @@ void main() {
     testWidgets('13. tapping Dark theme radio sets ThemeMode.dark',
         (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Dark'));
       await tester.pump();
@@ -283,11 +265,11 @@ void main() {
           authServiceProvider.overrideWithValue(mockAuthService),
         ],
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap the logout button via its label text
       await tester.tap(find.text('Sign Out', skipOffstage: false));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Confirmation dialog should be visible
       expect(find.text('Are you sure you want to sign out?'), findsOneWidget);
@@ -295,7 +277,7 @@ void main() {
       // Tap the dialog's confirm button (also labeled "Sign Out")
       // Use last because the settings button also has "Sign Out"
       await tester.tap(find.text('Sign Out').last);
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Verify logout was called
       expect(mockAuthService.logoutCalled, isTrue);
@@ -312,15 +294,15 @@ void main() {
           authServiceProvider.overrideWithValue(mockAuthService),
         ],
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap the logout button via its label text
       await tester.tap(find.text('Sign Out', skipOffstage: false));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap Cancel
       await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Logout should NOT have been called
       expect(mockAuthService.logoutCalled, isFalse);
@@ -329,14 +311,14 @@ void main() {
     testWidgets('16. screen does not overflow', (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('17. initial locale is English by default', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       final container = ProviderScope.containerOf(
         tester.element(find.byType(SettingsScreen)),
@@ -346,7 +328,7 @@ void main() {
 
     testWidgets('18. initial theme mode is system by default', (tester) async {
       await tester.pumpWidget(_wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       final container = ProviderScope.containerOf(
         tester.element(find.byType(SettingsScreen)),

@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/features/document_center/screens/document_center_screen.dart';
+import '../../shared/test_utils.dart';
 
 /// Helper: wraps [child] in MaterialApp with localisations so that
 /// `context.loc` works.
@@ -26,14 +27,14 @@ void main() {
   group('DocumentCenterScreen — initial state', () {
     testWidgets('renders app bar with title', (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Document Center'), findsOneWidget);
     });
 
     testWidgets('renders two tabs: Documents and Automation', (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tab labels appear — both Documents tab label and the empty-state title
       // use the same key so findsAtLeast is safe
@@ -43,14 +44,14 @@ void main() {
 
     testWidgets('shows folder open icon on Documents tab', (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.folderOpen), findsOneWidget);
     });
 
     testWidgets('shows camera icon on Automation tab', (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.camera), findsOneWidget);
     });
@@ -62,7 +63,7 @@ void main() {
   group('DocumentCenterScreen — Documents tab', () {
     testWidgets('shows file text icon in documents tab', (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // fileText icon appears as the empty-state icon when no documents
       expect(find.byIcon(LucideIcons.fileText), findsOneWidget);
@@ -76,11 +77,11 @@ void main() {
     testWidgets('switching to Automation tab shows OCR content',
         (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap Automation tab
       await tester.tap(find.text('Automation'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('OCR Document Capture'), findsOneWidget);
       expect(
@@ -93,23 +94,23 @@ void main() {
     testWidgets('shows Capture Photo button on Automation tab',
         (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Automation'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Capture Photo'), findsOneWidget);
     });
 
     testWidgets('tapping Capture Photo shows snackbar', (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Automation'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Capture Photo'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Upload confirmed, processing...'), findsOneWidget);
     });
@@ -122,15 +123,15 @@ void main() {
     testWidgets('switching back to Documents tab shows file icon',
         (tester) async {
       await tester.pumpWidget(wrapDocumentCenter());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Go to Automation
       await tester.tap(find.text('Automation'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Switch back to Documents
       await tester.tap(find.text('Documents'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.fileText), findsOneWidget);
     });

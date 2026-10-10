@@ -9,6 +9,7 @@ empty results state, loading state during search, error handling
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,6 +29,17 @@ from PySide6.QtWidgets import (
 
 from ui.views.freight_exchange.search_view import FreightSearchView, _map_sort_field
 from ui.views.freight_exchange.load_detail_view import FreightLoadDetailView
+
+
+# xdist gate (see tests/conftest.py + scripts/run_pytest_guarded.py):
+# worker 'gw1' crashed at TestSearchExecution::test_search_calls_api
+# (shard-3e run, 2026-10-04) — Qt view teardown under xdist.  Runs via the
+# guard's serial pass (-n 0); deeper fix = investigate Qt teardown, then
+# remove this gate.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="native Qt crash under xdist (gw1 died at test_search_calls_api) — runs with -n 0",
+)
 from ui.design_tokens import (
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_TEXT,

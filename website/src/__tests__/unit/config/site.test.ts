@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { siteConfig, apiConfig, downloadConfig } from "@/config/site"
 
-describe("siteConfig", () => {
+describe.concurrent("siteConfig", () => {
   it("has required fields", () => {
     expect(siteConfig.name).toBe("Operion")
     expect(siteConfig.tagline).toBeTruthy()
@@ -16,7 +16,7 @@ describe("siteConfig", () => {
   })
 })
 
-describe("apiConfig", () => {
+describe.concurrent("apiConfig", () => {
   it("has a baseUrl string", () => {
     expect(typeof apiConfig.baseUrl).toBe("string")
   })
@@ -26,7 +26,7 @@ describe("apiConfig", () => {
   })
 })
 
-describe("downloadConfig", () => {
+describe.concurrent("downloadConfig", () => {
   it("has a version string", () => {
     expect(typeof downloadConfig.latestVersion).toBe("string")
     expect(downloadConfig.latestVersion.length).toBeGreaterThan(0)

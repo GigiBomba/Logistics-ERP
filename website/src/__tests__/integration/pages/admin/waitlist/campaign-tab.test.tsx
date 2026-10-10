@@ -3,13 +3,6 @@ import { render, screen, fireEvent, waitFor, mockAxiosResponse } from "@/test-ut
 import CampaignTab from "@/pages/admin/waitlist/campaign-tab"
 import { waitlistApi } from "@/api/endpoints"
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 vi.mock("@/api/endpoints", () => ({
   waitlistApi: {
     sendCampaign: vi.fn(),

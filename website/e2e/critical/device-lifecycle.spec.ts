@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { mockAuthAs, createUser, stabilizeHydration, waitForHydration } from "../helpers"
+import { setupAuthedContext, createUser, waitForHydration } from "../helpers"
 
 /**
  * Device Lifecycle Tests
@@ -52,9 +52,11 @@ const ACTIVE_DEVICES = MOCK_DEVICES.filter((d) => d.is_active)
 
 test.describe("Device Lifecycle", () => {
   test.beforeEach(async ({ page }) => {
-    stabilizeHydration(page)
     // Authenticate as admin via the cookie-only refresh bootstrap.
-    await mockAuthAs(page, createUser("admin", { id: "1", email: "admin@operionerp.xyz", name: "Admin User" }))
+    // setupAuthedContext = stabilizeHydration + mockAuthAs, before any goto.
+    await setupAuthedContext(page, {
+      user: createUser("admin", { id: "1", email: "admin@operionerp.xyz", name: "Admin User" }),
+    })
 
     // Mock the devices API (real path: /api/v1/mobile/devices)
     await page.route("**/api/v1/mobile/devices**", async (route) => {

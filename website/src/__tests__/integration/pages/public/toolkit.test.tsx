@@ -2,16 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import ToolkitPage from "@/pages/public/toolkit"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 vi.mock("@/config/site", async () => {
   const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
   return {

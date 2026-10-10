@@ -2,16 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import IndustryAgriculturePage from "@/pages/public/industry-agriculture"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("IndustryAgriculturePage", () => {
   it("renders page header with title", () => {
     render(<IndustryAgriculturePage />)

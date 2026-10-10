@@ -3,10 +3,6 @@ import { render, screen } from "@/test-utils"
 import { FeatureCard } from "@/components/shared/feature-card"
 import { MapPin } from "lucide-react"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 describe("FeatureCard", () => {
   it("renders title", () => {
     render(<FeatureCard icon={MapPin} title="Route Planning" description="Optimize your routes" />)

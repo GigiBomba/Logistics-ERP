@@ -3,19 +3,6 @@ import { render, screen, fireEvent } from "@/test-utils"
 import userEvent from "@testing-library/user-event"
 import DownloadPage from "@/pages/public/download"
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 describe("DownloadPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()

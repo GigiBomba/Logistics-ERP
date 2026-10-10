@@ -56,13 +56,6 @@ vi.mock("@/contexts/auth-provider", () => ({
   useAuth: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    article: ({ children, ...props }: any) => <article {...props}>{children}</article>,
-  },
-}))
-
 vi.mock("react-router", async () => {
   const actual = await vi.importActual("react-router")
   return {

@@ -2,10 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import { PricingCard } from "@/components/shared/pricing-card"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const baseProps = {
   name: "Starter",
   price: "€49",

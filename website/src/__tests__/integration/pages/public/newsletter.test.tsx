@@ -10,19 +10,6 @@ vi.mock("@/services/queries", () => ({
   useSubscribeNewsletter: vi.fn(),
 }))
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 vi.mock("@/config/site", async () => {
   const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
   return {

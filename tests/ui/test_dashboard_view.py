@@ -1,11 +1,26 @@
 """Tests for the fleet dashboard view (QtFleetDashboard)."""
 from __future__ import annotations
 
+import os
+from contextlib import suppress
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QFrame, QPushButton
+from pytestqt.exceptions import TimeoutError as QtTimeoutError
+
+
+# xdist gate (see tests/conftest.py + scripts/run_pytest_guarded.py):
+# native access violation inside QEventLoop.exec under xdist — gw0 died at
+# TestConstruction::test_creation in the shard-3f run (2026-10-04); the same
+# signature recurred in run #4 even after the fixture's waitUntil was bounded
+# (bounding cannot prevent a native AV inside Qt).  Runs via the guard's
+# serial pass (-n 0); deeper fix = Qt teardown/event-loop investigation.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="native Qt access violation under xdist (gw0 died at dashboard test_creation) — runs with -n 0",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +96,45 @@ def dashboard(qt_widget, qtbot, mock_prefs):
     # via WorkerPool (result delivered through a queued Qt signal).  Wait for
     # the initial cycle to complete so the widget tree (KPI cards + chart
     # frames) is deterministic regardless of prior test-suite Qt state.
-    # All services are mocked, so the cycle completes in ms; 1500ms is a
+    # All services are mocked, so the cycle completes in ms; 5000ms is a
     # generous ceiling for the several queued-slot deliveries involved.
-    qtbot.waitUntil(
-        lambda: hasattr(view, "_left_chart_frame") and hasattr(view, "_kpi_cards"),
-        timeout=1500,
-    )
+    #
+    # The wait MUST stay bounded and must never hang the fixture: in guarded
+    # run #4 (logs/final_guarded_run4.log) an unsatisfied wait here parked the
+    # gw0 worker inside pytestqt/wait_signal.py:58 -> QEventLoop.exec and the
+    # worker died mid-fixture ("worker 'gw0' crashed while running
+    # tests/ui/test_dashboard_view.py::TestConstruction::test_creation",
+    # live_failures.log), aborting the whole file's coverage for that run.
+    # On timeout we therefore stop the timer, run the teardown steps the
+    # generator would have run (shutdown + stopping the manually started
+    # patchers, which nothing else would stop once the fixture fails) and
+    # fail with a clear message instead of blocking the worker.
+    try:
+        qtbot.waitUntil(
+            lambda: hasattr(view, "_left_chart_frame") and hasattr(view, "_kpi_cards"),
+            timeout=5000,
+        )
+    except QtTimeoutError as exc:
+        if view._refresh_timer is not None:
+            view._refresh_timer.stop()
+        with suppress(Exception):
+            view.shutdown()
+        for p in _patchers:
+            with suppress(Exception):
+                p.stop()
+        missing = [
+            name
+            for name in ("_left_chart_frame", "_kpi_cards")
+            if not hasattr(view, name)
+        ]
+        pytest.fail(
+            "dashboard fixture: the initial refresh_all() never built the "
+            f"widget tree within 5000 ms (missing: {missing or 'none'}; "
+            f"wait ended with {type(exc).__name__}: {exc}). Failing fast "
+            "instead of hanging the worker — run #4: unbounded waitUntil at "
+            "tests/ui/test_dashboard_view.py:86 held gw0 inside "
+            "QEventLoop.exec until it was killed."
+        )
 
     # Stop the auto-refresh timer
     if view._refresh_timer is not None:

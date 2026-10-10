@@ -13,12 +13,6 @@ vi.mock("@/services/queries", () => ({
   })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-}))
-
 beforeEach(() => {
   vi.clearAllMocks()
 })

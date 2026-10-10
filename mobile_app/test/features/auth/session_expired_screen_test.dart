@@ -6,7 +6,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
 import 'package:operion_mobile/core/auth/biometric_service.dart';
 import 'package:operion_mobile/features/auth/session_expired_screen.dart';
-import 'package:operion_mobile/core/i18n/app_localizations.dart';
+import 'package:operion_mobile/core/i18n/app_localizations.dart';
+import '../../shared/test_utils.dart';
+
 
 // ── Mock BiometricService (avoids platform-channel crash) ──────────────────
 
@@ -59,21 +61,21 @@ void main() {
   group('SessionExpiredScreen — initial state', () {
     testWidgets('renders lock icon', (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.lock), findsOneWidget);
     });
 
     testWidgets('renders session expired message', (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Your session has expired.'), findsOneWidget);
     });
 
     testWidgets('renders Sign In button for relogin', (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Sign In'), findsOneWidget);
     });
@@ -82,7 +84,7 @@ void main() {
         (tester) async {
       _mockBiometricService.setAvailable(false);
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.fingerprint), findsNothing);
     });
@@ -95,7 +97,7 @@ void main() {
     testWidgets('back navigation is blocked (PopScope canPop=false)',
         (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Verify PopScope exists with canPop = false
       final popScope = tester.widget<PopScope>(find.byType(PopScope));
@@ -104,9 +106,9 @@ void main() {
 
     testWidgets('Scaffold renders without crash', (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Your session has expired.'), findsOneWidget);
     });
   });
 
@@ -116,7 +118,7 @@ void main() {
   group('SessionExpiredScreen — relogin action', () {
     testWidgets('Sign In button is rendered', (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Verify the button exists and has the correct label
       // (actual tap requires mocking authServiceProvider which depends on
@@ -135,7 +137,7 @@ void main() {
 
     testWidgets('shows biometric section when available', (tester) async {
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.fingerprint), findsOneWidget);
       expect(
@@ -149,11 +151,11 @@ void main() {
         (tester) async {
       _mockBiometricService.setAuthenticateResult(false);
       await tester.pumpWidget(wrapSessionExpiredScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap fingerprint icon — uses biometricServiceProvider which is mocked
       await tester.tap(find.byIcon(LucideIcons.fingerprint));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Screen should still be visible after failed auth
       expect(find.byType(SessionExpiredScreen), findsOneWidget);

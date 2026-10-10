@@ -167,9 +167,15 @@ class TestLabelFontRoles:
     """QLabel fontRole selectors and property persistence."""
 
     def test_label_font_role_selectors_exist(self) -> None:
-        """All major fontRole value selectors appear in the QSS."""
+        """All major fontRole value selectors appear in the QSS.
+
+        Checks roles that ui/theme_engine.py currently defines.  The old
+        "h1"/"hero" selectors were removed as dead roles (no production
+        consumers — docs/UI_VISUAL_AUDIT_DRIFT_RESOLUTION_REPORT.md and
+        tools/evidence_p5b_postgate_report.txt record the removal).
+        """
         qss = _qss()
-        for role in ("h1", "h2", "h3", "hero", "mono", "muted"):
+        for role in ("h2", "h3", "mono", "muted", "secondary", "accent"):
             assert f'[fontRole="{role}"]' in qss, (
                 f"Missing fontRole selector for '{role}'"
             )

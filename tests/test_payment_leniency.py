@@ -320,10 +320,20 @@ class TestDunnerLeniencyIntegration:
         with patch("services.operations.dunner_engine.ReminderService") as mock_reminder, \
              patch("repositories.settings_repository.SettingsRepository") as mock_settings:
             mock_reminder._compute_target_days.return_value = 30
-            # A prior grant (5 days ago) is persisted in the settings table and
-            # is still inside the 14-day window.
+            # A prior grant (a few days ago) is persisted in the settings table
+            # and is still inside the 14-day window.  Clamp it into the CURRENT
+            # quarter: both ``is_paused()`` and the quarterly cap are
+            # quarter-scoped, so a plain "5 days ago" lands in the previous
+            # quarter during the first days of January/April/July/October and
+            # the defuse is missed (evidence: 2026-10-04 → grant dated
+            # 2026-09-29 = Q3 → a second grant was persisted).
+            _today = date.today()
+            _quarter_start = _today.replace(
+                month=(_today.month - 1) // 3 * 3 + 1, day=1
+            )
+            _prior_grant = max(_quarter_start, _today - timedelta(days=5))
             mock_settings.return_value.get_settings_by_key_pattern.return_value = {
-                "payment_leniency.granted.1": (date.today() - timedelta(days=5)).isoformat(),
+                "payment_leniency.granted.1": _prior_grant.isoformat(),
             }
             result = engine.evaluate_all()
 

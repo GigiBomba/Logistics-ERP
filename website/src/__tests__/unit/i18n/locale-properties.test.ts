@@ -38,19 +38,6 @@ describe("i18n invariants", () => {
     expect(buttonKeys).toEqual([])
   })
 
-  it("no duplicate values for different keys in English", () => {
-    const valueMap = new Map<string, string[]>()
-    for (const [k, v] of entries) {
-      if (!valueMap.has(v)) valueMap.set(v, [])
-      valueMap.get(v)!.push(k)
-    }
-    const duplicates = [...valueMap.entries()]
-      .filter(([, keys]) => keys.length > 1 && keys.some(k => k !== keys[0]))
-    // Many keys intentionally share values (e.g. "Back" = common.back = nav.back)
-    // This is expected and not a bug — skip this check
-    expect(duplicates.length).toBeGreaterThan(0) // just verifying the test runs
-  })
-
   it("no key contains placeholder variable syntax incorrectly", () => {
     // Values may use {placeholder} interpolation (mirroring auditLog.pagination
     // and subscription.* keys). Assert they are well-formed: balanced braces and

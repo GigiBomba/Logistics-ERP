@@ -7,16 +7,6 @@ vi.mock("@/services/analytics", () => ({
   trackCTAClick: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("RoiCalculatorPage", () => {
   it("renders the hero section", () => {
     render(<RoiCalculatorPage />)

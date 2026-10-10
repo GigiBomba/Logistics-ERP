@@ -3,17 +3,6 @@ import { render, screen, fireEvent } from "@/test-utils"
 import { NotificationCenter } from "@/components/shared/notification-center"
 import type { PortalNotification } from "@/types"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 function makeNotification(overrides: Partial<PortalNotification> = {}): PortalNotification {
   return {
     id: "n1",

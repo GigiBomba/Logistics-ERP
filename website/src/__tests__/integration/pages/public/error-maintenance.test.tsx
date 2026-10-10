@@ -2,19 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import ErrorMaintenancePage from "@/pages/public/error-maintenance"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: (_target, tag) => {
-        const Tag = tag as any
-        return ({ children, ...props }: any) => <Tag {...props}>{children}</Tag>
-      },
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("ErrorMaintenancePage", () => {
   it("renders maintenance heading", () => {
     render(<ErrorMaintenancePage />)

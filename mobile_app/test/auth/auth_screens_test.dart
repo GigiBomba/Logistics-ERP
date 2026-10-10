@@ -4,11 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../shared/test_utils.dart';
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/features/auth/login_screen.dart';
 import 'package:operion_mobile/features/auth/session_expired_screen.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/message_bus.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 
@@ -17,44 +17,11 @@ import 'package:operion_mobile/core/i18n/app_localizations.dart';
 // environment (FlutterSecureStorage, local_auth, etc.).
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  String? _accessToken;
-  String? _refreshToken;
-
-  @override
-  Future<bool> hasTokens() async => _accessToken != null;
-
-  @override
-  Future<String?> getAccessToken() async => _accessToken;
-
-  @override
-  Future<String?> getRefreshToken() async => _refreshToken;
-
-  @override
-  Future<void> saveTokens(String access, String refresh) async {
-    _accessToken = access;
-    _refreshToken = refresh;
-  }
-
-  @override
-  Future<void> clearTokens() async {
-    _accessToken = null;
-    _refreshToken = null;
-  }
-}
-
-class _MockBiometricService extends BiometricService {
-  @override
-  Future<bool> isAvailable() async => false;
-
-  @override
-  Future<bool> authenticate({required String reason}) async => false;
-}
 
 /// Provider overrides used by auth-screen smoke tests.
 final List<Override> authOverrides = [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-  biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+  biometricServiceProvider.overrideWithValue(MockBiometricService()),
 ];
 
 /// Helper: wraps [child] in [ProviderScope] + [MaterialApp] with
@@ -83,7 +50,7 @@ void main() {
     testWidgets('renders branding, email, password, and sign-in button',
         (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const LoginScreen()));
-      await tester.pumpAndSettle(); // allow async initState + locale to settle
+      await settle(tester); // allow async initState + locale to settle
 
       // Branding: app name + truck icon
       expect(find.text('Operion'), findsOneWidget);
@@ -98,7 +65,7 @@ void main() {
 
     testWidgets('renders forgot password link', (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const LoginScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Forgot password?'), findsOneWidget);
     });
@@ -106,7 +73,7 @@ void main() {
     testWidgets('does not crash when tapping sign-in with empty fields',
         (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const LoginScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Sign In'));
       await tester.pump();
@@ -118,7 +85,7 @@ void main() {
 
     testWidgets('shows password visibility toggle', (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const LoginScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Initially the password is obscured, so eye-off icon is shown
       expect(find.byIcon(LucideIcons.eyeOff), findsOneWidget);
@@ -133,7 +100,7 @@ void main() {
 
     testWidgets('accepts email and password input', (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const LoginScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       final textFields = find.byType(TextFormField);
       await tester.enterText(textFields.first, 'user@example.com');
@@ -150,7 +117,7 @@ void main() {
   group('SessionExpiredScreen', () {
     testWidgets('renders lock icon and session-expired text', (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const SessionExpiredScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Lock icon
       expect(find.byIcon(LucideIcons.lock), findsOneWidget);
@@ -165,10 +132,10 @@ void main() {
     testWidgets('back navigation is blocked (PopScope canPop=false)',
         (tester) async {
       await tester.pumpWidget(wrapAuthScreen(const SessionExpiredScreen()));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
-      // Verify the Scaffold renders without crash
-      expect(find.byType(Scaffold), findsOneWidget);
+      // Verify the session-expired content renders without crash
+      expect(find.text('Your session has expired.'), findsOneWidget);
     });
   });
 }

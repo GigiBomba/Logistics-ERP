@@ -3,11 +3,6 @@ import { render, screen } from "@/test-utils"
 import { Routes, Route } from "react-router"
 import DocsLayout from "@/pages/docs/docs-layout"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("DocsLayout", () => {
   const sidebarLinks = [
     { label: "Getting Started", href: "/docs/getting-started" },

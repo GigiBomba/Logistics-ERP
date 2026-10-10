@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 
 
 # ── Public paths that do NOT require authentication ──────────────────────────
+# (or: paths whose credential is NOT a JWT on the Authorization header —
+#  each entry carries the reason; see tests/TRIAGE_PYTEST.md)
 PUBLIC_PATHS = {
     "/api/v1/health/",
     "/api/v1/health/live",
@@ -32,6 +34,21 @@ PUBLIC_PATHS = {
     "/docs/oauth2-redirect",
     "/redoc",
     "/openapi.json",
+    # MFA login completion — documented "(public)" in backend/api/v1/mfa.py:
+    # no JWT exists yet; the credential is the one-time mfa_session_token in
+    # the request body (handler raises 401 for a missing/invalid session, but
+    # FastAPI validates the body first, so an empty-body probe gets 422).
+    "/api/v1/auth/mfa/verify",
+    "/api/v1/auth/mfa/backup-code",
+    # Deliberately anonymous endpoint — "No authentication is required"
+    # (backend/api/v1/support.py record_anonymous_error docstring); guarded
+    # by per-IP rate limiting instead of auth.
+    "/api/v1/support/anonymous-error",
+    # QR-pairing validation: the credential is the single-use pairing token
+    # in the query string (issued to an authenticated user by POST
+    # /mobile/pairing-token). Unauthenticated callers get 422 (missing
+    # token) or 404 (unknown token, anti-enumeration) — never 200.
+    "/api/v1/mobile/pairing-token/validate",
 }
 
 

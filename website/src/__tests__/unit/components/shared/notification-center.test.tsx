@@ -6,22 +6,6 @@ afterEach(() => {
   localStorage.removeItem("operion-locale")
 })
 
-vi.mock("motion/react", () => {
-  const MotionComponent = (props: any) => {
-    const { children, ...rest } = props
-    return <div {...rest}>{children}</div>
-  }
-  return {
-    motion: new Proxy(
-      {},
-      {
-        get: () => MotionComponent,
-      }
-    ),
-    AnimatePresence: ({ children }: any) => <>{children}</>,
-  }
-})
-
 function getDefaultProps(overrides = {}) {
   return {
     notifications: MOCK_NOTIFICATIONS,

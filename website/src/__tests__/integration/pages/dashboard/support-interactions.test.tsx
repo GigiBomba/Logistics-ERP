@@ -10,11 +10,6 @@ vi.mock("@/services/queries", () => ({
   useTutorials: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div>, p: ({ children, ...props }: any) => <p {...props}>{children}</p> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 const tutorial = {
   id: "t-1",
   title: "Your First Route Plan",

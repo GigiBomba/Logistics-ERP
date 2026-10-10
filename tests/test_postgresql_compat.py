@@ -967,7 +967,33 @@ class TestTripsFkConstraints:
 
     def test_constraints_exist_not_validated(self, pg_conn):
         """Both FKs exist in pg_constraint with convalidated = false."""
+        from psycopg2 import sql as pgsql
+
         cur = pg_conn.cursor()
+
+        # Establish the boot state first: a previous session (the import path
+        # or ``TestTripsFkValidatedStatePersists`` below) may have left these
+        # FKs VALIDATED in this per-file database — the session-teardown DROP
+        # is skipped whenever another connection is still open, so
+        # ``convalidated=true`` survives into later runs (evidence: repeated
+        # ``got convalidated=True`` failures).  Drop them and boot once: the
+        # real schema_pg.sql re-adds them NOT VALID (only when absent), which
+        # is exactly what this test asserts.
+        for name in ("fk_trips_driver", "fk_trips_truck"):
+            cur.execute(
+                pgsql.SQL("ALTER TABLE trips DROP CONSTRAINT IF EXISTS {}").format(
+                    pgsql.Identifier(name)
+                )
+            )
+        pg_conn.commit()  # release the DDL so the boot below sees the drops
+
+        from database.db_manager import DatabaseManager
+
+        db = DatabaseManager(
+            db_path=TEST_DSN, engine="postgresql", pool_min=1, pool_max=2
+        )
+        db.close()
+
         cur.execute(
             "SELECT conname, convalidated "
             "FROM pg_catalog.pg_constraint "

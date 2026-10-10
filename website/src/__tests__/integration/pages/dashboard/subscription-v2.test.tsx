@@ -13,11 +13,6 @@ vi.mock("@/services/queries", () => ({
   useReactivateSubscription: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false, error: null })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 const mockSubscription = {
   status: "active",
   licensed_truck_count: 5,

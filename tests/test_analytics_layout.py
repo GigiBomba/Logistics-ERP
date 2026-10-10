@@ -36,6 +36,25 @@ from ui.plotly_charts import (
 from ui.views.analytics._tab_base import BaseTab
 
 
+# ── Source cache: each tab file is read ONCE at module import instead of
+# once per parametrized case (the 6 tab files are re-read by a dozen
+# parametrized tests below).
+_TAB_FILE_PATHS = (
+    "ui/views/analytics/financial_tab.py",
+    "ui/views/analytics/fleet_tab.py",
+    "ui/views/analytics/route_tab.py",
+    "ui/views/analytics/client_tab.py",
+    "ui/views/analytics/driver_tab.py",
+    "ui/views/analytics/document_tab.py",
+)
+_TAB_SOURCES = {path: open(path, encoding="utf-8").read() for path in _TAB_FILE_PATHS}
+
+# This file is one of the three slowest test modules in the suite (Qt-heavy
+# chart lifecycle / cache / async-render tests); deselected by default with
+# `-m "not slow"`.
+pytestmark = pytest.mark.slow
+
+
 # ── Chart factories: show_title parameter ──────────────────────────
 
 class TestShowTitleParameter:
@@ -67,9 +86,9 @@ class TestShowTitleParameter:
 
 class TestChartSizeConstants:
     def test_tile_figsize_is_compact(self):
-        # 3 tiles of 4.2" + spacing should fit in 1280px viewport
-        assert True  # now pixel-based
-        assert True  # now pixel-based
+        # 3 tiles of 4.2" + spacing should fit in 1280px viewport.
+        # Constants are now pixel-based (see test_three_tiles_fit_in_1280px
+        # below for the concrete width computation).
         assert CHART_DPI == 100
 
 
@@ -114,7 +133,7 @@ class TestTabLayoutCompliance:
         import importlib
         mod = importlib.import_module(tab_module)
         cls = getattr(mod, expected_class)
-        src = open(cls.__module__.replace(".", "/") + ".py", encoding="utf-8").read()
+        src = _TAB_SOURCES[cls.__module__.replace(".", "/") + ".py"]
         ok = any(x in src for x in [
             "_add_plotly_chart_grid(", "_add_chart_grid(",
             "_chart_layout.addWidget(", "PlotlyChartWidget",
@@ -135,7 +154,7 @@ class TestNoHardcodedSectionHeaders:
     ])
     def test_no_raw_string_section_headers(self, tab_file):
         import re
-        src = open(tab_file, encoding="utf-8").read()
+        src = _TAB_SOURCES[tab_file]
         # Find _add_section_header calls with raw string literal (not t() call)
         matches = re.findall(r'_add_section_header\("([^"]+)"', src)
         matches2 = re.findall(r"_add_section_header\('([^']+)'", src)
@@ -155,7 +174,7 @@ class TestShowTitleFalseEverywhere:
         "ui/views/analytics/document_tab.py",
     ])
     def test_show_title_false_used(self, tab_file):
-        src = open(tab_file, encoding="utf-8").read()
+        src = _TAB_SOURCES[tab_file]
         # Tabs that use _chart_layout directly don't need show_title=False
         # (they use the chart's internal title). Skip these.
         if "_chart_layout" in src and "_add_plotly_chart_grid(" not in src:
@@ -438,7 +457,7 @@ class TestI18nCompliance:
     def test_no_raw_chart_titles(self, tab_file):
         """title="Some English" should not appear (use t() instead)."""
         import re
-        src = open(tab_file, encoding="utf-8").read()
+        src = _TAB_SOURCES[tab_file]
         # Find title="English Word ..." patterns
         matches = re.findall(r'title="([A-Z][a-zA-Z][a-zA-Z ]+)"', src)
         # Filter out multi-word English titles
@@ -456,7 +475,7 @@ class TestI18nCompliance:
     def test_no_raw_axis_labels(self, tab_file):
         """x_label/y_label should not contain raw English."""
         import re
-        src = open(tab_file, encoding="utf-8").read()
+        src = _TAB_SOURCES[tab_file]
         matches = re.findall(r'x_label="([A-Z][^"]+)"', src)
         matches += re.findall(r'y_label="([A-Z][^"]+)"', src)
         assert not matches, f"{tab_file} has raw axis labels: {matches}"
@@ -472,7 +491,7 @@ class TestI18nCompliance:
     def test_no_raw_string_in_append(self, tab_file):
         """List .append('English') patterns should use t()."""
         import re
-        src = open(tab_file, encoding="utf-8").read()
+        src = _TAB_SOURCES[tab_file]
         # Match .append("English Text") or .append('English Text')
         matches = re.findall(r'\.append\(["\']([A-Z][^"\']+)["\']', src)
         assert not matches, f"{tab_file} has raw strings in .append: {matches}"
@@ -741,7 +760,7 @@ class TestShowTitleExhaustively:
     def test_show_title_false_count_matches_factory_count(self, tab_file):
         """show_title=False should be present for most chart calls."""
         import re
-        src = open(tab_file, encoding="utf-8").read()
+        src = _TAB_SOURCES[tab_file]
         # Tabs that use _chart_layout directly don't need show_title=False
         if "_chart_layout" in src and "_add_plotly_chart_grid(" not in src:
             return  # exempt

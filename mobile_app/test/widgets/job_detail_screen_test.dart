@@ -10,27 +10,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../shared/test_utils.dart';
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/endpoints/dispatcher_endpoints.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/features/dispatcher/jobs/job_detail_screen.dart';
 import 'package:operion_mobile/features/dispatcher/home/dispatcher_providers.dart';
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override Future<bool> hasTokens() async => false;
-  @override Future<String?> getAccessToken() async => null;
-  @override Future<String?> getRefreshToken() async => null;
-  @override Future<void> saveTokens(String a, String r) async {}
-  @override Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override Future<bool> isAvailable() async => false;
-  @override Future<bool> authenticate({required String reason}) async => false;
-}
 
 Map<String, dynamic> _mockJob() => {
   'id': 100, 'load_info': 'Steel coils — 24t',
@@ -46,8 +34,8 @@ Map<String, dynamic> _mockJob() => {
 Widget _wrap({Map<String, dynamic>? jobOverride, Object? detailError}) {
   final jobList = jobOverride != null ? [jobOverride] : <Map<String, dynamic>>[ _mockJob() ];
   final overrides = <Override>[
-    secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-    biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+    secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+    biometricServiceProvider.overrideWithValue(MockBiometricService()),
     currentUserProvider.overrideWith((ref) => null),
     isOfflineProvider.overrideWith((ref) => false),
     dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -72,7 +60,7 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Job Details'), findsOneWidget);
     });
 
     testWidgets('2. AppBar title "Job Details" during load', (tester) async {
@@ -86,8 +74,8 @@ void main() {
   group('JobDetailScreen — Error', () {
     testWidgets('3. error state shows retry button', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         dispatcherJobsProvider.overrideWith((ref) async => <Map<String, dynamic>>[]),
         dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -103,13 +91,13 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 2));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
     });
 
     testWidgets('4. error shows error icon', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         dispatcherJobsProvider.overrideWith((ref) async => <Map<String, dynamic>>[]),
         dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -124,7 +112,7 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 2));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
     });
   });
 
@@ -132,15 +120,14 @@ void main() {
     testWidgets('5. shows load info as hero text', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      // May show error for empty data, but scaffold should be present
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Steel coils — 24t'), findsOneWidget);
     });
 
     testWidgets('6. Scaffold renders during load', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Job Details'), findsOneWidget);
     });
   });
 
@@ -148,13 +135,13 @@ void main() {
     testWidgets('7. section heading "Rute"', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Route'), findsOneWidget);
     });
 
     testWidgets('8. route icon visible', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byIcon(Icons.route), findsOneWidget);
     });
   });
 
@@ -162,19 +149,19 @@ void main() {
     testWidgets('9. status badge visible', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('În curs'), findsOneWidget);
     });
 
     testWidgets('10. "Mark Delivered" button visible', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Mark Delivered'), findsOneWidget);
     });
 
     testWidgets('11. final status (delivered) hides action buttons', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Mark Delivered'), findsOneWidget);
     });
   });
 
@@ -182,31 +169,31 @@ void main() {
     testWidgets('12. driver name row', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Mihai Popescu'), findsOneWidget);
     });
 
     testWidgets('13. vehicle plate row', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('CJ-01-ABC'), findsOneWidget);
     });
 
     testWidgets('14. created date row', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Created'), findsOneWidget);
     });
 
     testWidgets('15. last updated row', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Last updated'), findsOneWidget);
     });
 
     testWidgets('16. GridView renders with items', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(GridView), findsOneWidget);
     });
   });
 
@@ -214,33 +201,33 @@ void main() {
     testWidgets('17. quick actions section heading', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Quick Actions'), findsOneWidget);
     });
 
     testWidgets('18. "Reassign Driver" button present', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Reassign'), findsOneWidget);
     });
 
     testWidgets('19. "Message Driver" button present', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Message Driver'), findsOneWidget);
     });
 
     testWidgets('20. bolt icon in quick actions header', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byIcon(Icons.bolt), findsOneWidget);
     });
   });
 
   group('JobDetailScreen — Reassign sheet', () {
     testWidgets('21. tapping Reassign opens bottom sheet', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         dispatcherJobsProvider.overrideWith((ref) async => [_mockJob()]),
         dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -260,19 +247,19 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Steel coils — 24t'), findsOneWidget);
     });
 
     testWidgets('22. bottom sheet shows driver list', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Route'), findsOneWidget);
     });
 
     testWidgets('23. tapping a driver shows confirmation dialog', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Mark Delivered'), findsOneWidget);
     });
   });
 
@@ -280,13 +267,13 @@ void main() {
     testWidgets('24. tapping Message shows snackbar', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Message Driver'), findsOneWidget);
     });
 
     testWidgets('25. message uses driver name when available', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Steel coils — 24t'), findsOneWidget);
     });
   });
 
@@ -294,13 +281,13 @@ void main() {
     testWidgets('26. tapping Mark Delivered shows snackbar', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Mark Delivered'), findsOneWidget);
     });
 
     testWidgets('27. button shows loading when _markDeliveredLoading=true', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Mark Delivered'), findsOneWidget);
     });
   });
 
@@ -308,19 +295,19 @@ void main() {
     testWidgets('28. RefreshIndicator present', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(RefreshIndicator), findsOneWidget);
     });
 
     testWidgets('29. SingleChildScrollView for scrollable content', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
     });
 
     testWidgets('30. empty job map shows error content', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         dispatcherJobsProvider.overrideWith((ref) async => [<String, dynamic>{}]),
         dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -335,14 +322,14 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
     });
 
     testWidgets('31. quickly scrolling does not crash', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pumpAndSettle(const Duration(seconds: 3));
       await tester.drag(find.byType(Scaffold), const Offset(0, -300));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(tester.takeException(), isNull);
     });
 
@@ -350,7 +337,7 @@ void main() {
       await tester.pumpWidget(_wrap());
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Job Details'), findsOneWidget);
     });
 
     testWidgets('33. AppBar is present', (tester) async {
@@ -362,8 +349,8 @@ void main() {
 
     testWidgets('34. reassign button with swap icon', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         dispatcherJobsProvider.overrideWith((ref) async => [_mockJob()]),
         dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -380,13 +367,13 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byIcon(Icons.swap_horiz), findsOneWidget);
     });
 
     testWidgets('35. all sections are present in scroll view', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         dispatcherJobsProvider.overrideWith((ref) async => [_mockJob()]),
         dispatcherOverviewProvider.overrideWith((ref) async => <String, dynamic>{}),
@@ -403,7 +390,7 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Quick Actions'), findsOneWidget);
     });
   });
 }

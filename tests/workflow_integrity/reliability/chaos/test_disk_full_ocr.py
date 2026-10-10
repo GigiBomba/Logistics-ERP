@@ -393,3 +393,44 @@ class TestOcrFailureObservability:
             if doc_id is not None:
                 _unlink_quietly(_doc_row(db, doc_id).get("file_path"))
             _unlink_quietly(src)
+
+
+class TestCorruptPdfTerminalState:
+    """A corrupt source PDF is recorded as a terminal attempt (no startup loop)."""
+
+    def test_corrupt_pdf_marks_attempt_and_leaves_pending_set(self, db):
+        import queue
+
+        from repositories.document_repository import DocumentRepository
+        from services.document.ocr_service import OcrService
+        from services.document_automation.image_processor import (
+            UnreadableDocumentError,
+        )
+        from services.document_automation.pipeline import (
+            run_for_existing_document,
+        )
+
+        src = _make_source_pdf("corrupt")
+        doc_id = None
+        try:
+            doc_id = _seed_document_row(db, src, title="corrupt_cmr.pdf")
+            assert _doc_row(db, doc_id)["ocr_run_at"] in (None, "")
+
+            with pytest.raises(UnreadableDocumentError):
+                run_for_existing_document(db, doc_id)
+
+            row = _doc_row(db, doc_id)
+            assert row["ocr_run_at"]
+            assert row["ocr_engine"] == "failed"
+            assert row["ocr_text"] in (None, "")
+
+            q: queue.Queue = queue.Queue()
+            enqueued = OcrService.retry_pending_ocr(
+                DocumentRepository(db), q, max_docs=10
+            )
+            assert enqueued == 0
+            assert q.empty()
+        finally:
+            if doc_id is not None:
+                _unlink_quietly(_doc_row(db, doc_id).get("file_path"))
+            _unlink_quietly(src)

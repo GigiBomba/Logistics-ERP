@@ -89,16 +89,6 @@ const mockPosts = [
   },
 ]
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 const mockUseParams = vi.fn()
 const mockUseSearchParams = vi.fn()
 

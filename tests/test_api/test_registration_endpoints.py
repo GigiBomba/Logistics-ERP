@@ -19,10 +19,10 @@ os.makedirs(_TEST_DB_DIR, exist_ok=True)
 _TEST_DB = os.path.join(
     _TEST_DB_DIR, f"test_registration_endpoints_{uuid.uuid4().hex[:12]}.db",
 )
-os.environ["OPERION_DB_PATH"] = _TEST_DB
-os.environ["OPERION_ENV"] = "test"
-os.environ["OPERION_JWT_SECRET_KEY"] = "test-key-ci-32-chars-required-here!!"
-os.environ.pop("OPERION_API_KEY", None)
+# NOTE: env/Config assignments live in the ``_registration_env_guard`` fixture
+# below (monkeypatch restores originals at teardown).  They used to run here at
+# *collection* time in every xdist worker, permanently overriding the
+# per-worker OPERION_DB_PATH / Config.DB_PATH isolation from tests/conftest.py.
 
 from unittest.mock import MagicMock, patch
 
@@ -35,23 +35,28 @@ BASE = "/api/v1/registration"
 
 
 @pytest.fixture(autouse=True)
-def _registration_env_guard():
-    """Rebind the app DB singleton + re-assert env before each test."""
-    os.environ["OPERION_DB_PATH"] = _TEST_DB
-    os.environ["OPERION_ENV"] = "test"
-    os.environ["OPERION_JWT_SECRET_KEY"] = "test-key-ci-32-chars-required-here!!"
-    os.environ.pop("OPERION_API_KEY", None)
+def _registration_env_guard(monkeypatch):
+    """Rebind the app DB singleton + re-assert env before each test.
+
+    All env/Config mutations go through ``monkeypatch`` so pytest restores
+    the originals at teardown (previously these were module-level
+    assignments that leaked into every worker for the whole session).
+    """
+    monkeypatch.setenv("OPERION_DB_PATH", _TEST_DB)
+    monkeypatch.setenv("OPERION_ENV", "test")
+    monkeypatch.setenv("OPERION_JWT_SECRET_KEY", "test-key-ci-32-chars-required-here!!")
+    monkeypatch.delenv("OPERION_API_KEY", raising=False)
     from config import Config as _Cfg
-    _Cfg.DB_PATH = _TEST_DB
-    _Cfg.API_KEY = ""  # disable API-key middleware for this module
+    monkeypatch.setattr(_Cfg, "DB_PATH", _TEST_DB)
+    monkeypatch.setattr(_Cfg, "API_KEY", "")  # disable API-key middleware for this module
     try:
         import backend.middleware.auth_middleware as _auth_mw
-        _auth_mw.Config.API_KEY = ""
+        monkeypatch.setattr(_auth_mw.Config, "API_KEY", "")
     except Exception:
         pass
     from backend import dependencies as _deps
     if getattr(_deps, "Config", None) is not None:
-        _deps.Config.DB_PATH = _TEST_DB
+        monkeypatch.setattr(_deps.Config, "DB_PATH", _TEST_DB)
     if _deps._db_instance is not None:
         try:
             _deps._db_instance.close()

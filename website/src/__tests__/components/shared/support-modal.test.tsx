@@ -2,19 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@/test-utils"
 import { SupportModal } from "@/components/shared/support-modal"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () =>
-        ({ children, initial, animate, exit, transition, variants, whileInView, viewport, ...rest }: any) =>
-          <div {...rest}>{children}</div>,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const { sendMessageMock } = vi.hoisted(() => ({
   sendMessageMock: vi.fn(),
 }))
@@ -229,4 +216,3 @@ describe("SupportModal", () => {
     expect(await screen.findByText("Done")).toBeInTheDocument()
   })
 })
-

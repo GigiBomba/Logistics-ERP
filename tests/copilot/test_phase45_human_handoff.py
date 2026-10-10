@@ -75,9 +75,8 @@ class TestHandoffCleanup:
 
     def test_reset_does_not_raise_on_missing(self):
         """reset should not raise if conversation was never tracked."""
-        # Should not raise KeyError
+        # The call is the smoke test: it must not raise KeyError.
         HandoffTracker.reset("never-tracked-conv")
-        assert True  # Reached here without exception
 
 
 class TestHandoffEdgeCases:

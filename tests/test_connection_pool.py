@@ -473,6 +473,14 @@ from unittest.mock import MagicMock, patch
 
 
 _PSYCOPG2_PATCHED: list[str] = []
+#: Real module objects that the mocks temporarily replace in ``sys.modules``.
+#: Without restoring these, ``sys.modules["psycopg2"]`` stays a MagicMock for
+#: the rest of the process — later modules that ``import psycopg2.extras``
+#: *inside* a method (``database.connection_pool.PostgresConnectionPool.get_connection``)
+#: bind ``RealDictCursor`` as a MagicMock and every row turns into a MagicMock
+#: (evidence: ``tests/test_connection_pool_pg.py`` failing with
+#: ``assert <MagicMock ...> == 1`` whenever this file ran first in the worker).
+_PSYCOPG2_ORIGINALS: dict[str, object] = {}
 
 
 def _patch_psycopg2():
@@ -493,9 +501,14 @@ def _patch_psycopg2():
 
     # Track what we've added so _unpatch_psycopg2 can clean up
     _PSYCOPG2_PATCHED.clear()
+    _PSYCOPG2_ORIGINALS.clear()
     for key in ("psycopg2", "psycopg2.pool", "psycopg2.extras"):
         if key not in sys.modules:
             _PSYCOPG2_PATCHED.append(key)
+        else:
+            # Already imported (the normal case): remember the real module so
+            # _unpatch_psycopg2 can put it back instead of leaving our mock.
+            _PSYCOPG2_ORIGINALS[key] = sys.modules[key]
         sys.modules[key] = {
             "psycopg2": mock_psycopg2,
             "psycopg2.pool": mock_pool,
@@ -506,12 +519,15 @@ def _patch_psycopg2():
 
 
 def _unpatch_psycopg2():
-    """Remove mock psycopg2 entries we added to sys.modules."""
+    """Restore sys.modules to its pre-``_patch_psycopg2`` state."""
     import sys
 
     for key in _PSYCOPG2_PATCHED:
         sys.modules.pop(key, None)
+    for key, original in _PSYCOPG2_ORIGINALS.items():
+        sys.modules[key] = original
     _PSYCOPG2_PATCHED.clear()
+    _PSYCOPG2_ORIGINALS.clear()
 
 
 # ── PostgresConnectionPool Initialisation ──────────────────────────────

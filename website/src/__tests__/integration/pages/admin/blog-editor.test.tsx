@@ -13,11 +13,6 @@ import {
 import { createMockAuthContext } from "@/test-utils"
 import type { ReactNode } from "react"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 vi.mock("@/services/queries", () => ({
   useBlogPost: vi.fn(),
   useBlogCategories: vi.fn(),

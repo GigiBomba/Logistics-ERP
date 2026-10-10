@@ -12,19 +12,6 @@ vi.mock("@/services/queries", () => ({
   useOpsResolveGuardrail: useOpsResolveGuardrailMock,
 }))
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const violation = {
   id: 1,
   guardrail_id: "GR-7",

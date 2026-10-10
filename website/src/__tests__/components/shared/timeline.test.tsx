@@ -2,10 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import { Timeline } from "@/components/shared/timeline"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const sampleItems = [
   {
     date: "July 2026",

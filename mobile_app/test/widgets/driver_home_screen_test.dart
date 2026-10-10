@@ -3,32 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../shared/test_utils.dart';
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/driver_endpoints.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/features/driver/home/driver_home_screen.dart';
 import 'package:operion_mobile/features/driver/home/driver_providers.dart';
 import 'package:operion_mobile/shared/models/user.dart';
+import 'package:operion_mobile/shared/widgets/status_badge.dart';
 
 // ---------------------------------------------------------------------------
 // Mock providers
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override Future<bool> hasTokens() async => false;
-  @override Future<String?> getAccessToken() async => null;
-  @override Future<String?> getRefreshToken() async => null;
-  @override Future<void> saveTokens(String a, String r) async {}
-  @override Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override Future<bool> isAvailable() async => false;
-  @override Future<bool> authenticate({required String reason}) async => false;
-}
 
 class _StubDriverEndpoints extends DriverEndpoints {
   final Map<String, dynamic> myDayResponse;
@@ -77,8 +66,8 @@ Map<String, dynamic> _mockMyDayData() => {
 };
 
 List<Override> _overrides({Map<String, dynamic>? data, Object? error}) => [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-  biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+  biometricServiceProvider.overrideWithValue(MockBiometricService()),
   isOfflineProvider.overrideWith((ref) => false),
   unreadMessagesCountProvider.overrideWith((ref) => 2),
   driverEndpointsProvider.overrideWithValue(
@@ -108,13 +97,13 @@ void main() {
       await tester.pumpWidget(_wrap(const DriverHomeScreen()));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsWidgets);
     });
 
     testWidgets('2. loading state renders SingleChildScrollView', (tester) async {
       await tester.pumpWidget(_wrap(const DriverHomeScreen()));
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsWidgets);
     });
 
     testWidgets('3. loading does NOT show data prematurely', (tester) async {
@@ -127,13 +116,13 @@ void main() {
   group('DriverHomeScreen — Error', () {
     testWidgets('4. error state shows error icon', (tester) async {
       await tester.pumpWidget(_wrap(const DriverHomeScreen(), error: Exception('Network failure')));
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.textContaining('An error'), findsOneWidget);
     });
 
     testWidgets('5. error state shows retry button', (tester) async {
       await tester.pumpWidget(_wrap(const DriverHomeScreen(), error: Exception('Timeout')));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(FilledButton), findsAny);
     });
   });
@@ -143,7 +132,7 @@ void main() {
       await tester.pumpWidget(_wrap(const DriverHomeScreen()));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('My Day'), findsOneWidget);
     });
 
     testWidgets('7. shows today date', (tester) async {
@@ -173,7 +162,7 @@ void main() {
       await tester.pumpWidget(_wrap(const DriverHomeScreen()));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Just now'), findsOneWidget);
     });
   });
 
@@ -219,7 +208,7 @@ void main() {
       await tester.pumpWidget(_wrap(const DriverHomeScreen()));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(StatusBadge), findsWidgets);
     });
   });
 
@@ -242,7 +231,7 @@ void main() {
       await tester.pumpWidget(_wrap(const DriverHomeScreen()));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.textContaining('Deliver ASAP'), findsWidgets);
     });
   });
 
@@ -263,7 +252,7 @@ void main() {
       }));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('No transports assigned'), findsOneWidget);
     });
 
     testWidgets('22. zero active shows "0"', (tester) async {

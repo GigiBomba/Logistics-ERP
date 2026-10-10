@@ -18,8 +18,8 @@ class TestPipelineWorker:
             db=MagicMock(),
             input_paths=[],
         )
+        # run() itself is the smoke test: it must complete without error.
         worker.run()
-        assert True  # Should complete without error
 
     def test_stage_changed_signal_emitted(self, qtbot):
         worker = __import__("ui.views.automation_worker", fromlist=["PipelineWorker"]).PipelineWorker(

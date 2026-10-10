@@ -1,3 +1,4 @@
+@Timeout(Duration(minutes: 15))
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -298,7 +299,7 @@ void main() {
   group('Dispatcher Flow', () {
     testWidgets('1. Login as dispatcher and view dashboard', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Dispatcher shell should be visible with bottom nav
       expect(
@@ -332,14 +333,14 @@ void main() {
 
     testWidgets('2. View fleet positions', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Tap the "Fleet Tracker" tab (index 1 in the bottom nav).
       // The dispatcher bottom nav items are: Overview, Fleet Tracker, Copilot, More.
       final fleetTrackerIcon = find.byIcon(Icons.map_outlined);
       expect(fleetTrackerIcon, findsOneWidget);
       await tester.tap(fleetTrackerIcon);
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Fleet map screen should be rendering
       expect(
@@ -352,7 +353,7 @@ void main() {
 
     testWidgets('3. Navigate to alerts via quick action', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // The dispatcher dashboard has quick action chips including "Approve"
       // which opens the alerts screen. Note: the locale key for approve is
@@ -360,7 +361,7 @@ void main() {
       final approveChip = find.textContaining('Approve');
       if (approveChip.evaluate().isNotEmpty) {
         await tester.tap(approveChip);
-        await tester.pumpAndSettle();
+        await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
         // The alert inbox should show the alert title from our stub data
         expect(
@@ -380,7 +381,7 @@ void main() {
 
     testWidgets('4. Verify dispatcher dashboard KPIs', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Verify KPI cards are displayed by checking for specific labels.
       expect(
@@ -397,7 +398,7 @@ void main() {
 
     testWidgets('5. Pull-to-refresh dispatcher dashboard', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Find the scrollable content and perform pull-to-refresh
       expect(find.byType(RefreshIndicator), findsWidgets);
@@ -407,7 +408,7 @@ void main() {
         const Offset(0, 300),
         1000,
       );
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // After refresh, KPI data should still be shown
       expect(

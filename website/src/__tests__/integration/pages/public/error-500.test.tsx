@@ -2,19 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import Error500Page from "@/pages/public/error-500"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: (_target, tag) => {
-        const Tag = tag as any
-        return ({ children, ...props }: any) => <Tag {...props}>{children}</Tag>
-      },
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("Error500Page", () => {
   it("renders 500 status code", () => {
     render(<Error500Page />)

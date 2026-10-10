@@ -8,10 +8,6 @@ vi.mock("@/services/queries", () => ({
   useCreateOrganization: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const MOCK_ORGS = [
   {
     id: "org-1",

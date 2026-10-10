@@ -8,11 +8,23 @@ and ``MagicMock`` handlers for synchronous assertions.
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtMultimedia import QAudioSource, QMediaDevices, QMediaPlayer
 from PySide6.QtTest import QSignalSpy, QTest
+
+# xdist gate (see tests/conftest.py + scripts/run_pytest_guarded.py):
+# worker 'gw0' died in the GuidedOverlayWidget ``overlay`` fixture at
+# QTest.qWait(50) (shard-8 run, 2026-10-07, reproduced on rerun) — native Qt
+# access violation under xdist; the worker loss also wedges the xdist
+# controller at session end.  Runs via the guard's serial pass (-n 0);
+# deeper fix = Qt multimedia/overlay teardown investigation.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="native Qt crash under xdist (gw0 died in overlay fixture at QTest.qWait) — runs with -n 0",
+)
 
 # ── SP workaround (if needed) ──────────────────────────────────────────────
 # import ui.widgets as _ui_widgets

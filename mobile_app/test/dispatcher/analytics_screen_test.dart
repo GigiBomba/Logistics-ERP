@@ -4,11 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/features/dispatcher/analytics/dispatcher_analytics_screen.dart';
 import 'package:operion_mobile/features/dispatcher/analytics/analytics_providers.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/shared/widgets/shimmer_loader.dart';
@@ -19,25 +18,6 @@ import 'package:operion_mobile/shared/widgets/empty_state.dart';
 // Mock implementations
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override
-  Future<bool> hasTokens() async => false;
-  @override
-  Future<String?> getAccessToken() async => null;
-  @override
-  Future<String?> getRefreshToken() async => null;
-  @override
-  Future<void> saveTokens(String access, String refresh) async {}
-  @override
-  Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override
-  Future<bool> isAvailable() async => false;
-  @override
-  Future<bool> authenticate({required String reason}) async => false;
-}
 
 ApiClient _stubApiClient() => ApiClient.create(
       baseUrl: '',
@@ -95,8 +75,8 @@ Widget wrapAnalyticsScreen({
 }) {
   return ProviderScope(
     overrides: [
-      secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-      biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+      secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+      biometricServiceProvider.overrideWithValue(MockBiometricService()),
       apiClientProvider.overrideWithValue(_stubApiClient()),
       analyticsOverviewProvider(AnalyticsPeriod.thisMonth)
           .overrideWith((ref) async => overview),
@@ -125,8 +105,8 @@ Widget wrapAnalyticsScreen({
 Widget wrapAnalyticsScreenError() {
   return ProviderScope(
     overrides: [
-      secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-      biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+      secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+      biometricServiceProvider.overrideWithValue(MockBiometricService()),
       apiClientProvider.overrideWithValue(_stubApiClient()),
       analyticsOverviewProvider(AnalyticsPeriod.thisMonth)
           .overrideWith((ref) => Future.error(Exception('Network error'))),
@@ -161,9 +141,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
+            secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
             biometricServiceProvider
-                .overrideWithValue(_MockBiometricService()),
+                .overrideWithValue(MockBiometricService()),
             apiClientProvider.overrideWithValue(_stubApiClient()),
             analyticsOverviewProvider(AnalyticsPeriod.thisMonth)
                 .overrideWith(

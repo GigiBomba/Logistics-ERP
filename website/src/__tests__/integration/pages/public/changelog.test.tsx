@@ -40,14 +40,6 @@ vi.mock("@/api/endpoints", () => ({
   invoicesApi: { getInvoices: vi.fn() },
 }))
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 beforeEach(() => {
   vi.clearAllMocks()
 })

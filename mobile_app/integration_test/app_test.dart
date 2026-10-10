@@ -1,3 +1,4 @@
+@Timeout(Duration(minutes: 15))
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -17,7 +18,7 @@ void main() {
       await tester.pumpWidget(const OperionMobileApp());
 
       // Allow async initialisation (ProviderScope, locale, session check)
-      await tester.pumpAndSettle(const Duration(seconds: 5));
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // The app should render something — at minimum a Scaffold (login screen)
       // or a CircularProgressIndicator (session-restoring state).

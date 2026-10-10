@@ -1,9 +1,12 @@
 """Mobile analytics endpoint tests (blueprint §6.4) — real DB.
 
-Covers: 4 data endpoints happy path (manager), dispatcher 403 on all 4 AND
-export (can_view_analytics), invoice-aging bucket correctness, payload-size
-proof (< 50_000 bytes, measured), sync CSV export lifecycle (token download
-200, tenant mismatch 403, expired token 403).
+Covers: invoice-aging bucket correctness (incl. the Phase-3 statuses cascade),
+payload-size proof (< 50_000 bytes, measured), sync CSV export lifecycle
+(token download 200, tenant mismatch 403, expired token 403).
+
+The read-only happy-path tests (revenue / fleet-utilization / driver-performance
+/ invoice-aging buckets / invalid-date 422 / dispatcher 403) moved to
+``test_analytics_readonly.py``, which shares one module-scoped DB.
 """
 from __future__ import annotations
 
@@ -33,52 +36,6 @@ def _seed_extra_trips(db, n: int = 80, company_id: int = 1) -> None:
 
 
 class TestAnalyticsManagerHappyPath:
-    def test_revenue(self, mobile_app, real_db, records_seed, manager_client):
-        resp = manager_client.get(f"{BASE}/revenue")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert isinstance(body["trend"], list) and body["trend"]
-        assert isinstance(body["per_client"], list) and body["per_client"]
-        assert isinstance(body["per_route"], list)
-        by_label = {p["label"]: p["value"] for p in body["per_client"]}
-        assert by_label["ACME Corp"] == 3700.0
-        assert by_label["Globex Ltd"] == 4600.0
-        # group_by accepted
-        assert manager_client.get(f"{BASE}/revenue?group_by=client").status_code == 200
-
-    def test_fleet_utilization(self, mobile_app, real_db, records_seed, manager_client):
-        resp = manager_client.get(f"{BASE}/fleet-utilization")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status_split"] == {"active": 1, "maintenance": 1, "decommissioned": 1}
-        trucks = {t["truck"]: t for t in body["trucks"]}
-        assert trucks["AB-01-XYZ"]["trip_count"] == 2
-        assert trucks["AB-01-XYZ"]["total_km"] == 2700.0
-        assert trucks["AB-02-XYZ"]["trip_count"] == 1
-
-    def test_driver_performance(self, mobile_app, real_db, records_seed, manager_client):
-        resp = manager_client.get(f"{BASE}/driver-performance")
-        assert resp.status_code == 200
-        rows = {r["driver"]: r for r in resp.json()["rows"]}
-        assert "rating" not in rows["Ion Popescu"]
-        ion = rows["Ion Popescu"]
-        assert ion["trips_completed"] == 2
-        assert ion["on_time_pct"] == 50.0
-        assert ion["profit_per_km"] == pytest.approx(0.3533, abs=0.001)
-        assert ion["revenue"] == 3700.0
-        # Maria has no OTD-qualifying trips → 0.0 (not invented)
-        assert rows["Maria Ionescu"]["on_time_pct"] == 0.0
-
-    def test_invoice_aging_buckets(self, mobile_app, real_db, records_seed, manager_client):
-        resp = manager_client.get(f"{BASE}/invoice-aging")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["current"] == 500.0
-        assert body["bucket_31_60"] == 300.0
-        assert body["bucket_61_90"] == 200.0
-        assert body["overdue"] == 100.0
-        assert body["total_outstanding"] == 1100.0
-
     def test_invoice_aging_counts_new_statuses_excludes_terminal(
         self, mobile_app, real_db, records_seed, manager_client,
     ):
@@ -133,25 +90,6 @@ class TestAnalyticsManagerHappyPath:
         # cancelled (9999.0) is terminal → current bucket unchanged (no cascade).
         assert body["current"] == 500.0
         assert body["total_outstanding"] == 1100.0 + 1500.0
-
-    def test_invalid_date_422(self, mobile_app, real_db, records_seed, manager_client):
-        resp = manager_client.get(f"{BASE}/revenue?start_date=not-a-date")
-        assert resp.status_code == 422
-
-
-class TestAnalyticsDispatcherDenied:
-    """Dispatcher gets 403 on every analytics endpoint AND the export."""
-
-    @pytest.mark.parametrize("path", [
-        "/revenue",
-        "/fleet-utilization",
-        "/driver-performance",
-        "/invoice-aging",
-        "/export?report=revenue",
-    ])
-    def test_dispatcher_403(self, mobile_app, real_db, records_seed, dispatcher_client, path):
-        resp = dispatcher_client.get(f"{BASE}{path}")
-        assert resp.status_code == 403
 
 
 class TestAnalyticsPayloadSize:

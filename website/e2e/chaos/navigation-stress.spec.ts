@@ -38,6 +38,12 @@ test.describe("Chaos — Navigation Stress", () => {
   })
 
   test("opening many pages in quick succession doesn't lose state", async ({ page }) => {
+    // LOAD HARDENING: 10 sequential page loads + hydration waits routinely
+    // exceed the 30s default test cap when 3 other workers hammer the vike
+    // dev server's on-demand route compilation (failed both full runs,
+    // passed 2/2 isolated). The assertions are unchanged — only the wall
+    // clock available to absorb dev-server contention is raised.
+    test.setTimeout(90_000)
     await page.goto("/")
 
     // Visit pages rapidly and verify each one loads
@@ -55,8 +61,14 @@ test.describe("Chaos — Navigation Stress", () => {
     ]
 
     for (const { path, text } of routes) {
-      await page.goto(path, { waitUntil: "networkidle", timeout: 15000 })
-      // Lazy routes render client-side after networkidle — wait for React
+      // "load" not "networkidle": under full-suite parallelism the dev
+      // server keeps connections busy compiling routes, so networkidle can
+      // never settle inside the goto timeout (the exact failure mode: 30s
+      // test cap hit while waiting for networkidle). The assertion needs a
+      // rendered, hydrated page — that readiness signal is awaited
+      // explicitly below, not inferred from network idleness.
+      await page.goto(path, { waitUntil: "load" })
+      // Lazy routes render client-side after load — wait for React
       // hydration so the assertion can't race the render.
       await waitForHydration(page)
       await expect(page.getByText(text).first()).toBeVisible()

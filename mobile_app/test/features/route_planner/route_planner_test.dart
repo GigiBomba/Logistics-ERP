@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/features/route_planner/screens/route_planner_screen.dart';
+import '../../shared/test_utils.dart';
 
 /// Helper: wraps [child] in MaterialApp with localisations so that
 /// `context.loc` works.
@@ -26,21 +27,21 @@ void main() {
   group('RoutePlannerScreen — initial state', () {
     testWidgets('renders app bar with title', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Route Planner'), findsOneWidget);
     });
 
     testWidgets('renders origin and destination text fields', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byType(TextFormField), findsNWidgets(2));
     });
 
     testWidgets('shows origin and destination labels', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Origin'), findsOneWidget);
       expect(find.text('Destination'), findsOneWidget);
@@ -48,14 +49,14 @@ void main() {
 
     testWidgets('shows stop count as 0 initially', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Stops (0)'), findsOneWidget);
     });
 
     testWidgets('optimize button is on screen', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Optimize Route'), findsOneWidget);
     });
@@ -67,7 +68,7 @@ void main() {
   group('RoutePlannerScreen — empty waypoints', () {
     testWidgets('shows empty state when no stops added', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('No stops added'), findsOneWidget);
       expect(
@@ -78,7 +79,7 @@ void main() {
 
     testWidgets('shows add stop button', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Add Stop'), findsOneWidget);
     });
@@ -90,10 +91,10 @@ void main() {
   group('RoutePlannerScreen — waypoints', () {
     testWidgets('adding a waypoint increments stop count', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Add Stop'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Stops (1)'), findsOneWidget);
       expect(find.text('Stop 1'), findsOneWidget);
@@ -101,14 +102,14 @@ void main() {
 
     testWidgets('adding multiple waypoints shows each stop', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Add Stop'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.text('Add Stop'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.text('Add Stop'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Stops (3)'), findsOneWidget);
       expect(find.text('Stop 1'), findsOneWidget);
@@ -118,19 +119,19 @@ void main() {
 
     testWidgets('removing a waypoint decreases stop count', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Add two stops
       await tester.tap(find.text('Add Stop'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.text('Add Stop'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Stops (2)'), findsOneWidget);
 
       // Remove the first stop using the trash2 icon (LucideIcons.trash2)
       await tester.tap(find.byIcon(LucideIcons.trash2).last);
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Stops (1)'), findsOneWidget);
     });
@@ -142,22 +143,22 @@ void main() {
   group('RoutePlannerScreen — origin/destination', () {
     testWidgets('accepts origin address input', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       final fields = find.byType(TextFormField);
       await tester.enterText(fields.first, 'Bucharest');
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Bucharest'), findsOneWidget);
     });
 
     testWidgets('accepts destination address input', (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       final fields = find.byType(TextFormField);
       await tester.enterText(fields.last, 'Cluj-Napoca');
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Cluj-Napoca'), findsOneWidget);
     });
@@ -165,12 +166,12 @@ void main() {
     testWidgets('optimize button is present when origin and destination are filled',
         (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       final fields = find.byType(TextFormField);
       await tester.enterText(fields.first, 'Bucharest');
       await tester.enterText(fields.last, 'Cluj-Napoca');
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Button should still be on screen
       expect(find.text('Optimize Route'), findsOneWidget);
@@ -187,13 +188,13 @@ void main() {
     testWidgets('optimize button triggers bottom sheet creation',
         (tester) async {
       await tester.pumpWidget(wrapRoutePlanner());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Fill in fields to enable button
       final fields = find.byType(TextFormField);
       await tester.enterText(fields.first, 'Bucharest');
       await tester.enterText(fields.last, 'Cluj-Napoca');
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Verify the optimize button is present
       expect(find.text('Optimize Route'), findsOneWidget);

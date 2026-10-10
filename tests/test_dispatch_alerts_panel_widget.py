@@ -71,6 +71,23 @@ SAMPLE_CARD_DELIVERED = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _restamp_sample_dates():
+    """Re-stamp the "today" sample dates before every test.
+
+    ``SAMPLE_CARD_1.departure_date`` / ``SAMPLE_CARD_2.eta`` are computed with
+    ``datetime.now()`` at *module import* (collection) time.  A suite that
+    crosses midnight — module imported at 23:5x, test executed at 00:0x — then
+    compares a stale date against the panel's "today" and counts 0 instead of
+    1 (evidence: test_departing_today_count / test_arriving_today_count failing
+    at 00:09 in a full-suite run).  Restamping per test keeps the intent
+    ("departure/eta is today") true whenever the test body runs.
+    """
+    SAMPLE_CARD_1["departure_date"] = datetime.now().strftime("%d/%m/%Y")
+    SAMPLE_CARD_2["eta"] = datetime.now().strftime("%d/%m/%Y")
+    yield
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 

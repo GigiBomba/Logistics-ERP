@@ -39,6 +39,10 @@ from backend.copilot.schemas import (
 )
 from tests.test_api.conftest import StrippedMock
 
+# One of the three slowest test modules in the suite (2044 lines covering all
+# 10 copilot router endpoints); deselected by default with `-m "not slow"`.
+pytestmark = pytest.mark.slow
+
 BASE = "/api/v1/copilot"
 
 

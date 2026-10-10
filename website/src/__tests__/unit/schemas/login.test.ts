@@ -7,7 +7,7 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required").max(72, "Password must be at most 72 characters"),
 })
 
-describe("loginSchema", () => {
+describe.concurrent("loginSchema", () => {
   it("accepts valid input", () => {
     const result = loginSchema.safeParse({ email: "user@company.com", password: "secret123" })
     expect(result.success).toBe(true)

@@ -11,11 +11,6 @@ vi.mock("@/services/queries", () => ({
   useChangelog: vi.fn(() => ({ data: [], isLoading: false })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("DashboardPage (Enhanced)", () => {
   beforeEach(() => {
     vi.clearAllMocks()

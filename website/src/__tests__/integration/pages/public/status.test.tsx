@@ -7,13 +7,6 @@ vi.mock("@/services/queries", () => ({
   useServiceStatus: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-  },
-}))
-
 const refetch = vi.fn()
 
 const operationalData = [

@@ -30,10 +30,6 @@ vi.mock("@/services/queries", () => ({
   useRevokeSession: vi.fn(() => ({ mutate: vi.fn() })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 vi.mock("qrcode", () => ({
   toDataURL: vi.fn(),
 }))

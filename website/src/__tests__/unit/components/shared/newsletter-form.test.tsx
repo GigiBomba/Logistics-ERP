@@ -3,31 +3,9 @@ import { render, screen, fireEvent, waitFor, mockAxiosResponse } from "@/test-ut
 import { NewsletterForm } from "@/components/shared/newsletter-form"
 import { newsletterApi } from "@/api/endpoints"
 
-vi.mock("motion/react", () => {
-  const MotionComponent = (props: any) => {
-    const { children, ...rest } = props
-    return <div {...rest}>{children}</div>
-  }
-  return {
-    motion: new Proxy(
-      {},
-      {
-        get: () => MotionComponent,
-      }
-    ),
-    AnimatePresence: ({ children }: any) => <>{children}</>,
-  }
-})
-
-vi.mock("@/i18n/locale-context", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/i18n/locale-context")>()
-  return {
-    ...actual,
-    useLocale: () => ({
-      t: (key: string) => key,
-    }),
-  }
-})
+vi.mock("@/i18n/locale-context", () =>
+  import("@/__tests__/mocks/locale-context").then((m) => m.identityLocaleMock()),
+)
 
 vi.mock("@/api/endpoints", () => ({
   newsletterApi: { subscribe: vi.fn(), unsubscribe: vi.fn() },

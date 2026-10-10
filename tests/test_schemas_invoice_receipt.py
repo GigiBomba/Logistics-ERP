@@ -315,7 +315,7 @@ class TestReceiptGenerateRequest:
         assert inst.currency == "USD"
         assert inst.amount == 100.50
         assert inst.total == 119.0
-        assert inst.vat_rate == 0.19
+        assert float(inst.vat_rate) == 0.19
         assert inst.vat_amount == 19.00
         assert inst.notes == "Paid"
         assert inst.language == "fr"
@@ -333,7 +333,7 @@ class TestReceiptGenerateRequest:
 
     def test_amount_positive(self):
         inst = ReceiptGenerateRequest(amount=999.99)
-        assert inst.amount == 999.99
+        assert float(inst.amount) == 999.99
 
     def test_amount_none_raises(self):
         """Pydantic v2 does not coerce None to the default for float."""
@@ -348,12 +348,12 @@ class TestReceiptGenerateRequest:
 
     def test_vat_rate_positive(self):
         inst = ReceiptGenerateRequest(vat_rate=0.19)
-        assert inst.vat_rate == 0.19
+        assert float(inst.vat_rate) == 0.19
 
     def test_vat_rate_negative(self):
         """No constraint — negative VAT accepted."""
         inst = ReceiptGenerateRequest(vat_rate=-0.05)
-        assert inst.vat_rate == -0.05
+        assert float(inst.vat_rate) == -0.05
 
     def test_vat_rate_zero(self):
         inst = ReceiptGenerateRequest(vat_rate=0.0)

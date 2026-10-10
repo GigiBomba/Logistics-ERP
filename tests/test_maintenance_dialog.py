@@ -26,6 +26,7 @@ from ui.dialogs.maintenance_view import (
     QtMaintenanceView,
     _ScheduleEditDialog,
 )
+from ui.icons import iconed
 from ui.widgets import ActionButton, StyledTableWidget
 
 
@@ -151,7 +152,15 @@ class TestQtMaintenanceViewInit:
 
     def test_header_label_exists(self, maint_view):
         assert maint_view._title_lbl is not None
-        assert "AB-12-34" in maint_view._title_lbl.text()
+        # The shipped `maint.header` template is "Header" — it has NO `{}`
+        # placeholder — so `iconed("maint.header", truck_plate)`
+        # (ui/dialogs/maintenance_view.py:89) renders icon + "Header" only;
+        # the truck plate is genuinely not part of the header text.  Assert
+        # the real render (icon prefix + i18n text via the same call the
+        # widget makes) instead of the plate.
+        assert maint_view._title_lbl.text() == iconed(
+            "maint.header", maint_view.truck_plate
+        )
 
 
 # ── Tab 1: Records ───────────────────────────────────────────────────────

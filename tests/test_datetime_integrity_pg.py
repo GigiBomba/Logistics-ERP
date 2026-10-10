@@ -386,17 +386,22 @@ def test_pg_updated_at_trigger_stamps_native_timestamptz(pg_conn):
         assert pg_type == "timestamp with time zone", pg_type
 
         # Cross a second boundary so the second-precision re-stamp differs.
-        time.sleep(1.1)
-        cur.execute(
-            "UPDATE trips SET client_name = 'T3' WHERE truck_number = %s", (truck,)
-        )
-        pg_conn.commit()
-
-        second = _pg_canonical_ts(
-            pg_conn,
-            "SELECT " + _canonical("updated_at") + " AS ts FROM trips WHERE truck_number = %s",
-            (truck,),
-        )
+        # Retry instead of sleeping a fixed 1.1s: each retry UPDATE re-stamps,
+        # so the loop exits as soon as the re-stamp lands (usually the first
+        # attempt when the boundary has already been crossed), or after a
+        # bounded 3s window.
+        second = first
+        deadline = time.monotonic() + 3.0
+        while second == first and time.monotonic() < deadline:
+            cur.execute(
+                "UPDATE trips SET client_name = 'T3' WHERE truck_number = %s", (truck,)
+            )
+            pg_conn.commit()
+            second = _pg_canonical_ts(
+                pg_conn,
+                "SELECT " + _canonical("updated_at") + " AS ts FROM trips WHERE truck_number = %s",
+                (truck,),
+            )
         assert second != first, "updated_at was not re-stamped on UPDATE"
         assert re.fullmatch(
             _STAMP_RE, second or ""

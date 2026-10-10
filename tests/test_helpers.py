@@ -7,11 +7,29 @@ empty string, None, no-accent strings, and mixed input.
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+import time
+from typing import Any, Callable
 
 import pytest
 
 from utils.helpers import remove_accents
+
+
+def wait_until(fn: Callable[[], Any], timeout: float = 2.0, poll: float = 0.05) -> bool:
+    """Poll *fn* every *poll* seconds until it returns truthy.
+
+    Replaces fixed ``time.sleep`` windows with an event-driven wait: the
+    caller's predicate is re-evaluated every 50 ms and the call returns as
+    soon as it holds — so passing tests finish early instead of paying a
+    fixed sleep.  Raises ``TimeoutError`` if *fn* never becomes truthy
+    within *timeout* seconds.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if fn():
+            return True
+        time.sleep(poll)
+    raise TimeoutError(f"wait_until: condition not met within {timeout}s")
 
 
 # ── In-memory SQLite database for E2E / integration tests ─────

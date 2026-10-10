@@ -1,6 +1,7 @@
 """Tests for scripts/restore_data_from_backup.py — backup and restore logic."""
 from __future__ import annotations
 
+import os
 import sys
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -10,16 +11,58 @@ import pytest
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
 
+def _env_snapshot() -> dict[str, str]:
+    return dict(os.environ)
+
+
+def _env_restore(snapshot: dict[str, str]) -> None:
+    """Undo environment mutations made while a fixture/test was active.
+
+    ``scripts.restore_data_from_backup`` executes ``load_dotenv(.env)`` at
+    *import* time.  Other suite fixtures legitimately remove OPERION_* vars
+    from the process environment (e.g. ``tests/test_api/test_waitlist_api.py``
+    pops ``OPERION_ENV`` in its teardown), so when this module is first
+    imported mid-run, ``load_dotenv(override=False)`` re-creates the missing
+    entries from ``.env`` — including ``OPERION_ENV=production``.
+
+    Every later test then dies in the autouse ``reset_singletons`` fixture:
+    ``reload_settings()`` -> ``BackendSettings._check_admin_config()`` raises
+    ``RuntimeError: OPERION_SUPPORT_INTERNAL_AUTH is not set to a real
+    secret`` whenever ``OPERION_ENV == "production"``, cascading ~1,280
+    setup errors across the whole suite (first observable failure:
+    ``TestMain::test_main_skips_company_when_exists``).
+    """
+    for key in [k for k in os.environ if k not in snapshot]:
+        del os.environ[key]
+    for key, value in snapshot.items():
+        if os.environ.get(key) != value:
+            os.environ[key] = value
+
+
 @pytest.fixture(autouse=True)
 def _mock_expensive_imports():
-    """Mock heavy/blocking imports that restore_data_from_backup needs."""
+    """Mock heavy/blocking imports that restore_data_from_backup needs.
+
+    The env snapshot/restore around the patch block is required because
+    entering the first ``patch(...)`` is what imports
+    ``scripts.restore_data_from_backup`` for the first time — the *real*
+    module-level ``load_dotenv(.env)`` runs before the mock takes effect and
+    would otherwise poison the process environment for every subsequent
+    test (see :func:`_env_restore`).
+    """
+    env_before = _env_snapshot()
     with (
         patch("scripts.restore_data_from_backup.load_dotenv"),
         patch("scripts.restore_data_from_backup.Config"),
         patch("scripts.restore_data_from_backup.DatabaseManager"),
         patch("scripts.restore_data_from_backup.data_path", return_value="/fake/backups"),
     ):
+        # Undo any import-time .env writes the first patch entry triggered.
+        _env_restore(env_before)
         yield
+    # Belt & braces: the test body may (transitively) re-import the module
+    # (e.g. after a sys.modules purge) — never let its env writes leak.
+    _env_restore(env_before)
 
 
 # ── get_latest_backup ─────────────────────────────────────────────────────

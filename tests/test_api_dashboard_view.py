@@ -68,7 +68,9 @@ class TestQtApiDashboardView:
         """Auto-refresh timer is created and running."""
         assert api_dashboard._refresh_timer is not None
         assert api_dashboard._refresh_timer.isActive() is True
-        assert api_dashboard._refresh_timer.interval() == 5000
+        # ui/views/api_dashboard_view.py starts the timer at 30_000 ms
+        # (same cadence as the dispatch-board refresh timers).
+        assert api_dashboard._refresh_timer.interval() == 30_000
 
     def test_header_section_exists(self, api_dashboard):
         """SectionHeader widget is present."""

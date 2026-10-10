@@ -2,10 +2,6 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import { TestimonialCard } from "@/components/shared/testimonial-card"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 describe("TestimonialCard", () => {
   it("renders quote, name, role, company", () => {
     render(

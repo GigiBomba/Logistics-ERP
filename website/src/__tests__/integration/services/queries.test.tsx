@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, waitFor, act } from "@testing-library/react"
-import { QueryClientProvider, QueryClient, useQuery } from "@tanstack/react-query"
+import { QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { type ReactNode } from "react"
+import { createWrapper } from "@/test-utils"
 import { toast } from "sonner"
 import {
   authApi, subscriptionApi, companyApi, supportApi, devicesApi, blogApi, adminBlogApi,
@@ -110,25 +111,6 @@ vi.mock("@/api/endpoints", () => ({
 vi.mock("@/contexts/auth-provider", () => ({
   useAuth: vi.fn(),
 }))
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  })
-
-  function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
-    )
-  }
-
-  return { wrapper: Wrapper, queryClient }
-}
 
 beforeEach(() => {
   vi.clearAllMocks()

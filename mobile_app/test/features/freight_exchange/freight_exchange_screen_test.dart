@@ -8,6 +8,7 @@ import 'package:operion_mobile/core/network/endpoints/freight_exchange_endpoints
 import 'package:operion_mobile/features/freight_exchange/models/freight_load.dart';
 import 'package:operion_mobile/features/freight_exchange/providers/freight_exchange_providers.dart';
 import 'package:operion_mobile/features/freight_exchange/screens/freight_exchange_screen.dart';
+import '../../shared/test_utils.dart';
 
 // ── Fake dependencies ─────────────────────────────────────────────────────
 
@@ -95,19 +96,19 @@ void main() {
   group('FreightExchangeScreen — initial state', () {
     testWidgets('renders app bar with title', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Freight Exchange'), findsAtLeastNWidgets(1));
     });
 
     testWidgets('renders filter bar with four text fields', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.byType(TextFormField), findsNWidgets(4));
     });
 
     testWidgets('renders search button', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(
         find.widgetWithIcon(ElevatedButton, LucideIcons.search),
         findsOneWidget,
@@ -116,7 +117,7 @@ void main() {
 
     testWidgets('shows empty state with title and subtitle', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Freight Exchange'), findsAtLeastNWidgets(1));
       expect(
         find.text(
@@ -160,7 +161,7 @@ void main() {
       await tester.pumpWidget(wrapScreen(
         initialState: FreightExchangeData(loads: loads),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Bucharest'), findsWidgets);
       expect(find.text('Cluj'), findsWidgets);
     });
@@ -178,9 +179,9 @@ void main() {
       await tester.pumpWidget(wrapScreen(
         initialState: FreightExchangeData(loads: loads),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.text('Bucharest'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Load Details'), findsOneWidget);
       expect(find.text('Import as Trip'), findsOneWidget);
       expect(find.text('Evaluate'), findsOneWidget);
@@ -191,7 +192,7 @@ void main() {
       await tester.pumpWidget(wrapScreen(
         initialState: const FreightExchangeData(loads: []),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('No loads found'), findsOneWidget);
     });
   });
@@ -206,7 +207,7 @@ void main() {
           messageKey: 'freightExchange_error',
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Failed to load freight data'), findsOneWidget);
     });
   });
@@ -219,12 +220,12 @@ void main() {
         (tester) async {
       final notifier = _FakeNotifier();
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.enterText(find.byType(TextFormField).at(0), 'Bucharest');
       await tester.enterText(find.byType(TextFormField).at(1), 'Cluj');
       await tester.tap(find.widgetWithIcon(ElevatedButton, LucideIcons.search));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.loadLoadsCalled, true);
       expect(notifier.lastOrigin, 'Bucharest');

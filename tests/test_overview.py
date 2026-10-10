@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -9,6 +10,17 @@ import pytest
 from PySide6.QtWidgets import QLabel, QFrame
 
 from ui.views.overview_view import QtOverviewView
+
+
+# xdist gate (see tests/conftest.py + scripts/run_pytest_guarded.py):
+# worker 'gw1' crashed at TestQtOverviewView::test_chart_container_has_widget
+# (shard-3i run, 2026-10-04) — native Qt access violation in qtbot.wait under
+# xdist.  Runs via the guard's serial pass (-n 0); deeper fix = Qt/event-loop
+# teardown investigation.
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="native Qt crash under xdist (gw1 died at test_chart_container_has_widget) — runs with -n 0",
+)
 
 
 @pytest.fixture(autouse=True)

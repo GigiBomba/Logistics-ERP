@@ -2,13 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { LanguageSwitcher } from "@/components/shared/language-switcher"
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 const mockSetLocale = vi.fn()
 
 vi.mock("@/i18n/locale-context", async (importOriginal) => {

@@ -12,17 +12,6 @@ vi.mock("@/hooks/useAppNavigate", () => ({
   useAppNavigate: () => navigateMock,
 }))
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()

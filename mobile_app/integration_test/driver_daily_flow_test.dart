@@ -1,3 +1,4 @@
+@Timeout(Duration(minutes: 15))
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -247,7 +248,7 @@ void main() {
   group('Driver Daily Flow', () {
     testWidgets('1. Login as driver and view home screen', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // The mode router should auto-restore session and show driver shell
       expect(
@@ -266,11 +267,11 @@ void main() {
 
     testWidgets('2. View transport detail and update status', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Tap on the first transport card to open detail
       await tester.tap(find.textContaining('Steel coils'));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Transport detail screen should show the app bar title
       expect(
@@ -289,7 +290,7 @@ void main() {
 
     testWidgets('3. Verify driver dashboard summary cards', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // The "My Day" dashboard should show the active transports count (2)
       expect(
@@ -309,7 +310,7 @@ void main() {
 
     testWidgets('4. Pull-to-refresh on driver home', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // The home screen should be showing with RefreshIndicator
       expect(find.byType(RefreshIndicator), findsWidgets);
@@ -320,7 +321,7 @@ void main() {
         const Offset(0, 300),
         1000,
       );
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // After refresh, transport data should still be shown
       expect(

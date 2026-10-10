@@ -6,13 +6,6 @@ import { waitlistApi } from "@/api/endpoints"
 import type { WaitlistEntry } from "@/api/endpoints"
 import { createMockAuthContext } from "@/test-utils"
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 // react-helmet-async's React 19 dispatcher renders <title> children that are
 // split across JSX expressions (e.g. `{t(...)} — suffix`) as an array, which
 // React 19 does not hoist into <head>. Replace Helmet with a thin double that

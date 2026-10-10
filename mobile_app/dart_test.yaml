@@ -1,0 +1,7 @@
+# Global test configuration for `flutter test`.
+#
+# Sets a backstop timeout for every test. Widget tests use a fake clock, so
+# `pumpAndSettle` timeouts are bounded by explicit 5s/30s timeouts in the test
+# helpers rather than this wall-clock timeout. Integration tests override this
+# with per-file `@Timeout(Duration(minutes: 15))` annotations.
+timeout: 60s

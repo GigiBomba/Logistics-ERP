@@ -4,13 +4,6 @@ import OverviewTab from "@/pages/admin/waitlist/overview-tab"
 import { waitlistApi } from "@/api/endpoints"
 import type { WaitlistStatsResponse } from "@/api/endpoints"
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 vi.mock("@/api/endpoints", () => ({
   waitlistApi: {
     getStats: vi.fn(),

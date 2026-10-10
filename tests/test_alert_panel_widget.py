@@ -212,7 +212,11 @@ class TestQtAlertPanelNavigation:
         alert_panel._go(alert)
         alert_panel._on_navigate.assert_called_once()
         args = alert_panel._on_navigate.call_args[0]
-        assert args[0] == "maintenance_control"
+        # App deliberately remapped "maintenance"/"inspection" alerts from
+        # "maintenance_control" to the "maintenance" nav key when the control
+        # panel was folded into the maintenance hub (commit e8d6832e);
+        # "maintenance" is the key main_window.py actually dispatches.
+        assert args[0] == "maintenance"
 
     def test_go_without_trip_id(self, alert_panel):
         alert = _make_alert(type="overdue_invoice", trip_id=None)

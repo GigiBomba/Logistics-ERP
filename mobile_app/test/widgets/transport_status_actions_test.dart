@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:operion_mobile/shared/widgets/transport_status_actions.dart';
 import 'package:operion_mobile/shared/widgets/app_button.dart';
+import '../shared/test_utils.dart';
 
 /// Helper to wrap a widget in [MaterialApp] for testing.
 Widget wrapInApp(Widget child) {
@@ -272,7 +273,7 @@ void main() {
           onStatusUpdate: (_) {},
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Mark Delivered'), findsOneWidget);
       expect(find.text('Report Delay'), findsOneWidget);
     });

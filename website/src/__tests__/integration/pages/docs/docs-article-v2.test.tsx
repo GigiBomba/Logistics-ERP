@@ -3,11 +3,6 @@ import { render, screen } from "@/test-utils"
 import { Routes, Route } from "react-router"
 import DocsArticlePage from "@/pages/docs/docs-article"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("DocsArticlePage", () => {
   function renderArticle(slug: string) {
     const routeMap: Record<string, string> = {

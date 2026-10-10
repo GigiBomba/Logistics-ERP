@@ -43,10 +43,6 @@ vi.mock("@stripe/react-stripe-js", () => ({
   useElements: () => ({}),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const MOCK_INVOICES = [
   {
     id: 1,

@@ -91,7 +91,7 @@ class TestTripCreate:
         )
         assert tc.client_id == client_id
         assert tc.start_date == start_date
-        assert tc.price_eur == price_eur
+        assert float(tc.price_eur) == price_eur
         assert tc.distance_km == distance_km
 
     def test_default_values(self):

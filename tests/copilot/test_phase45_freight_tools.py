@@ -97,11 +97,9 @@ class TestFreightToolValidation:
     def test_search_loads_requires_origin(self):
         """search_loads must require an origin."""
         tool = get_tool("freight.search_loads")
-        try:
-            tool.parameters_schema(origin="Berlin")
-            assert True
-        except ValidationError:
-            pass
+        fields = tool.parameters_schema.model_fields
+        assert "origin" in fields, "search_loads must define an origin field"
+        assert fields["origin"].is_required(), "search_loads origin must be required"
 
     def test_get_load_requires_provider_and_load_id(self):
         """get_load requires provider_id and load_id."""

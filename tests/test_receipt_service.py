@@ -44,8 +44,15 @@ def test_get_format_key(service):
 def test_set_format_key(service):
     from services.invoicing.receipt_service import RECEIPT_NUMBER_FORMATS
     RECEIPT_NUMBER_FORMATS["test"] = "RCT-{seq}"
-    service.set_format_key("test")
-    service.prefs.save_setting.assert_called_with("receipt_number_format", "test")
+    try:
+        service.set_format_key("test")
+        service.prefs.save_setting.assert_called_with("receipt_number_format", "test")
+    finally:
+        # Never leak the synthetic "test" format into the process-global
+        # registry — later files (e.g. tests/test_receipt_editor.py) unpack
+        # every RECEIPT_NUMBER_FORMATS entry as a (format, example) pair and
+        # this bare-string entry used to abort receipt-editor construction.
+        RECEIPT_NUMBER_FORMATS.pop("test", None)
 
 
 def test_generate(service):

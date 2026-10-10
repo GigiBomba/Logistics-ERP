@@ -34,12 +34,28 @@ def _set_env():
     """
     tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
     tmp.close()
+    # Snapshot the originals BEFORE overwriting them so teardown RESTORES
+    # instead of popping (same discipline as tests/test_api/test_waitlist_api.py
+    # and tests/test_scripts_backup_restore.py).  The old teardown popped
+    # OPERION_DB_PATH/OPERION_ENV unconditionally, leaving them missing for
+    # every later module in the worker: a subsequent import-time
+    # ``load_dotenv(.env)`` (root ``main.py``, ``backend.main``,
+    # ``scripts/restore_data_from_backup.py``, …) then re-created
+    # ``OPERION_ENV=production`` + ``OPERION_API_KEY=<real key>`` from the
+    # checked-in ``.env``, which cascaded 401
+    # ``{"detail":"API key required","error_code":"auth/invalid-api-key"}``
+    # failures across the later sync/settings suites.
+    # (``monkeypatch`` cannot be used here: it is function-scoped and this
+    # fixture is module-scoped.)
+    _saved_env = {
+        k: os.environ.get(k)
+        for k in ("OPERION_DB_PATH", "OPERION_ENV", "OPERION_DB_ENGINE")
+    }
     os.environ["OPERION_DB_PATH"] = tmp.name
     os.environ["OPERION_ENV"] = "development"
     from config import Config
     previous_db_path = Config.DB_PATH
     previous_db_engine = Config.DB_ENGINE
-    previous_db_engine_env = os.environ.get("OPERION_DB_ENGINE")
     os.environ["OPERION_DB_ENGINE"] = "sqlite"
     Config.DB_ENGINE = "sqlite"
     Config.DB_PATH = tmp.name
@@ -51,12 +67,14 @@ def _set_env():
             pass
         _deps._db_instance = None
     yield
-    for k in ("OPERION_DB_PATH", "OPERION_ENV"):
-        os.environ.pop(k, None)
-    if previous_db_engine_env is None:
-        os.environ.pop("OPERION_DB_ENGINE", None)
-    else:
-        os.environ["OPERION_DB_ENGINE"] = previous_db_engine_env
+    # Restore the env vars (pop ONLY when they were originally absent) …
+    for k, v in _saved_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    # … and the Config-class attributes this fixture rebound, so the module
+    # leaves no global state behind for later workers/tests.
     Config.DB_ENGINE = previous_db_engine
     Config.DB_PATH = previous_db_path
     if _deps._db_instance is not None:

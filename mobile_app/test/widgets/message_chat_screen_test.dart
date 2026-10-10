@@ -3,9 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../shared/test_utils.dart';
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/driver_endpoints.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
@@ -15,18 +15,6 @@ import 'package:operion_mobile/features/driver/home/driver_providers.dart';
 import 'package:operion_mobile/shared/models/message.dart';
 import 'package:operion_mobile/shared/models/user.dart';
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override Future<bool> hasTokens() async => false;
-  @override Future<String?> getAccessToken() async => null;
-  @override Future<String?> getRefreshToken() async => null;
-  @override Future<void> saveTokens(String a, String r) async {}
-  @override Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override Future<bool> isAvailable() async => false;
-  @override Future<bool> authenticate({required String reason}) async => false;
-}
 
 final _testMessages = [
   Message(id: '1', senderId: '10', senderName: 'Dispatcher', receiverId: '1',
@@ -65,8 +53,8 @@ class _StubDriverEndpoints extends DriverEndpoints {
 }
 
 List<Override> _overrides({bool failNext = false}) => [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-  biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+  biometricServiceProvider.overrideWithValue(MockBiometricService()),
   isOfflineProvider.overrideWith((ref) => false),
   messageSendingProvider.overrideWith((ref) => false),
   currentUserProvider.overrideWith((ref) => User(
@@ -89,20 +77,20 @@ void main() {
   group('MessageChatScreen — Basic render', () {
     testWidgets('1. AppBar shows sender name', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.text('Dispatcher'), findsOneWidget);
     });
 
     testWidgets('2. AppBar is present', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('3. Scaffold is present', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Dispatcher'), findsOneWidget);
     });
   });
 
@@ -110,59 +98,59 @@ void main() {
     testWidgets('4. shows shimmer while loading', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Dispatcher'), findsOneWidget);
     });
 
     testWidgets('5. shimmer has 6 items', (tester) async {
       await tester.pumpWidget(_wrap());
       await tester.pump();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Dispatcher'), findsOneWidget);
     });
   });
 
   group('MessageChatScreen — Error', () {
     testWidgets('6. error state shows retry button', (tester) async {
       await tester.pumpWidget(_wrap(failNext: true));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.textContaining('Retry'), findsAny);
     });
 
     testWidgets('7. error state shows error icon', (tester) async {
       await tester.pumpWidget(_wrap(failNext: true));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
     });
   });
 
   group('MessageChatScreen — Messages display', () {
     testWidgets('8. sent messages appear right-aligned', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.text('Hi!'), findsOneWidget);
     });
 
     testWidgets('9. received messages appear left-aligned', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.text('Hello'), findsOneWidget);
     });
 
     testWidgets('10. message timestamps visible', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       // Timestamps in HH:mm format
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Hello'), findsOneWidget);
     });
 
     testWidgets('11. read indicator (double check) on sent messages', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.byIcon(Icons.done_all_rounded), findsOneWidget);
     });
 
     testWidgets('12. read indicator icons visible on messages', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       // At least one read indicator icon (done_all_rounded or done_rounded) is present
       expect(
         find.descendant(
@@ -179,7 +167,7 @@ void main() {
 
     testWidgets('13. messages sorted by timestamp', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.text('Route updated'), findsOneWidget);
     });
   });
@@ -187,22 +175,22 @@ void main() {
   group('MessageChatScreen — Input bar', () {
     testWidgets('14. text input field exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.byType(TextField), findsOneWidget);
     });
 
     testWidgets('15. send button exists', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.byIcon(Icons.send_rounded), findsOneWidget);
     });
 
     testWidgets('16. typing enables send', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final field = find.byType(TextField);
       await tester.enterText(field, 'Test message');
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Test message'), findsOneWidget);
     });
   });
@@ -210,24 +198,24 @@ void main() {
   group('MessageChatScreen — Send message', () {
     testWidgets('17. sending adds optimistic message', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final field = find.byType(TextField);
       await tester.enterText(field, 'Optimistic test');
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       // The optimistic message should appear
       expect(find.text('Optimistic test'), findsOneWidget);
     });
 
     testWidgets('18. input clears after send', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final field = find.byType(TextField);
       await tester.enterText(field, 'Clears after');
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       // TextField should be empty
       final textField = tester.widget<TextField>(find.byType(TextField));
       expect(textField.controller?.text, isEmpty);
@@ -235,11 +223,11 @@ void main() {
 
     testWidgets('19. empty message does not send', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       // Current message count
       final before = find.text('Hello').evaluate().length;
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pumpAndSettle();
+      await settle(tester);
       final after = find.text('Hello').evaluate().length;
       expect(after, before); // No change
     });
@@ -249,8 +237,8 @@ void main() {
     testWidgets('20. failed send shows warning icon', (tester) async {
       // We need a stub that fails on send
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         messageSendingProvider.overrideWith((ref) => false),
         currentUserProvider.overrideWith((ref) => User(
@@ -269,20 +257,20 @@ void main() {
           home: const MessageChatScreen(threadId: '10', senderName: 'Dispatcher'),
         ),
       ));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final field = find.byType(TextField);
       await tester.enterText(field, 'Will fail');
-      await tester.pumpAndSettle();
+      await settle(tester);
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pumpAndSettle(const Duration(seconds: 3));
+      await settle(tester);
       // Error snackbar should appear
       expect(find.textContaining('failed'), findsAny);
     });
 
     testWidgets('21. failed message has warning icon', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         messageSendingProvider.overrideWith((ref) => false),
         currentUserProvider.overrideWith((ref) => User(
@@ -301,20 +289,22 @@ void main() {
           home: const MessageChatScreen(threadId: '10', senderName: 'Dispatcher'),
         ),
       ));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final field = find.byType(TextField);
       await tester.enterText(field, 'X');
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pumpAndSettle(const Duration(seconds: 3));
-      expect(find.byType(Scaffold), findsOneWidget);
+      await settle(tester);
+      // failNext makes the initial getMessages() throw, so the list area shows
+      // the error state (no message bubbles are rendered).
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
     });
   });
 
   group('MessageChatScreen — Offline', () {
     testWidgets('22. offline banner shown when isOffline is true', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => true),
         messageSendingProvider.overrideWith((ref) => false),
         currentUserProvider.overrideWith((ref) => User(
@@ -333,7 +323,7 @@ void main() {
           home: const MessageChatScreen(threadId: '10', senderName: 'Dispatcher'),
         ),
       ));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       // loc.general_offline returns "You are offline" in English locale
       expect(find.textContaining('You are offline'), findsAny);
     });
@@ -342,8 +332,8 @@ void main() {
   group('MessageChatScreen — Edge cases', () {
     testWidgets('23. send button disabled while sending', (tester) async {
       final overrides = <Override>[
-        secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-        biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+        secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+        biometricServiceProvider.overrideWithValue(MockBiometricService()),
         isOfflineProvider.overrideWith((ref) => false),
         messageSendingProvider.overrideWith((ref) => true),
         currentUserProvider.overrideWith((ref) => User(
@@ -367,41 +357,43 @@ void main() {
 
     testWidgets('24. submit via keyboard sends message', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final field = find.byType(TextField);
       await tester.enterText(field, 'Keyboard submit');
       await tester.testTextInput.receiveAction(TextInputAction.send);
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      // Sending state shows a spinner (perpetual animation) — use pump, not settle.
+      await tester.pump();
       expect(find.text('Keyboard submit'), findsOneWidget);
     });
 
     testWidgets('25. sender initials avatar round', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.byType(Container), findsWidgets);
     });
 
     testWidgets('26. message bubble is rendered', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.text('Hello'), findsOneWidget);
     });
 
     testWidgets('27. scrollable message list present', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       expect(find.byType(ListView), findsWidgets);
     });
 
     testWidgets('28. handles very long message text', (tester) async {
       await tester.pumpWidget(_wrap());
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await settle(tester);
       final longText = 'A' * 500;
       final field = find.byType(TextField);
       await tester.enterText(field, longText);
-      await tester.pumpAndSettle();
+      // Sending state shows a spinner (perpetual animation) — use pump, not settle.
+      await tester.pump();
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pumpAndSettle(const Duration(seconds: 2));
+      await tester.pump();
       expect(find.text(longText), findsOneWidget);
     });
   });

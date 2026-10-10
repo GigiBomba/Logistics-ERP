@@ -17,10 +17,6 @@ vi.mock("@/services/queries", () => ({
   useInviteMember: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const mockCompany = {
   company_name: "TransLogistica SRL",
   name: "TransLogistica SRL",

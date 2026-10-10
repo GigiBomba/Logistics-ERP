@@ -20,6 +20,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../shared/test_utils.dart';
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/features/driver/transports/transport_list_screen.dart';
 import 'package:operion_mobile/features/driver/expenses/expense_list_screen.dart';
 import 'package:operion_mobile/features/driver/messages/message_list_screen.dart';
@@ -32,8 +34,6 @@ import 'package:operion_mobile/features/driver/expenses/expense_providers.dart';
 import 'package:operion_mobile/features/driver/vehicle/vehicle_detail_screen.dart';
 import 'package:operion_mobile/features/driver/vehicle/vehicle_providers.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/driver_endpoints.dart';
 import 'package:operion_mobile/core/network/message_bus.dart';
@@ -49,18 +49,6 @@ import 'package:operion_mobile/shared/widgets/status_badge.dart';
 // Mock / stub classes
 // =============================================================================
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override Future<bool> hasTokens() async => false;
-  @override Future<String?> getAccessToken() async => null;
-  @override Future<String?> getRefreshToken() async => null;
-  @override Future<void> saveTokens(String access, String refresh) async {}
-  @override Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override Future<bool> isAvailable() async => false;
-  @override Future<bool> authenticate({required String reason}) async => false;
-}
 
 /// A stub [DriverEndpoints] that returns empty/zero data immediately.
 class _StubDriverEndpoints extends DriverEndpoints {
@@ -94,8 +82,8 @@ class _NotifiableNotifier extends InAppNotificationNotifier {
 // =============================================================================
 
 final List<Override> driverOverrides = [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-  biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+  biometricServiceProvider.overrideWithValue(MockBiometricService()),
   driverEndpointsProvider.overrideWithValue(_StubDriverEndpoints()),
 ];
 
@@ -139,7 +127,7 @@ void main() {
       await tester.pumpWidget(wrapDriverScreen(const TransportListScreen()));
       await pumpAndAllowAsync(tester);
       expect(find.byType(TransportListScreen), findsOneWidget);
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
     });
   });
 
@@ -152,7 +140,7 @@ void main() {
       await tester.pumpWidget(wrapDriverScreen(const ExpenseListScreen()));
       await pumpAndAllowAsync(tester);
       expect(find.byType(ExpenseListScreen), findsOneWidget);
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
     });
   });
 
@@ -165,7 +153,7 @@ void main() {
       await tester.pumpWidget(wrapDriverScreen(const MessageListScreen()));
       await pumpAndAllowAsync(tester);
       expect(find.byType(MessageListScreen), findsOneWidget);
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
     });
   });
 
@@ -340,12 +328,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('8. empty state shows expense EmptyState', (tester) async {
       await tester.pumpWidget(_wrapExpenses(data: []));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // "Expenses" appears in AppBar title AND EmptyState title
       expect(find.text('Expenses'), findsAtLeast(1));
@@ -354,14 +342,14 @@ void main() {
     testWidgets('9. empty state shows "No expenses yet" subtitle',
         (tester) async {
       await tester.pumpWidget(_wrapExpenses(data: []));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('No expenses yet'), findsOneWidget);
     });
 
     testWidgets('10. empty state shows "New Expense" button', (tester) async {
       await tester.pumpWidget(_wrapExpenses(data: []));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('New Expense'), findsOneWidget);
     });
@@ -387,7 +375,7 @@ void main() {
       ];
 
       await tester.pumpWidget(_wrapExpenses(data: expenses));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Both descriptions should be visible
       expect(find.text('Tankstelle Berlin'), findsOneWidget);
@@ -402,7 +390,7 @@ void main() {
       await tester.pumpWidget(_wrapExpenses(data: [
         {'expense_type': 'fuel', 'amount': 100, 'currency': 'EUR', 'date': '2026-07-10', 'description': '', 'status': 'pending'},
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Fuel'), findsOneWidget);
     });
@@ -411,7 +399,7 @@ void main() {
       await tester.pumpWidget(_wrapExpenses(data: [
         {'expense_type': 'tolls', 'amount': 30, 'currency': 'EUR', 'date': '2026-07-10', 'description': '', 'status': 'pending'},
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Tolls'), findsOneWidget);
     });
@@ -421,7 +409,7 @@ void main() {
       await tester.pumpWidget(_wrapExpenses(data: [
         {'expense_type': 'fuel', 'amount': 200.00, 'currency': 'EUR', 'date': '2026-07-10', 'description': '', 'status': 'pending'},
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // EUR currency symbol: €200.00
       expect(find.textContaining('200.00'), findsWidgets);
@@ -431,7 +419,7 @@ void main() {
       await tester.pumpWidget(_wrapExpenses(data: [
         {'expense_type': 'fuel', 'amount': 50, 'currency': 'EUR', 'date': '2026-07-15', 'description': '', 'status': 'pending'},
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // DateFormat.yMMMd → Jul 15, 2026 for en locale
       expect(find.textContaining('Jul'), findsWidgets);
@@ -441,7 +429,7 @@ void main() {
       await tester.pumpWidget(_wrapExpenses(data: [
         {'expense_type': 'per_diem', 'amount': 75, 'currency': 'EUR', 'date': '2026-07-10', 'description': 'Daily allowance', 'status': 'approved'},
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Per Diem'), findsOneWidget);
     });
@@ -463,7 +451,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap FAB (plus icon)
       await tester.tap(find.byType(FloatingActionButton));
@@ -476,7 +464,7 @@ void main() {
 
     testWidgets('18. FAB is hidden when expense list is empty', (tester) async {
       await tester.pumpWidget(_wrapExpenses(data: []));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byType(FloatingActionButton), findsNothing);
     });
@@ -510,7 +498,7 @@ void main() {
     testWidgets('19. empty state shows bell icon and "No notifications"',
         (tester) async {
       await tester.pumpWidget(_wrapNotifications());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('No notifications'), findsOneWidget);
       expect(find.text("You're all caught up!"), findsOneWidget);
@@ -529,7 +517,7 @@ void main() {
           type: 'schedule_change', createdAt: now.subtract(const Duration(hours: 2)), isRead: true,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('New transport assigned'), findsOneWidget);
       expect(find.text('Transport #1234'), findsOneWidget);
@@ -544,7 +532,7 @@ void main() {
           createdAt: DateTime.now(), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Today'), findsOneWidget);
     });
@@ -556,7 +544,7 @@ void main() {
           createdAt: DateTime.now().subtract(const Duration(days: 1)), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Yesterday'), findsOneWidget);
     });
@@ -568,7 +556,7 @@ void main() {
           createdAt: DateTime.now().subtract(const Duration(days: 5)), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Older'), findsOneWidget);
     });
@@ -581,7 +569,7 @@ void main() {
           createdAt: DateTime.now(), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // The dot is a Container with BoxShape.circle — find by BoxDecoration
       final containers = find.byType(Container);
@@ -606,11 +594,11 @@ void main() {
           createdAt: DateTime.now(), isRead: true,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // With read=true, no blue dot container should appear — but other
-      // containers exist.  Verify the Scaffold renders.
-      expect(find.byType(Scaffold), findsOneWidget);
+      // containers exist.  Verify the notification renders with its title.
+      expect(find.text('Read'), findsOneWidget);
     });
 
     testWidgets('26. "Mark all as read" button visible with unread',
@@ -621,7 +609,7 @@ void main() {
           createdAt: DateTime.now(), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // The mark-all-as-read button has checkCheck icon
       expect(find.byIcon(LucideIcons.checkCheck), findsOneWidget);
@@ -635,7 +623,7 @@ void main() {
           createdAt: DateTime.now(), isRead: true,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.checkCheck), findsNothing);
     });
@@ -652,11 +640,11 @@ void main() {
           createdAt: DateTime.now(), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap mark-all-as-read
       await tester.tap(find.byIcon(LucideIcons.checkCheck));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Mark-all button should now be hidden
       expect(find.byIcon(LucideIcons.checkCheck), findsNothing);
@@ -670,7 +658,7 @@ void main() {
           createdAt: justNow, isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('just now'), findsOneWidget);
     });
@@ -683,7 +671,7 @@ void main() {
           createdAt: fiveMinAgo, isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.textContaining('m ago'), findsWidgets);
     });
@@ -695,7 +683,7 @@ void main() {
           type: 'new_assignment', createdAt: DateTime.now(), isRead: false,
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('New Assignment'), findsOneWidget);
       expect(find.text('Transport #567'), findsOneWidget);
@@ -708,7 +696,7 @@ void main() {
         InAppNotification(id: 'n2', title: 'T2', body: 'B2', type: 'alert', createdAt: now.subtract(const Duration(days: 1)), isRead: false),
         InAppNotification(id: 'n3', title: 'T3', body: 'B3', type: 'alert', createdAt: now.subtract(const Duration(days: 10)), isRead: false),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Today'), findsOneWidget);
       expect(find.text('Yesterday'), findsOneWidget);
@@ -760,12 +748,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('34. error state shows alert icon', (tester) async {
       await tester.pumpWidget(_wrapTransports(error: Exception('Network error')));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // General error container
       expect(find.byIcon(LucideIcons.alertCircle), findsWidgets);
@@ -773,14 +761,14 @@ void main() {
 
     testWidgets('35. error state shows retry button', (tester) async {
       await tester.pumpWidget(_wrapTransports(error: Exception('Timeout')));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Retry'), findsOneWidget);
     });
 
     testWidgets('36. error state shows error message', (tester) async {
       await tester.pumpWidget(_wrapTransports(error: Exception('Server error')));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // The error.toString() should appear
       expect(find.textContaining('Server error'), findsWidgets);
@@ -789,14 +777,14 @@ void main() {
     testWidgets('37. empty state shows "No transports assigned"',
         (tester) async {
       await tester.pumpWidget(_wrapTransports(data: []));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('No transports assigned'), findsOneWidget);
     });
 
     testWidgets('38. empty state shows "Navigate" subtitle', (tester) async {
       await tester.pumpWidget(_wrapTransports(data: []));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Navigate'), findsOneWidget);
     });
@@ -816,7 +804,7 @@ void main() {
       ];
 
       await tester.pumpWidget(_wrapTransports(data: transports));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Load info should be visible
       expect(find.text('Electronics - Berlin to Munich'), findsOneWidget);
@@ -830,7 +818,7 @@ void main() {
           destination: 'Munich', status: 'planned',
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // The card shows abbreviated origin → destination
       expect(find.textContaining('Berlin'), findsWidgets);
@@ -844,7 +832,7 @@ void main() {
           destination: 'B', status: 'delivered',
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // StatusBadge renders with the Romanian label for 'delivered'
       expect(find.byType(StatusBadge), findsOneWidget);
@@ -858,7 +846,7 @@ void main() {
           scheduledDate: DateTime(2026, 7, 20),
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Date formatted as day.month.year
       expect(find.text('20.7.2026'), findsOneWidget);
@@ -871,7 +859,7 @@ void main() {
           destination: 'B', status: 'planned', vehiclePlate: 'AB-123-CD',
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('AB-123-CD'), findsOneWidget);
     });
@@ -896,7 +884,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap the first card
       await tester.tap(find.text('Test'));
@@ -909,7 +897,7 @@ void main() {
 
     testWidgets('45. error state retry invalidates provider', (tester) async {
       await tester.pumpWidget(_wrapTransports(error: Exception('Fail once')));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap retry
       await tester.tap(find.text('Retry'));
@@ -927,7 +915,7 @@ void main() {
           destination: 'B', status: 'planned',
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byType(RefreshIndicator), findsOneWidget);
     });
@@ -940,7 +928,7 @@ void main() {
       ));
 
       await tester.pumpWidget(_wrapTransports(data: transports));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       for (int i = 0; i < 3; i++) {
         expect(find.text('Load $i'), findsOneWidget);
@@ -956,7 +944,7 @@ void main() {
           destination: 'Munich', status: 'planned',
         ),
       ]));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Should show abbreviated "123 Main Street" (before comma)
       expect(find.textContaining('123 Main Street'), findsWidgets);
@@ -1007,26 +995,26 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
     });
 
     testWidgets('50. error state shows alert icon', (tester) async {
       await tester.pumpWidget(_wrapVehicle(error: Exception('Network error')));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(LucideIcons.alertCircle), findsWidgets);
     });
 
     testWidgets('51. error state shows retry button', (tester) async {
       await tester.pumpWidget(_wrapVehicle(error: Exception('Timeout')));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Retry'), findsOneWidget);
     });
 
     testWidgets('52. no vehicle shows empty state', (tester) async {
       await tester.pumpWidget(_wrapVehicle(data: null));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('No vehicle assigned'), findsOneWidget);
       expect(find.text('Contact your dispatcher to get assigned to a vehicle.'),
@@ -1041,7 +1029,7 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Plate shown in headline: "AB-123-CD"
       // The finder finds Text widgets containing the plate
@@ -1056,7 +1044,7 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Shows "Truck • Volvo"
       expect(find.text('Truck • Volvo'), findsOneWidget);
@@ -1070,7 +1058,7 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Available'), findsOneWidget);
     });
@@ -1084,7 +1072,7 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Info section headers
       expect(find.text('Details'), findsOneWidget);
@@ -1104,7 +1092,7 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Documents header
       expect(find.text('Vehicle Documents'), findsOneWidget);
@@ -1125,11 +1113,11 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Scroll down to see document rows
       await tester.drag(find.byType(ListView), const Offset(0, -200));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Valid'), findsOneWidget);
     });
@@ -1146,10 +1134,10 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.drag(find.byType(ListView), const Offset(0, -200));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Expired'), findsOneWidget);
     });
@@ -1166,10 +1154,10 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.drag(find.byType(ListView), const Offset(0, -200));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.textContaining('15.06.2027'), findsWidgets);
     });
@@ -1185,10 +1173,10 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.drag(find.byType(ListView), const Offset(0, -200));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('No expiry'), findsOneWidget);
     });
@@ -1201,7 +1189,7 @@ void main() {
       );
 
       await tester.pumpWidget(_wrapVehicle(data: vehicle));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byType(RefreshIndicator), findsOneWidget);
     });

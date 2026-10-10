@@ -83,7 +83,7 @@ def test_invariant_check(
     result = invariant_def.check_fn(invariant_context)
 
     if result.status == InvariantStatus.PASS:
-        assert True
+        assert result.status is InvariantStatus.PASS
     elif result.status == InvariantStatus.FAIL:
         msg = (
             f"[{result.invariant_id}] FAILED\n"

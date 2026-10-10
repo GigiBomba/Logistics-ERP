@@ -71,6 +71,11 @@ from backend.copilot.schemas import (
 from backend.copilot.confidence import compute_confidence, confidence_bucket
 from backend.copilot.circuit_breaker import CircuitBreaker
 
+# One of the three slowest test modules in the suite (2162 lines of LLM
+# pipeline / executor state-machine tests); deselected by default with
+# `-m "not slow"`.
+pytestmark = pytest.mark.slow
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { stabilizeHydration, waitForHydration } from "../helpers"
+import { stabilizeHydration, waitForHydration, waitForFormReady } from "../helpers"
 
 test.describe("Waitlist Conversion", () => {
   test.beforeEach(async ({ page }) => {
@@ -43,11 +43,16 @@ test.describe("Waitlist Conversion", () => {
     // ─── Waitlist form ─────────────────────────────────────────
     // The SPA transition renders the SSR'd form immediately; under parallel
     // load React may still be hydrating when we interact, and a late
-    // client-side render can reset the RHF inputs. Give the client a beat to
-    // take over the form before filling.
-    await page.waitForTimeout(1000)
+    // client-side render can reset the RHF inputs. Auto-wait for the form's
+    // primary inputs to be attached before filling (replaces the fixed 1000ms
+    // sleep — page.fill() below also auto-waits for actionability).
     await expect(page.locator("#company_name")).toBeVisible()
     await expect(page.locator("#email")).toBeVisible()
+    // waitForHydration can pass on shell elements before the route chunk's
+    // form handlers attach; submitting in that window falls back to a native
+    // form submission and the mocked POST never fires (firefox/webkit flake).
+    // Gate on the submit button itself carrying React props.
+    await waitForFormReady(page)
 
     // Fill in the waitlist form
     await page.fill("#company_name", "Waitlist Test Corp")

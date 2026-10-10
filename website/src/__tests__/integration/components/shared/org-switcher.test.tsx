@@ -3,17 +3,6 @@ import { render, screen, fireEvent, waitFor } from "@/test-utils"
 import { OrgSwitcher } from "@/components/shared/org-switcher"
 import type { Organization } from "@/types"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const orgs: Organization[] = [
   { id: "1", name: "Acme Logistics", industry: "Freight" },
   { id: "2", name: "Beta Transport", industry: "Fleet" },

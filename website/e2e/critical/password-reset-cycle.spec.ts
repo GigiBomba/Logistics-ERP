@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { mockLoginFlow, createUser, stabilizeHydration, waitForHydration } from "../helpers"
+import { mockLoginFlow, loginAs, createUser, stabilizeHydration, waitForFormReady } from "../helpers"
 
 /**
  * Password Reset Cycle Tests
@@ -28,6 +28,7 @@ test.describe("Password Reset Cycle", () => {
     })
 
     await page.goto("/forgot-password")
+    await waitForFormReady(page)
     await expect(page.getByRole("heading", { name: /reset password/i })).toBeVisible()
 
     await page.fill("#email", "user@operionerp.xyz")
@@ -48,7 +49,7 @@ test.describe("Password Reset Cycle", () => {
   test("reset-password with token shows form and validates", async ({ page }) => {
     // Navigate with a fake token
     await page.goto("/reset-password?token=fake-test-token-123")
-    await waitForHydration(page)
+    await waitForFormReady(page)
     await expect(page.getByRole("heading", { name: /set new password/i })).toBeVisible()
 
     // The form should be visible
@@ -78,7 +79,7 @@ test.describe("Password Reset Cycle", () => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok" }) })
     })
     await page.goto("/forgot-password")
-    await waitForHydration(page)
+    await waitForFormReady(page)
     await expect(page.getByRole("heading", { name: /reset password/i })).toBeVisible()
     await page.fill("#email", email)
     await page.getByRole("button", { name: /send reset link/i }).click()
@@ -96,7 +97,7 @@ test.describe("Password Reset Cycle", () => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ok" }) })
     })
     await page.goto("/reset-password?token=mock-reset-token-123")
-    await waitForHydration(page)
+    await waitForFormReady(page)
     await expect(page.getByRole("heading", { name: /set new password/i })).toBeVisible()
     await page.fill("#password", newPassword)
     await page.fill("#confirm_password", newPassword)
@@ -108,11 +109,8 @@ test.describe("Password Reset Cycle", () => {
     // (c) Sign in with the new password via the mocked login flow.
     const user = createUser("user", { id: "2", email, name: "Reset User" })
     await mockLoginFlow(page, user, false)
-    await page.goto("/login")
-    await waitForHydration(page)
-    await page.fill("#email", email)
-    await page.fill("#password", newPassword)
-    await page.getByRole("button", { name: /sign in/i }).click()
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 })
+    // gate: "form" — this spec guards against the native-form-submit race
+    // (same gate as the local waitForFormReady used by the steps above).
+    await loginAs(page, { email, password: newPassword, gate: "form" })
   })
 })

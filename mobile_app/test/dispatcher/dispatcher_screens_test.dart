@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/features/dispatcher/home/dispatcher_home_screen.dart';
 import 'package:operion_mobile/features/dispatcher/home/dispatcher_providers.dart';
 import 'package:operion_mobile/features/dispatcher/jobs/job_list_screen.dart';
@@ -14,8 +15,6 @@ import 'package:operion_mobile/features/dispatcher/jobs/job_providers.dart';
 import 'package:operion_mobile/features/dispatcher/alerts/alert_inbox_screen.dart';
 import 'package:operion_mobile/features/dispatcher/drivers/driver_list_screen.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/dispatcher_endpoints.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
@@ -31,30 +30,6 @@ import 'package:operion_mobile/shared/widgets/status_badge.dart';
 // no real HTTP calls (and their Dio timeout timers) are created.
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override
-  Future<bool> hasTokens() async => false;
-
-  @override
-  Future<String?> getAccessToken() async => null;
-
-  @override
-  Future<String?> getRefreshToken() async => null;
-
-  @override
-  Future<void> saveTokens(String access, String refresh) async {}
-
-  @override
-  Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override
-  Future<bool> isAvailable() async => false;
-
-  @override
-  Future<bool> authenticate({required String reason}) async => false;
-}
 
 ApiClient _stubApiClient() => ApiClient.create(
       baseUrl: '',
@@ -160,8 +135,8 @@ final List<Map<String, dynamic>> _sampleDrivers = [
 
 /// Base overrides for all tests in this file.
 final List<Override> baseOverrides = [
-  secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-  biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+  secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+  biometricServiceProvider.overrideWithValue(MockBiometricService()),
   apiClientProvider.overrideWithValue(_stubApiClient()),
 ];
 
@@ -217,7 +192,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.byType(JobListScreen), findsOneWidget);
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Steel beams to Constanta'), findsOneWidget);
     });
 
     testWidgets('shows shimmer loading state', (tester) async {

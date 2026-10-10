@@ -10,13 +10,6 @@ vi.mock("@/services/queries", () => ({
   useCompleteOnboardingStep: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    circle: ({ children, ...props }: any) => <circle {...props}>{children}</circle>,
-  },
-}))
-
 const MOCK_STEPS = [
   { id: "verify-email", title: "Verify your email", description: "Confirm your email address.", completed: true, required: true },
   { id: "company-profile", title: "Set up company profile", description: "Add your company details.", completed: false, required: true },

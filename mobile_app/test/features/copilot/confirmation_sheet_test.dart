@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:operion_mobile/features/copilot/models/copilot_models.dart';
 import 'package:operion_mobile/features/copilot/widgets/copilot_confirmation_sheet.dart';
 import 'package:operion_mobile/l10n/app_localizations.dart';
+import '../../shared/test_utils.dart';
 
 /// Helper: wraps [child] in [MaterialApp] with localization support.
 Widget wrapSheet(Widget child) {
@@ -54,7 +55,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Title should be present (localized)
         expect(find.text('Confirm Action'), findsOneWidget);
@@ -69,7 +70,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Should show step tool names
         expect(find.text('vehicle.search'), findsNWidgets(2));
@@ -84,7 +85,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         expect(find.text('Cancel'), findsOneWidget);
         expect(find.text('Confirm'), findsOneWidget);
@@ -100,7 +101,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         final confirmButton =
             tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'));
@@ -124,7 +125,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Warning text should be visible
         expect(
@@ -149,7 +150,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         final confirmButton =
             tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'));
@@ -168,11 +169,11 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Type the matching phrase
         await tester.enterText(find.byType(TextField), 'I understand the risks');
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         final confirmButton =
             tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'));
@@ -192,11 +193,11 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Type a wrong phrase
         await tester.enterText(find.byType(TextField), 'wrong phrase');
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         final confirmButton =
             tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'));
@@ -215,11 +216,11 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Type with leading/trailing spaces
         await tester.enterText(find.byType(TextField), '  confirm  ');
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         final confirmButton =
             tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'));
@@ -244,7 +245,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Warning should appear since one step is Level 3
         expect(
@@ -263,7 +264,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Level 1 step should have info icon
         // Level 3 step should have warning icon
@@ -287,7 +288,7 @@ void main() {
             onCancel: () => cancelled = true,
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         await tester.tap(find.text('Cancel'));
         expect(cancelled, true);
@@ -305,7 +306,7 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         await tester.tap(find.text('Confirm'));
         expect(confirmed, true);
@@ -326,11 +327,11 @@ void main() {
             onCancel: () {},
           ),
         ));
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         // Type matching phrase
         await tester.enterText(find.byType(TextField), 'yes');
-        await tester.pumpAndSettle();
+        await settle(tester);
 
         await tester.tap(find.text('Confirm'));
         expect(confirmed, true);

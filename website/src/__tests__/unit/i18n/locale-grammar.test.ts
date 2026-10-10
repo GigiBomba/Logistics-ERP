@@ -175,7 +175,7 @@ const localeRules: Record<string, GrammarRule[]> = {
 const nonEnLocales: Record<string, Record<string, string>> = { ro: roFlat, de: deFlat, fr: frFlat, es: esFlat, pl: plFlat }
 const enEntries = entries(enFlat)
 
-describe("locale-grammar", () => {
+describe.concurrent("locale-grammar", () => {
   // ── 1. Placeholder variable consistency ────────────────────────────────────
   describe("placeholder variables", () => {
     for (const [name, data] of Object.entries(nonEnLocales)) {

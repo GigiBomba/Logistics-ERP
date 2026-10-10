@@ -82,71 +82,45 @@ def _make_service_result(success: bool = True, error_message: str | None = None)
 
 
 class TestDeleteToolsContract:
-    """BaseTool contract shared by all 6 delete/remove tools."""
+    """BaseTool contract shared by all 6 delete/remove tools.
+
+    One parametrized test with all 14 contract assertions in a single body —
+    previously 14 separate per-tool tests (14 × 6 = 84 cases).
+    """
 
     @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_tool_is_registered(self, name):
-        assert get_tool(name) is not None, f"{name} not in registry"
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_tool_name(self, name):
-        assert get_tool(name).name == name
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_tool_version_is_semver(self, name):
-        parts = get_tool(name).tool_version.split(".")
-        assert len(parts) == 3 and all(p.isdigit() for p in parts)
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_description_non_empty(self, name):
-        assert get_tool(name).description.strip()
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_permission_correct(self, name):
-        expected = DELETE_TOOLS[name]["permission"]
-        assert get_tool(name).required_permission == expected
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_confirmation_level_destructive(self, name):
-        assert get_tool(name).confirmation_level == ConfirmationLevel.DESTRUCTIVE
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_supports_undo_false(self, name):
-        assert not get_tool(name).supports_undo
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_deprecated_false(self, name):
-        assert not get_tool(name).deprecated
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_parameters_schema_is_basemodel(self, name):
-        assert issubclass(get_tool(name).parameters_schema, BaseModel)
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_id_field_and_confirmation_phrase_present(self, name):
-        fields = get_tool(name).parameters_schema.model_fields
+    def test_tool_contract(self, name):
+        tool = get_tool(name)
+        assert tool is not None, f"{name} not in registry"
+        assert tool.name == name, f"{name}: tool.name mismatch"
+        parts = tool.tool_version.split(".")
+        assert len(parts) == 3 and all(p.isdigit() for p in parts), (
+            f"{name}: tool_version is not semver: {tool.tool_version!r}"
+        )
+        assert tool.description.strip(), f"{name}: description is empty"
+        assert tool.required_permission == DELETE_TOOLS[name]["permission"], (
+            f"{name}: required_permission mismatch"
+        )
+        assert tool.confirmation_level == ConfirmationLevel.DESTRUCTIVE, (
+            f"{name}: must be DESTRUCTIVE"
+        )
+        assert not tool.supports_undo, f"{name}: must not support undo"
+        assert not tool.deprecated, f"{name}: must not be deprecated"
+        assert issubclass(tool.parameters_schema, BaseModel), (
+            f"{name}: parameters_schema must be a BaseModel"
+        )
+        fields = tool.parameters_schema.model_fields
         id_field = DELETE_TOOLS[name]["id_field"]
-        assert id_field in fields
-        assert "confirmation_phrase" in fields
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_id_field_is_required(self, name):
-        id_field = DELETE_TOOLS[name]["id_field"]
-        assert get_tool(name).parameters_schema.model_fields[id_field].is_required()
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_confirmation_phrase_is_required(self, name):
-        assert get_tool(name).parameters_schema.model_fields["confirmation_phrase"].is_required()
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_parameters_schema_forbids_extra(self, name):
-        config = get_tool(name).parameters_schema.model_config
-        assert config.get("extra") == "forbid"
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_undo_raises_not_implemented(self, name):
+        assert id_field in fields, f"{name}: missing id field {id_field!r}"
+        assert "confirmation_phrase" in fields, f"{name}: missing confirmation_phrase"
+        assert fields[id_field].is_required(), f"{name}: {id_field} must be required"
+        assert fields["confirmation_phrase"].is_required(), (
+            f"{name}: confirmation_phrase must be required"
+        )
+        config = tool.parameters_schema.model_config
+        assert config.get("extra") == "forbid", f"{name}: extra fields must be forbidden"
         with pytest.raises(NotImplementedError):
-            asyncio.run(get_tool(name).undo("token", _make_ctx()))
+            asyncio.run(tool.undo("token", _make_ctx()))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -155,64 +129,43 @@ class TestDeleteToolsContract:
 
 
 class TestDeleteToolsParams:
-    """Parameter schema validation."""
+    """Parameter schema validation for all 6 delete/remove tools.
+
+    One parametrized test with all 7 validation assertions in a single body —
+    previously 7 separate per-tool tests (7 × 6 = 42 cases).
+    """
 
     @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_accepts_valid_id_and_phrase(self, name):
+    def test_params_validation(self, name):
         tool = get_tool(name)
         id_field = DELETE_TOOLS[name]["id_field"]
+
+        # Valid id + confirmation phrase are accepted.
         params = tool.parameters_schema(**{id_field: 42, "confirmation_phrase": "42"})
-        assert getattr(params, id_field) == 42
-        assert params.confirmation_phrase == "42"
+        assert getattr(params, id_field) == 42, f"{name}: valid id not accepted"
+        assert params.confirmation_phrase == "42", f"{name}: phrase not accepted"
 
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_rejects_zero_id(self, name):
-        """All delete tools have gt=0 on the ID field."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
+        # The ID field has gt=0: zero and negative ids are rejected.
         with pytest.raises(ValidationError):
             tool.parameters_schema(**{id_field: 0, "confirmation_phrase": "0"})
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_rejects_negative_id(self, name):
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
         with pytest.raises(ValidationError):
             tool.parameters_schema(**{id_field: -1, "confirmation_phrase": "-1"})
 
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_rejects_empty_confirmation_phrase(self, name):
-        """confirmation_phrase has min_length=1."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
+        # confirmation_phrase has min_length=1 and is required.
         with pytest.raises(ValidationError):
             tool.parameters_schema(**{id_field: 1, "confirmation_phrase": ""})
-
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_rejects_missing_confirmation_phrase(self, name):
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
         with pytest.raises(ValidationError):
             tool.parameters_schema(**{id_field: 1})
 
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_validate_accepts_valid_params(self, name):
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
+        # validate() accepts valid params (returns a list).
         params = tool.parameters_schema(**{id_field: 5, "confirmation_phrase": "5"})
         errors = asyncio.run(tool.validate(params, _make_ctx()))
-        # validate should return empty list for valid params
-        assert isinstance(errors, list)
+        assert isinstance(errors, list), f"{name}: validate() must return a list"
 
-    @pytest.mark.parametrize("name", sorted(DELETE_TOOLS))
-    def test_validate_rejects_empty_confirmation_phrase_after_construct(self, name):
-        """validate() catches empty phrase even if schema bypassed."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-        # Use model_construct to bypass pydantic validators and test tool.validate()
+        # validate() catches an empty phrase even if the schema was bypassed.
         params = tool.parameters_schema.model_construct(**{id_field: 1, "confirmation_phrase": ""})
         errors = asyncio.run(tool.validate(params, _make_ctx()))
-        assert len(errors) > 0
+        assert len(errors) > 0, f"{name}: validate() must reject empty confirmation_phrase"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -227,17 +180,22 @@ def _get_delete_service_mock(name: str) -> str:
 
 
 class TestDeleteToolsExecuteSuccess:
-    """Execute() success paths for the 5 standard delete tools."""
+    """Execute() success paths for the 5 standard delete tools.
 
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_success(self, name):
-        """All 5 standard delete tools return success with correct data."""
+    One parametrized test with the 3 success sub-scenarios as sequential
+    blocks — previously 3 separate per-tool tests (3 × 5 = 15 cases).
+    """
+
+    _EXECUTE_TOOLS = ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"]
+
+    @pytest.mark.parametrize("name", _EXECUTE_TOOLS)
+    def test_execute_success_paths(self, name):
         tool = get_tool(name)
         id_field = DELETE_TOOLS[name]["id_field"]
         delete_method = "delete_driver" if name == "driver.remove" else "delete"
-
-        # Mock the service
         service_path = _get_delete_service_mock(name)
+
+        # Sub-scenario 1: success result carries the entity id.
         with patch(service_path) as mock_service_class:
             mock_service = MagicMock()
             getattr(mock_service, delete_method).return_value = _make_service_result(success=True)
@@ -247,18 +205,11 @@ class TestDeleteToolsExecuteSuccess:
             ctx = _make_ctx(services={"db": MagicMock()})
             result = asyncio.run(tool.execute(params, ctx))
 
-            assert result.status == "success"
-            assert result.data is not None
-            assert result.data[id_field] == 42
+            assert result.status == "success", f"{name}: expected success"
+            assert result.data is not None, f"{name}: expected data"
+            assert result.data[id_field] == 42, f"{name}: entity id not echoed in result"
 
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_passes_user_id(self, name):
-        """The service receives user_id from context."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-        delete_method = "delete_driver" if name == "driver.remove" else "delete"
-
-        service_path = _get_delete_service_mock(name)
+        # Sub-scenario 2: the service receives user_id from context.
         with patch(service_path) as mock_service_class:
             mock_service = MagicMock()
             getattr(mock_service, delete_method).return_value = _make_service_result(success=True)
@@ -268,21 +219,13 @@ class TestDeleteToolsExecuteSuccess:
             ctx = _make_ctx(services={"db": MagicMock()}, user_id=99)
             result = asyncio.run(tool.execute(params, ctx))
 
-            assert result.status == "success"
-            # Verify user_id was passed
+            assert result.status == "success", f"{name}: expected success"
             call_args = getattr(mock_service, delete_method).call_args
             _, call_kwargs = call_args if isinstance(call_args, tuple) else ((), {})
-            assert call_kwargs is not None
-            assert call_kwargs.get("user_id") == 99
+            assert call_kwargs is not None, f"{name}: service must be called with kwargs"
+            assert call_kwargs.get("user_id") == 99, f"{name}: user_id not forwarded"
 
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_service_delete_called_with_id(self, name):
-        """The service's delete/delete_driver method is called with the entity ID."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-        delete_method = "delete_driver" if name == "driver.remove" else "delete"
-
-        service_path = _get_delete_service_mock(name)
+        # Sub-scenario 3: the delete method is called with the entity id.
         with patch(service_path) as mock_service_class:
             mock_service = MagicMock()
             getattr(mock_service, delete_method).return_value = _make_service_result(success=True)
@@ -292,12 +235,11 @@ class TestDeleteToolsExecuteSuccess:
             ctx = _make_ctx(services={"db": MagicMock()})
             result = asyncio.run(tool.execute(params, ctx))
 
-            assert result.status == "success"
-            # Verify the delete method was called with the correct ID
+            assert result.status == "success", f"{name}: expected success"
             call_args = getattr(mock_service, delete_method).call_args
-            assert call_args is not None
+            assert call_args is not None, f"{name}: delete method not called"
             call_pos_args, _ = call_args if isinstance(call_args, tuple) else (call_args.args, {})
-            assert call_pos_args[0] == 77  # First positional arg is the entity ID
+            assert call_pos_args[0] == 77, f"{name}: entity id not forwarded as first arg"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -306,34 +248,32 @@ class TestDeleteToolsExecuteSuccess:
 
 
 class TestDeleteToolsExecuteErrors:
-    """Error handling for the 5 standard delete tools."""
+    """Error handling for the 5 standard delete tools.
 
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_no_db_returns_unavailable(self, name):
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-        params = tool.parameters_schema(**{id_field: 1, "confirmation_phrase": "1"})
-        ctx = _make_ctx()  # No services
-        result = asyncio.run(tool.execute(params, ctx))
-        assert result.status == "unavailable"
+    One parametrized test with the 5 error sub-scenarios as sequential
+    blocks — previously 5 separate per-tool tests (5 × 5 = 25 cases).
+    """
 
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_db_is_none_returns_unavailable(self, name):
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-        params = tool.parameters_schema(**{id_field: 1, "confirmation_phrase": "1"})
-        ctx = _make_ctx(services={"db": None})
-        result = asyncio.run(tool.execute(params, ctx))
-        assert result.status == "unavailable"
+    _EXECUTE_TOOLS = ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"]
 
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_service_returns_failed(self, name):
-        """When the service delete() returns success=False, tool returns failed."""
+    @pytest.mark.parametrize("name", _EXECUTE_TOOLS)
+    def test_execute_error_paths(self, name):
         tool = get_tool(name)
         id_field = DELETE_TOOLS[name]["id_field"]
         delete_method = "delete_driver" if name == "driver.remove" else "delete"
-
         service_path = _get_delete_service_mock(name)
+
+        # Sub-scenario 1: no services at all → unavailable.
+        params = tool.parameters_schema(**{id_field: 1, "confirmation_phrase": "1"})
+        result = asyncio.run(tool.execute(params, _make_ctx()))
+        assert result.status == "unavailable", f"{name}: no db → unavailable"
+
+        # Sub-scenario 2: db explicitly None → unavailable.
+        params = tool.parameters_schema(**{id_field: 1, "confirmation_phrase": "1"})
+        result = asyncio.run(tool.execute(params, _make_ctx(services={"db": None})))
+        assert result.status == "unavailable", f"{name}: db=None → unavailable"
+
+        # Sub-scenario 3: service returns success=False → failed.
         with patch(service_path) as mock_service_class:
             mock_service = MagicMock()
             getattr(mock_service, delete_method).return_value = _make_service_result(
@@ -344,17 +284,9 @@ class TestDeleteToolsExecuteErrors:
             params = tool.parameters_schema(**{id_field: 999, "confirmation_phrase": "999"})
             ctx = _make_ctx(services={"db": MagicMock()})
             result = asyncio.run(tool.execute(params, ctx))
+            assert result.status == "failed", f"{name}: service failure → failed"
 
-            assert result.status == "failed"
-
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_service_raises_exception(self, name):
-        """Unexpected exceptions from service are caught and returned as failed."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-        delete_method = "delete_driver" if name == "driver.remove" else "delete"
-
-        service_path = _get_delete_service_mock(name)
+        # Sub-scenario 4: service raises → failed with the message surfaced.
         with patch(service_path) as mock_service_class:
             mock_service = MagicMock()
             getattr(mock_service, delete_method).side_effect = RuntimeError("Database connection lost")
@@ -363,30 +295,26 @@ class TestDeleteToolsExecuteErrors:
             params = tool.parameters_schema(**{id_field: 1, "confirmation_phrase": "1"})
             ctx = _make_ctx(services={"db": MagicMock()})
             result = asyncio.run(tool.execute(params, ctx))
+            assert result.status == "failed", f"{name}: exception → failed"
+            assert "Database connection lost" in result.message_params.get("error", ""), (
+                f"{name}: exception message not surfaced"
+            )
 
-            assert result.status == "failed"
-            assert "Database connection lost" in result.message_params.get("error", "")
-
-    @pytest.mark.parametrize("name", ["trip.delete", "vehicle.delete", "driver.remove", "client.delete", "invoice.delete"])
-    def test_execute_message_key_for_success(self, name):
-        """Each tool has a unique success message_key."""
-        tool = get_tool(name)
-        id_field = DELETE_TOOLS[name]["id_field"]
-
-        service_path = _get_delete_service_mock(name)
+        # Sub-scenario 5: success carries a domain-specific message_key.
         with patch(service_path) as mock_service_class:
             mock_service = MagicMock()
-            mock_service.delete.return_value = _make_service_result(success=True)
+            getattr(mock_service, delete_method).return_value = _make_service_result(success=True)
             mock_service_class.return_value = mock_service
 
             params = tool.parameters_schema(**{id_field: 1, "confirmation_phrase": "1"})
             ctx = _make_ctx(services={"db": MagicMock()})
             result = asyncio.run(tool.execute(params, ctx))
-
-            assert result.status == "success"
-            # Each tool has a domain-specific success key
-            assert result.message_key.startswith("copilot.")
-            assert result.message_key.endswith(".deleted") or result.message_key.endswith(".removed")
+            assert result.status == "success", f"{name}: expected success"
+            # Each tool has a domain-specific success key.
+            assert result.message_key.startswith("copilot."), f"{name}: message_key prefix"
+            assert result.message_key.endswith(".deleted") or result.message_key.endswith(".removed"), (
+                f"{name}: message_key suffix"
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

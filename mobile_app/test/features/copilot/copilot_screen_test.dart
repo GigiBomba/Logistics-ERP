@@ -7,6 +7,7 @@ import 'package:operion_mobile/features/copilot/providers/copilot_providers.dart
 import 'package:operion_mobile/features/copilot/screens/copilot_screen.dart';
 import 'package:operion_mobile/features/copilot/models/copilot_models.dart';
 import 'package:operion_mobile/l10n/app_localizations.dart';
+import '../../shared/test_utils.dart';
 
 // ── Fake dependencies ─────────────────────────────────────────────────────
 
@@ -116,14 +117,14 @@ void main() {
   group('CopilotScreen — empty state', () {
     testWidgets('renders app bar with title', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('AI Co-Pilot'), findsOneWidget);
     });
 
     testWidgets('renders empty state message and prompt', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Ask me anything about your fleet'), findsOneWidget);
       expect(find.text('Try: "Show my available trucks"'), findsOneWidget);
@@ -131,7 +132,7 @@ void main() {
 
     testWidgets('renders auto_awesome icon in empty state', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // There should be at least one auto_awesome icon
       expect(find.byIcon(Icons.auto_awesome), findsWidgets);
@@ -139,7 +140,7 @@ void main() {
 
     testWidgets('renders text input and send button', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byType(TextField), findsOneWidget);
       expect(find.byIcon(Icons.send), findsOneWidget);
@@ -147,14 +148,14 @@ void main() {
 
     testWidgets('shows placeholder text in input', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Type a command or question...'), findsOneWidget);
     });
 
     testWidgets('renders new conversation button', (tester) async {
       await tester.pumpWidget(wrapScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.byIcon(Icons.refresh), findsOneWidget);
     });
@@ -206,15 +207,15 @@ void main() {
         (tester) async {
       final notifier = _FakeCopilotStateNotifier();
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Type a message
       await tester.enterText(find.byType(TextField), 'find trucks');
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap send button
       await tester.tap(find.byIcon(Icons.send));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.sendMessageCalled, true);
       expect(notifier.lastMessage, 'find trucks');
@@ -223,11 +224,11 @@ void main() {
     testWidgets('sending empty message does not call notifier', (tester) async {
       final notifier = _FakeCopilotStateNotifier();
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Tap send with empty input
       await tester.tap(find.byIcon(Icons.send));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.sendMessageCalled, false);
     });
@@ -235,11 +236,11 @@ void main() {
     testWidgets('text field clears after sending message', (tester) async {
       final notifier = _FakeCopilotStateNotifier();
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.enterText(find.byType(TextField), 'find trucks');
       await tester.tap(find.byIcon(Icons.send));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Text field should be cleared
       final textField = tester.widget<TextField>(find.byType(TextField));
@@ -249,12 +250,12 @@ void main() {
     testWidgets('sending via onSubmitted calls notifier', (tester) async {
       final notifier = _FakeCopilotStateNotifier();
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Type and submit
       await tester.enterText(find.byType(TextField), 'search');
       await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.sendMessageCalled, true);
     });
@@ -273,7 +274,7 @@ void main() {
       await tester.pumpWidget(wrapScreen(
         initialState: CopilotAwaitingConfirmation(plan: plan),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Should show the confirmation text
       expect(find.text('Operion AI suggests the following action:'), findsOneWidget);
@@ -289,7 +290,7 @@ void main() {
       await tester.pumpWidget(wrapScreen(
         initialState: CopilotAwaitingConfirmation(plan: plan),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Should show Level 3 title
       expect(
@@ -308,10 +309,10 @@ void main() {
         notifier: notifier,
         initialState: CopilotAwaitingConfirmation(plan: plan),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Confirm'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.confirmPlanCalled, true);
     });
@@ -326,10 +327,10 @@ void main() {
         notifier: notifier,
         initialState: CopilotAwaitingConfirmation(plan: plan),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.cancelPlanCalled, true);
     });
@@ -346,7 +347,7 @@ void main() {
           questionKey: 'copilot.clarification.missing_entities',
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(
         find.text('copilot.clarification.missing_entities'),
@@ -360,7 +361,7 @@ void main() {
           questionKey: 'copilot.clarification.test',
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Should have the clarification text field and send icon
       expect(find.byIcon(Icons.send), findsWidgets); // one in input bar, one for clarification
@@ -374,10 +375,10 @@ void main() {
     testWidgets('tapping refresh calls reset on notifier', (tester) async {
       final notifier = _FakeCopilotStateNotifier();
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.byIcon(Icons.refresh));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(notifier.resetCalled, true);
     });
@@ -392,11 +393,11 @@ void main() {
 
       // Start idle, then trigger an error
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Trigger error state - this should add an error message via listener
       notifier.setStateManually(const CopilotError(messageKey: 'copilot.error.unexpected'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Should show the error message in the chat
       expect(find.text('copilot.error.unexpected'), findsOneWidget);
@@ -412,13 +413,13 @@ void main() {
       final notifier = _FakeCopilotStateNotifier();
 
       await tester.pumpWidget(wrapScreen(notifier: notifier));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Trigger completed with summary
       notifier.setStateManually(const CopilotCompleted(
         summaryKey: 'copilot.summary.done',
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('copilot.summary.done'), findsOneWidget);
     });

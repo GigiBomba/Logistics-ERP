@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { publicNavItems, footerNavSections } from "@/config/navigation"
 
-describe("publicNavItems", () => {
+describe.concurrent("publicNavItems", () => {
   it("has the correct number of top-level items", () => {
     expect(publicNavItems).toHaveLength(10)
   })
@@ -34,7 +34,7 @@ describe("publicNavItems", () => {
   })
 })
 
-describe("footerNavSections", () => {
+describe.concurrent("footerNavSections", () => {
   it("has 5 sections", () => {
     expect(footerNavSections).toHaveLength(5)
   })

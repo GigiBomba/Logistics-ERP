@@ -15,7 +15,7 @@ const registerSchema = z
     path: ["confirm_password"],
   })
 
-describe("registerSchema", () => {
+describe.concurrent("registerSchema", () => {
   it("accepts valid input", () => {
     const result = registerSchema.safeParse({
       name: "John Doe",

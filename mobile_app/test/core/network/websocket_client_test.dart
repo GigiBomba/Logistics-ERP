@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert' show jsonEncode, jsonDecode;
 
 import 'package:async/async.dart' show StreamSinkTransformer;
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -318,78 +319,94 @@ void main() {
     // ── Auto-reconnection ────────────────────────
 
     group('auto-reconnection', () {
-      test('reconnects when connection stream closes', () async {
-        // Use a factory that returns a fresh channel on each call
-        FakeWebSocketChannel? channel2;
-        final reconnectingClient = WebSocketClient(
-          channelFactory: (_) {
-            channel2 = FakeWebSocketChannel();
-            return channel2!;
-          },
-        );
+      test('reconnects when connection stream closes', () {
+        fakeAsync((async) {
+          // Use a factory that returns a fresh channel on each call
+          FakeWebSocketChannel? channel2;
+          final reconnectingClient = WebSocketClient(
+            channelFactory: (_) {
+              channel2 = FakeWebSocketChannel();
+              return channel2!;
+            },
+          );
 
-        await reconnectingClient.connect('wss://test.example.com/ws', 't');
-        expect(reconnectingClient.isConnected, isTrue);
+          unawaited(
+            reconnectingClient.connect('wss://test.example.com/ws', 't'),
+          );
+          async.flushMicrotasks();
+          expect(reconnectingClient.isConnected, isTrue);
 
-        // Close the first channel's incoming stream to trigger reconnect
-        channel2!.closeIncoming();
+          // Close the first channel's incoming stream to trigger reconnect
+          channel2!.closeIncoming();
 
-        // Wait for reconnect timer (initial delay = 1s)
-        await Future.delayed(const Duration(milliseconds: 1500));
+          // Wait for reconnect timer (initial delay = 1s)
+          async.elapse(const Duration(seconds: 2));
 
-        expect(reconnectingClient.isConnected, isTrue);
+          expect(reconnectingClient.isConnected, isTrue);
 
-        reconnectingClient.dispose();
+          reconnectingClient.dispose();
+        });
       });
 
-      test('reconnect does not happen after explicit disconnect', () async {
-        await client.connect('wss://test.example.com/ws', 't');
+      test('reconnect does not happen after explicit disconnect', () {
+        fakeAsync((async) {
+          unawaited(client.connect('wss://test.example.com/ws', 't'));
+          async.flushMicrotasks();
 
-        client.disconnect();
+          client.disconnect();
 
-        fakeChannel.closeIncoming();
-        await Future.delayed(const Duration(milliseconds: 1500));
+          fakeChannel.closeIncoming();
+          async.elapse(const Duration(seconds: 2));
 
-        expect(client.isConnected, isFalse);
+          expect(client.isConnected, isFalse);
+        });
       });
 
-      test('reconnect after stream error', () async {
-        FakeWebSocketChannel? channel2;
-        final reconnectingClient = WebSocketClient(
-          channelFactory: (_) {
-            channel2 = FakeWebSocketChannel();
-            return channel2!;
-          },
-        );
+      test('reconnect after stream error', () {
+        fakeAsync((async) {
+          FakeWebSocketChannel? channel2;
+          final reconnectingClient = WebSocketClient(
+            channelFactory: (_) {
+              channel2 = FakeWebSocketChannel();
+              return channel2!;
+            },
+          );
 
-        await reconnectingClient.connect('wss://test.example.com/ws', 't');
+          unawaited(
+            reconnectingClient.connect('wss://test.example.com/ws', 't'),
+          );
+          async.flushMicrotasks();
 
-        channel2!.injectError(Exception('connection lost'));
+          channel2!.injectError(Exception('connection lost'));
 
-        await Future.delayed(const Duration(milliseconds: 1500));
-        expect(reconnectingClient.isConnected, isTrue);
+          async.elapse(const Duration(seconds: 2));
+          expect(reconnectingClient.isConnected, isTrue);
 
-        reconnectingClient.dispose();
+          reconnectingClient.dispose();
+        });
       });
     });
 
     // ── Error handling ───────────────────────────
 
     group('error handling', () {
-      test('factory exception during connect schedules reconnect', () async {
-        final brokenClient = WebSocketClient(
-          channelFactory: (_) => throw Exception('connection refused'),
-        );
+      test('factory exception during connect schedules reconnect', () {
+        fakeAsync((async) {
+          final brokenClient = WebSocketClient(
+            channelFactory: (_) => throw Exception('connection refused'),
+          );
 
-        await brokenClient.connect('wss://test.example.com/ws', 't');
+          unawaited(brokenClient.connect('wss://test.example.com/ws', 't'));
+          async.flushMicrotasks();
 
-        expect(brokenClient.isConnected, isFalse);
+          expect(brokenClient.isConnected, isFalse);
 
-        await Future.delayed(const Duration(milliseconds: 1500));
-        // Still false because the factory still throws
-        expect(brokenClient.isConnected, isFalse);
+          async.elapse(const Duration(seconds: 2));
+          // Still false because the factory still throws
+          expect(brokenClient.isConnected, isFalse);
 
-        brokenClient.dispose();
+          brokenClient.dispose();
+        });
       });
 
       test('stream error does not crash the client', () async {

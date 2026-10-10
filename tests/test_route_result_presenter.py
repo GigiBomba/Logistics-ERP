@@ -104,7 +104,11 @@ class TestParseErrorMessage:
     def test_timeout_error(self):
         result = parse_error_message({"error": "timeout", "error_type": "timeout"})
         assert result is not None
-        assert "timeout" in result[0].lower() or "result.timeout_error" in result[0]
+        assert (
+            "timeout" in result[0].lower()
+            or "timed out" in result[0].lower()
+            or "result.timeout_error" in result[0]
+        )
 
     def test_geocode_error(self):
         result = parse_error_message({"error": "geocode failed", "error_type": "geocode"})

@@ -19,6 +19,27 @@ import uuid
 # leave backend.dependencies._db_instance bound to a stale/removed worker DB
 # (sqlite3.OperationalError: cannot rollback).  Give this module its own temp
 # DB and reset the singleton before every test so create_app() rebuilds here.
+#
+# Snapshot the process env BEFORE the import-time mutation below so module
+# teardown can RESTORE instead of popping (same discipline as
+# tests/test_api/test_waitlist_api.py / tests/test_scripts_backup_restore.py).
+# The old teardown popped OPERION_JWT_SECRET_KEY + OPERION_ENV unconditionally
+# (and _db_guard pops OPERION_API_KEY before every test without restoring),
+# leaving them missing for every later module in the worker: a subsequent
+# import-time ``load_dotenv(.env)`` then re-created ``OPERION_ENV=production``
+# + ``OPERION_API_KEY=<real key>`` from the checked-in ``.env``, which
+# cascaded 401 ``{"detail":"API key required","error_code":
+# "auth/invalid-api-key"}`` failures across the later sync/settings suites.
+# (``monkeypatch`` is function-scoped; the fixture below is module-scoped.)
+_ORIG_ENV = {
+    k: os.environ.get(k)
+    for k in (
+        "OPERION_DB_PATH",
+        "OPERION_ENV",
+        "OPERION_API_KEY",
+        "OPERION_JWT_SECRET_KEY",
+    )
+}
 _TEST_DB_DIR = tempfile.gettempdir()
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 _TEST_DB = os.path.join(
@@ -42,9 +63,46 @@ from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
 def _set_env():
     os.environ["OPERION_JWT_SECRET_KEY"] = _TEST_JWT_SECRET
     os.environ["OPERION_ENV"] = "test"
+    # Snapshot the Config-class attributes _db_guard rebinds before every
+    # test (DB_PATH / API_KEY on config.Config, backend.desktop_config.Config
+    # as seen by the auth middleware, and backend.dependencies.Config) so
+    # module teardown can RESTORE them instead of leaving this module's
+    # temp-DB path and disabled-API-key state behind for every later module
+    # in the worker.  Captured here (module setup) rather than at import so
+    # the values reflect whatever previous modules legitimately left behind.
+    from config import Config as _Cfg
+    _saved_attrs = []
+    for _obj in (_Cfg,):
+        for _name in ("DB_PATH", "API_KEY"):
+            _saved_attrs.append((_obj, _name, getattr(_obj, _name)))
+    try:
+        import backend.middleware.auth_middleware as _auth_mw_mod
+        _saved_attrs.append(
+            (_auth_mw_mod.Config, "API_KEY", _auth_mw_mod.Config.API_KEY),
+        )
+    except Exception:
+        _auth_mw_mod = None
+    try:
+        from backend import dependencies as _deps_mod
+        if getattr(_deps_mod, "Config", None) is not None:
+            _saved_attrs.append(
+                (_deps_mod.Config, "DB_PATH", _deps_mod.Config.DB_PATH),
+            )
+    except Exception:
+        _deps_mod = None
     yield
-    for k in ("OPERION_JWT_SECRET_KEY", "OPERION_ENV"):
-        os.environ.pop(k, None)
+    # Restore the env (pop ONLY when the var was originally absent) …
+    for k, v in _ORIG_ENV.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    # … and every Config-class attribute this module mutated.
+    for _obj, _name, _value in _saved_attrs:
+        try:
+            setattr(_obj, _name, _value)
+        except Exception:
+            pass
 
 
 @pytest.fixture(autouse=True)

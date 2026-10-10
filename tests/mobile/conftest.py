@@ -148,29 +148,79 @@ def real_db(tmp_path):
 
     db = DatabaseManager(str(tmp_path / "mobile_test.db"))
 
-    # Seed companies 0..100 so company_id FKs never block inserts.
-    for cid in range(0, 101):
-        db.conn.execute(
-            "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier) "
-            "VALUES (?, ?, 'starter')",
-            (cid, f"Company-{cid}"),
-        )
+    # Seed companies 0..100 so company_id FKs never block inserts.  Batched
+    # into a single executemany + one commit (one transaction) — the per-row
+    # loop cost the previous code paid for 101 rows.
+    db.conn.executemany(
+        "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier) "
+        "VALUES (?, ?, 'starter')",
+        [(cid, f"Company-{cid}") for cid in range(0, 101)],
+    )
 
     # Seed the role users the PermissionService._get_user lookup needs.
-    for uid, email, role in (
-        (1, "admin@test.com", "admin"),
-        (2, "dispatcher@test.com", "dispatcher"),
-        (3, "manager@test.com", "manager"),
-        (4, "driver@test.com", "driver"),
-    ):
-        db.conn.execute(
-            "INSERT OR IGNORE INTO users (id, email, password_hash, role, company_id, is_active, display_name) "
-            "VALUES (?, ?, 'test-hash', ?, 1, 1, ?)",
-            (uid, email, role, role),
-        )
+    db.conn.executemany(
+        "INSERT OR IGNORE INTO users (id, email, password_hash, role, company_id, is_active, display_name) "
+        "VALUES (?, ?, 'test-hash', ?, 1, 1, ?)",
+        [
+            (uid, email, role, role)
+            for uid, email, role in (
+                (1, "admin@test.com", "admin"),
+                (2, "dispatcher@test.com", "dispatcher"),
+                (3, "manager@test.com", "manager"),
+                (4, "driver@test.com", "driver"),
+            )
+        ],
+    )
     db.conn.commit()
     yield db
     db.close()
+
+
+@pytest.fixture(scope="module")
+def real_db_ro(tmp_path_factory):
+    """Module-scoped read-only real DB — same body as ``real_db`` but created
+    and seeded ONCE per module, shared by every test in a ``*_readonly.py``
+    module.  Those tests only READ the seeded rows, so the shared DB is safe.
+
+    Like ``real_db`` this is a FILE (not ``:memory:``) so FastAPI ``def``
+    endpoints (which run on worker threads with their own thread-local sqlite
+    connections) see the same database.
+    """
+    from database.db_manager import DatabaseManager
+
+    db = DatabaseManager(str(tmp_path_factory.mktemp("mobile_ro") / "mobile_test.db"))
+
+    # Seed companies 0..100 so company_id FKs never block inserts (batched).
+    db.conn.executemany(
+        "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier) "
+        "VALUES (?, ?, 'starter')",
+        [(cid, f"Company-{cid}") for cid in range(0, 101)],
+    )
+
+    # Seed the role users the PermissionService._get_user lookup needs.
+    db.conn.executemany(
+        "INSERT OR IGNORE INTO users (id, email, password_hash, role, company_id, is_active, display_name) "
+        "VALUES (?, ?, 'test-hash', ?, 1, 1, ?)",
+        [
+            (uid, email, role, role)
+            for uid, email, role in (
+                (1, "admin@test.com", "admin"),
+                (2, "dispatcher@test.com", "dispatcher"),
+                (3, "manager@test.com", "manager"),
+                (4, "driver@test.com", "driver"),
+            )
+        ],
+    )
+    db.conn.commit()
+    yield db
+    db.close()
+
+
+@pytest.fixture(scope="module")
+def records_seed_ro(real_db_ro):
+    """Module-scoped variant of ``records_seed`` — seeds the standard
+    analytics/history/search record set (company 1) exactly ONCE per module."""
+    return seed_records(real_db_ro, company_id=1)
 
 
 @pytest.fixture
@@ -221,50 +271,63 @@ def seed_records(db, company_id: int = 1) -> dict:
 
     # ── Trucks ──
     # trucks.plate_number is UNIQUE globally → other-company seeds need
-    # distinct plates.
+    # distinct plates.  Batch the per-row loop into one executemany; ids are
+    # recovered by plate_number (globally unique) so the created keys match
+    # the old per-row insert order exactly.
     plate_prefix = "AB" if company_id == 1 else f"OT{company_id}"
     trucks = [
         (f"{plate_prefix}-01-XYZ", "Volvo", "FH", "Active"),
         (f"{plate_prefix}-02-XYZ", "Scania", "R450", "In Service"),
         (f"{plate_prefix}-03-XYZ", "Mercedes", "Actros", "Inactive"),
     ]
-    for plate, brand, model, status in trucks:
-        cur = db.execute(
-            "INSERT INTO trucks (plate_number, manufacturer, model, status, "
-            "year, vin, active_status, company_id) VALUES (?, ?, ?, ?, 2022, ?, 1, ?)",
-            (plate, brand, model, status, f"VIN-{plate}", company_id),
-        )
-        ids[f"truck_{plate}"] = cur.lastrowid
+    db.executemany(
+        "INSERT INTO trucks (plate_number, manufacturer, model, status, "
+        "year, vin, active_status, company_id) VALUES (?, ?, ?, ?, 2022, ?, 1, ?)",
+        [(plate, brand, model, status, f"VIN-{plate}", company_id)
+         for plate, brand, model, status in trucks],
+    )
+    for row in db.execute(
+        "SELECT id, plate_number FROM trucks WHERE plate_number IN (?, ?, ?)",
+        tuple(p for p, _, _, _ in trucks),
+    ).fetchall():
+        ids[f"truck_{row['plate_number']}"] = row["id"]
 
     # ── Drivers ──
     drivers = [
         ("Ion Popescu", "LIC-A", "0720000001"),
         ("Maria Ionescu", "LIC-B", "0720000002"),
     ]
-    for name, lic, phone in drivers:
-        cur = db.execute(
-            "INSERT INTO drivers (name, phone, license_number, license_category, "
-            "is_active, company_id, created_at, updated_at) "
-            "VALUES (?, ?, ?, 'C', 1, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
-            (name, phone, lic, company_id),
-        )
-        ids[f"driver_{name}"] = cur.lastrowid
+    db.executemany(
+        "INSERT INTO drivers (name, phone, license_number, license_category, "
+        "is_active, company_id, created_at, updated_at) "
+        "VALUES (?, ?, ?, 'C', 1, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        [(name, phone, lic, company_id) for name, lic, phone in drivers],
+    )
+    for row in db.execute(
+        "SELECT id, name FROM drivers WHERE name IN (?, ?) AND company_id = ?",
+        (*[name for name, _, _ in drivers], company_id),
+    ).fetchall():
+        ids[f"driver_{row['name']}"] = row["id"]
 
     # ── Clients ──
     clients = [
         ("ACME Corp", "RO12345"),
         ("Globex Ltd", "RO67890"),
     ]
-    for name, vat in clients:
-        cur = db.execute(
-            "INSERT INTO clients (name, vat_number, contact_person, phone, email, "
-            "address, currency_preference, notes, is_active, created_at, updated_at, "
-            "client_type, payment_terms_days, credit_limit_eur, rating, company_id) "
-            "VALUES (?, ?, 'P', '0700000000', ?, 'Addr', 'EUR', '', 1, "
-            "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '', 30, 0, 4, ?)",
-            (name, vat, f"{name.lower().replace(' ', '')}@test.com", company_id),
-        )
-        ids[f"client_{name}"] = cur.lastrowid
+    db.executemany(
+        "INSERT INTO clients (name, vat_number, contact_person, phone, email, "
+        "address, currency_preference, notes, is_active, created_at, updated_at, "
+        "client_type, payment_terms_days, credit_limit_eur, rating, company_id) "
+        "VALUES (?, ?, 'P', '0700000000', ?, 'Addr', 'EUR', '', 1, "
+        "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '', 30, 0, 4, ?)",
+        [(name, vat, f"{name.lower().replace(' ', '')}@test.com", company_id)
+         for name, vat in clients],
+    )
+    for row in db.execute(
+        "SELECT id, name FROM clients WHERE name IN (?, ?) AND company_id = ?",
+        (*[name for name, _ in clients], company_id),
+    ).fetchall():
+        ids[f"client_{row['name']}"] = row["id"]
 
     # ── Trips across statuses / dates / clients ──
     driver_a = ids["driver_Ion Popescu"]

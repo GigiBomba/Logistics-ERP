@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { mockAuthAs, mockLoginFlow, createUser, stabilizeHydration, waitForHydration, type MockUser } from "../helpers"
+import { setupAuthedContext, createUser, loginAs, stabilizeHydration, waitForHydration, type MockUser } from "../helpers"
 
 /**
  * Token Storage Security
@@ -67,15 +67,17 @@ test.describe("Token storage security", () => {
 
     // Session-wide auth mocks, registered BEFORE any goto so they intercept the
     // hydration fetches (same pattern as critical/auth-full-cycle.spec.ts).
-    await mockAuthAs(page, user)
-    await mockLoginFlow(page, user)
+    // setupAuthedContext = mockAuthAs + mockLoginFlow (stabilize: false —
+    // the beforeEach above already did it).
+    await setupAuthedContext(page, { user, login: true, stabilize: false })
 
-    await page.goto("/login")
+    // goto /login → hydration gate → fill + submit → expect /dashboard/.
+    await loginAs(page, { email, password })
+    // Readiness gate: toHaveURL can match while the dashboard route is still
+    // hydrating and the auth-transition scrub effects have not run yet — wait
+    // for hydration (and a dashboard element) before evaluating web storage.
     await waitForHydration(page)
-    await page.fill("#email", email)
-    await page.fill("#password", password)
-    await page.click('button[type="submit"]')
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 })
+    await expect(page.locator("main")).toBeVisible()
 
     const storage = await readStorage(page)
     const allStorage = JSON.stringify({ ...storage.localStorage, ...storage.sessionStorage })

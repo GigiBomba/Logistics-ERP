@@ -1,10 +1,12 @@
 """Tests for image_processor module."""
 from __future__ import annotations
 
+import types
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from services.document_automation import image_processor as ip
 from services.document_automation.image_processor import (
     ImageProcessor,
     ProcessingError,
@@ -129,6 +131,63 @@ class TestPdfOperations:
                 with patch.dict("sys.modules", {"img2pdf": None}):
                     result = _images_to_pdf(["/fake/img.png"], "/tmp/out.pdf")
                     assert result == 1  # one page
+
+
+class TestPdfOpenFailureBoundary:
+    """``fitz.open`` failures: terminal only for content-level corruption."""
+
+    @staticmethod
+    def _fake_fitz_raising(exc):
+        """Stand-in for the fitz module whose ``open()`` always raises."""
+        return types.SimpleNamespace(open=MagicMock(side_effect=exc))
+
+    @staticmethod
+    def _render(tmp_path, monkeypatch, exc):
+        monkeypatch.setattr(ip, "_safe_import_fitz", lambda: TestPdfOpenFailureBoundary._fake_fitz_raising(exc))
+        return ip._render_pdf_pages_to_images(str(tmp_path / "fake.pdf"), str(tmp_path), "job")
+
+    def test_transient_open_error_stays_retryable(self, tmp_path, monkeypatch):
+        """FileDataError with an FzErrorSystem cause (locked file) is NOT terminal."""
+
+        class FzErrorSystem(Exception):
+            pass
+
+        class FileDataError(Exception):
+            pass
+
+        exc = FileDataError("cannot open document")
+        exc.__cause__ = FzErrorSystem("sharing violation")
+
+        with pytest.raises(ip.ProcessingError) as err:
+            self._render(tmp_path, monkeypatch, exc)
+        assert not isinstance(err.value, ip.UnreadableDocumentError)
+        assert "PDF open failed" in str(err.value)
+
+    def test_format_cause_marks_pdf_terminal(self, tmp_path, monkeypatch):
+        """FileDataError with an FzErrorFormat cause (corrupt bytes) IS terminal."""
+
+        class FzErrorFormat(Exception):
+            pass
+
+        class FileDataError(Exception):
+            pass
+
+        exc = FileDataError("cannot open document")
+        exc.__cause__ = FzErrorFormat("not a PDF")
+
+        with pytest.raises(ip.UnreadableDocumentError, match="Unreadable or corrupt PDF"):
+            self._render(tmp_path, monkeypatch, exc)
+
+    def test_empty_file_marks_pdf_terminal(self, tmp_path, monkeypatch):
+        """EmptyFileError (zero-byte file, no cause) IS terminal."""
+
+        class EmptyFileError(Exception):
+            pass
+
+        exc = EmptyFileError("empty file")
+
+        with pytest.raises(ip.UnreadableDocumentError, match="Unreadable or corrupt PDF"):
+            self._render(tmp_path, monkeypatch, exc)
 
 
 class TestImageProcessor:

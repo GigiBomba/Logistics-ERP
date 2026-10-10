@@ -13,9 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:dio/dio.dart';
 
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/network/endpoints/driver_endpoints.dart';
 import 'package:operion_mobile/core/network/endpoints/copilot_endpoints.dart';
@@ -32,18 +31,6 @@ import 'package:operion_mobile/shared/widgets/offline_banner.dart';
 // Mock / stub dependencies
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override Future<bool> hasTokens() async => false;
-  @override Future<String?> getAccessToken() async => null;
-  @override Future<String?> getRefreshToken() async => null;
-  @override Future<void> saveTokens(String a, String r) async {}
-  @override Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override Future<bool> isAvailable() async => false;
-  @override Future<bool> authenticate({required String reason}) async => false;
-}
 
 /// Stub ApiClient that returns empty responses.
 ApiClient _stubApiClient() =>
@@ -88,8 +75,8 @@ Widget _wrapShell({
 }) {
   return ProviderScope(
     overrides: [
-      secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-      biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+      secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+      biometricServiceProvider.overrideWithValue(MockBiometricService()),
       apiClientProvider.overrideWithValue(_stubApiClient()),
       driverEndpointsProvider.overrideWithValue(_StubDriverEndpoints()),
       currentUserProvider.overrideWith((ref) => User(

@@ -28,11 +28,6 @@ vi.mock("@/services/queries", () => ({
   useSubscription: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 const makeMutation = (overrides: Record<string, any> = {}) => ({
   mutate: vi.fn(),
   isPending: false,

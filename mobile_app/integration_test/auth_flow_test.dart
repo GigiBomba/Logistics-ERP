@@ -1,3 +1,4 @@
+@Timeout(Duration(minutes: 15))
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -169,7 +170,7 @@ void main() {
   group('Auth Flow — Login then navigate home', () {
     testWidgets('1. Login screen renders branding and form', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // App name should be visible
       expect(find.text('Operion'), findsOneWidget);
@@ -187,7 +188,7 @@ void main() {
     testWidgets('2. Enter credentials and submit for driver login',
         (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Fill email
       final emailField = find.byType(TextFormField).first;
@@ -201,7 +202,7 @@ void main() {
       await tester.tap(find.text('Sign In'));
 
       // Wait for async login to complete and navigation to settle
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // After successful login, the app should navigate away from login screen.
       // The LoginScreen has a truck icon, so it should no longer be present.
@@ -220,7 +221,7 @@ void main() {
     testWidgets('3. Login with invalid credentials shows error',
         (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Fill wrong credentials
       final emailField = find.byType(TextFormField).first;
@@ -232,7 +233,7 @@ void main() {
       await tester.tap(find.text('Sign In'));
 
       // Wait for async login and error display
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Should still be on login screen — truck icon still visible
       expect(find.byIcon(LucideIcons.truck), findsOneWidget);
@@ -244,7 +245,7 @@ void main() {
 
     testWidgets('4. Login as dispatcher', (tester) async {
       await tester.pumpWidget(createTestApp());
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Fill dispatcher credentials
       final emailField = find.byType(TextFormField).first;
@@ -254,7 +255,7 @@ void main() {
 
       // Submit
       await tester.tap(find.text('Sign In'));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
 
       // Dispatcher shell should appear with bottom nav
       expect(

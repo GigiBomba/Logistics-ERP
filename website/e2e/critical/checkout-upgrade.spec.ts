@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { mockAuthAs, createUser, stabilizeHydration } from "../helpers"
+import { setupAuthedContext, createUser } from "../helpers"
 
 /**
  * Checkout / Upgrade Cycle Tests
@@ -36,11 +36,13 @@ const MOCK_SUBSCRIPTION = {
 
 test.describe("Checkout / Upgrade Cycle", () => {
   test.beforeEach(async ({ page }) => {
-    stabilizeHydration(page)
     // Authenticate as a regular user via the cookie-only refresh bootstrap.
     // NOTE: no localStorage seeding — the new provider removes legacy tokens
     // and bootstraps from the httpOnly refresh cookie (see e2e/helpers.ts).
-    await mockAuthAs(page, createUser("user", { id: "2", email: "user@operionerp.xyz", name: "Regular User" }))
+    // setupAuthedContext = stabilizeHydration + mockAuthAs, before any goto.
+    await setupAuthedContext(page, {
+      user: createUser("user", { id: "2", email: "user@operionerp.xyz", name: "Regular User" }),
+    })
 
     // Current subscription → active monthly
     await page.route("**/api/v1/subscriptions/current", async (route) => {
@@ -84,6 +86,18 @@ test.describe("Checkout / Upgrade Cycle", () => {
       .getByRole("button", { name: /upgrade|upgrade \/ pay|pay/i })
       .first()
     await expect(upgradeCta).toBeVisible()
+    // Hydration gate: under parallel cross-browser load the SSR'd CTA can be
+    // visible before its React onClick attaches; clicking then makes no POST
+    // (firefox flake: checkoutCalled stayed false). Poll for React props.
+    await expect
+      .poll(
+        () =>
+          upgradeCta.evaluate((el) =>
+            Object.keys(el).some((k) => k.startsWith("__reactProps")),
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true)
     await upgradeCta.click()
 
     // The POST must have been made (poll — the route handler is async)

@@ -10,6 +10,7 @@ import 'package:operion_mobile/shared/widgets/shimmer_loader.dart';
 import 'package:operion_mobile/shared/widgets/app_card.dart';
 import 'package:operion_mobile/shared/widgets/app_text_field.dart';
 import 'package:operion_mobile/shared/widgets/confirmation_dialog.dart';
+import '../shared/test_utils.dart';
 
 /// Helper to wrap a widget in [MaterialApp] for testing.
 Widget wrapInApp(Widget child) {
@@ -358,11 +359,11 @@ void main() {
           ),
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Open the dialog
       await tester.tap(find.text('Show dialog'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Delete?'), findsOneWidget);
       expect(find.text('Are you sure?'), findsOneWidget);
@@ -387,10 +388,10 @@ void main() {
           ),
         ),
       ));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       await tester.tap(find.text('Show dialog'));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       expect(find.text('Delete?'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);

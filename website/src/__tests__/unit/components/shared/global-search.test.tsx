@@ -2,37 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { GlobalSearch } from "@/components/shared/global-search"
 
-vi.mock("motion/react", () => {
-  const MotionComponent = (props: any) => {
-    const { children, ...rest } = props
-    return <div {...rest}>{children}</div>
-  }
-  return {
-    motion: new Proxy(
-      {},
-      {
-        get: () => MotionComponent,
-      }
-    ),
-    AnimatePresence: ({ children }: any) => <>{children}</>,
-  }
-})
-
 const mockNavigate = vi.fn()
 
 vi.mock("@/hooks/useAppNavigate", () => ({
   useAppNavigate: () => mockNavigate,
 }))
 
-vi.mock("@/i18n/locale-context", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/i18n/locale-context")>()
-  return {
-    ...actual,
-    useLocale: () => ({
-      t: (key: string) => key,
-    }),
-  }
-})
+vi.mock("@/i18n/locale-context", () =>
+  import("@/__tests__/mocks/locale-context").then((m) => m.identityLocaleMock()),
+)
 
 describe("GlobalSearch", () => {
   beforeEach(() => {

@@ -7,6 +7,7 @@ callbacks, QR generation failure).
 """
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -144,11 +145,21 @@ class TestShareRouteDialogInit:
 class TestShareRouteDialogCopyLink:
     """URL copy to clipboard behaviour."""
 
-    def test_copy_link_writes_to_clipboard(self, share_dialog):
-        # Use the real clipboard — clear it first, then verify content
+    def test_copy_link_writes_to_clipboard(self, share_dialog, qtbot):
+        # Use the real clipboard — clear it first, then verify content.
+        # The system clipboard is machine-global: parallel pytest-xdist
+        # workers (or any other clipboard user on the box) can clear or
+        # overwrite it between our setText() and the assertion — evidence:
+        # ``assert '' == 'https://oper.../route/abc123'`` in a full-suite
+        # shard run while the test is green in isolation.  Re-copy and retry
+        # briefly rather than failing on a foreign write.
         clipboard = QApplication.clipboard()
         clipboard.clear()
         share_dialog._on_copy_link()
+        deadline = time.monotonic() + 2.0
+        while clipboard.text() != SAMPLE_SHARE_URL and time.monotonic() < deadline:
+            share_dialog._on_copy_link()
+            qtbot.wait(25)
         assert clipboard.text() == SAMPLE_SHARE_URL
 
     def test_copy_link_shows_feedback_text(self, share_dialog):

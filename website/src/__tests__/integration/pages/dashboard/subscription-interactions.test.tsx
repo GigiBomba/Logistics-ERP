@@ -12,11 +12,6 @@ import {
 } from "@/services/queries"
 import { toast } from "sonner"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 vi.mock("@/services/queries", () => ({
   useSubscription: vi.fn(),
   useCreatePortalSession: vi.fn(),

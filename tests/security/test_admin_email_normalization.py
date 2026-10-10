@@ -188,11 +188,12 @@ class TestConsistencyAcrossEndpoints:
     """Verify that login and token verification use the same normalization."""
 
     def test_login_and_me_use_same_normalization(self):
-        """Both auth.py:321 and dependencies_security.py:82 now use strip+lower."""
-        # auth.py line 321:
-        #   if email == settings.admin_email.strip().lower():
-        # dependencies_security.py line 82:
-        #   if email == settings.admin_email.strip().lower():
-        #
-        # Both use the same expression, so they're consistent.
-        assert True
+        """Both auth.py:592 and dependencies_security.py:85 now use strip+lower."""
+        expected = "settings.admin_email.strip().lower()"
+        repo_root = os.path.join(os.path.dirname(__file__), "..", "..")
+        for relpath in ("backend/api/v1/auth.py", "backend/dependencies_security.py"):
+            with open(os.path.join(repo_root, relpath), encoding="utf-8") as fh:
+                src = fh.read()
+            assert expected in src, (
+                f"{relpath} must normalize admin_email with {expected!r}"
+            )

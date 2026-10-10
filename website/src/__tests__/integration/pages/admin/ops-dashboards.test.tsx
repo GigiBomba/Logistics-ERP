@@ -8,19 +8,6 @@ vi.mock("@/services/queries", () => ({
   useOpsDashboard: useOpsDashboardMock,
 }))
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 describe("OpsDashboardsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()

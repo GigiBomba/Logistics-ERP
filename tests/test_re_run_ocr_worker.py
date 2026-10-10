@@ -146,10 +146,8 @@ class TestReRunOcrWorkerSignals:
         by ensuring _on_progress itself does not raise under normal conditions.
         """
         worker, _ = worker_no_prefs
-        # Normal call succeeds
+        # The call is the smoke test: _on_progress itself must not raise.
         worker._on_progress("Test", 10)
-        # Verify the signal was processed by checking state
-        assert True  # no exception = pass
 
     def test_stage_changed_re_raises_other_errors(self, worker_no_prefs):
         """_on_progress re-raises RuntimeError when signal emit is broken."""

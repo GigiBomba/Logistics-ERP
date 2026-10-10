@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test"
 import type { UserRole } from "../../src/types"
-import { mockAuthAs, createUser, stabilizeHydration, type MockUser } from "../helpers"
+import { setupAuthedContext, createUser, stabilizeHydration, type MockUser } from "../helpers"
 
 /**
  * RBAC Boundary Tests
@@ -22,7 +22,8 @@ test.describe("RBAC Boundaries", () => {
   })
 
   async function gotoAdminOps(page: Page, user: MockUser) {
-    await mockAuthAs(page, user)
+    // stabilize: false — the beforeEach above already called stabilizeHydration.
+    await setupAuthedContext(page, { user, stabilize: false })
     // Ops data endpoints — return empty lists so the page renders for allowed roles
     await page.route("**/api/v1/ops**", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) })

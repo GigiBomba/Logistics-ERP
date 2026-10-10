@@ -19,10 +19,6 @@ vi.mock("@/services/queries", () => ({
   useRemoveMember: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const TRANSLOGISTICA_ORG = {
   id: "org-1",
   name: "TransLogistica SRL",

@@ -43,6 +43,25 @@ def _set_env():
     """
     tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
     tmp.close()
+    # Snapshot the originals BEFORE overwriting them so teardown can RESTORE
+    # instead of popping.  Popping left these vars missing for every later
+    # module in the worker: a subsequent import-time ``load_dotenv(.env)``
+    # (root ``main.py``, ``scripts/restore_data_from_backup.py``, …) then
+    # re-created ``OPERION_ENV=production``, and the autouse
+    # ``reset_singletons`` fixture raised RuntimeError in EVERY following
+    # test (``reload_settings()`` -> ``BackendSettings._check_admin_config``)
+    # — a ~1,280-test setup-error cascade in full-suite runs.
+    # (``monkeypatch`` cannot be used here: it is function-scoped and this
+    # fixture is module-scoped.)
+    _saved_env = {
+        k: os.environ.get(k)
+        for k in (
+            "OPERION_DB_PATH",
+            "OPERION_JWT_SECRET_KEY",
+            "OPERION_ENV",
+            "OPERION_API_KEY",
+        )
+    }
     os.environ["OPERION_DB_PATH"] = tmp.name
     os.environ["OPERION_JWT_SECRET_KEY"] = "test-jwt-secret-for-waitlist-tests"
     os.environ["OPERION_ENV"] = "development"
@@ -73,8 +92,11 @@ def _set_env():
             pass
         _deps._db_instance = None
     yield
-    for k in ("OPERION_DB_PATH", "OPERION_JWT_SECRET_KEY", "OPERION_ENV", "OPERION_API_KEY"):
-        os.environ.pop(k, None)
+    for k, v in _saved_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
     # Restore the engine env var (only if it was previously set) and the
     # Config.DB_ENGINE rebind so the module leaves no global state behind.
     if previous_db_engine_env is None:

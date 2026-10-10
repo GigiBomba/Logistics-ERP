@@ -5,11 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 
+import '../shared/mocks/mocks.dart';
 import 'package:operion_mobile/features/dispatcher/fleet/fleet_map_screen.dart';
 import 'package:operion_mobile/features/dispatcher/home/dispatcher_providers.dart';
 import 'package:operion_mobile/core/auth/auth_providers.dart';
-import 'package:operion_mobile/core/auth/biometric_service.dart';
-import 'package:operion_mobile/core/storage/secure_token_store.dart';
 import 'package:operion_mobile/core/network/api_client.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/shared/models/fleet_position.dart';
@@ -19,25 +18,6 @@ import 'package:operion_mobile/shared/widgets/shimmer_loader.dart';
 // Mock implementations
 // ---------------------------------------------------------------------------
 
-class _MockSecureTokenStore extends SecureTokenStore {
-  @override
-  Future<bool> hasTokens() async => false;
-  @override
-  Future<String?> getAccessToken() async => null;
-  @override
-  Future<String?> getRefreshToken() async => null;
-  @override
-  Future<void> saveTokens(String access, String refresh) async {}
-  @override
-  Future<void> clearTokens() async {}
-}
-
-class _MockBiometricService extends BiometricService {
-  @override
-  Future<bool> isAvailable() async => false;
-  @override
-  Future<bool> authenticate({required String reason}) async => false;
-}
 
 ApiClient _stubApiClient() => ApiClient.create(
       baseUrl: '',
@@ -101,8 +81,8 @@ Widget wrapFleetMapScreen({
 }) {
   return ProviderScope(
     overrides: [
-      secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
-      biometricServiceProvider.overrideWithValue(_MockBiometricService()),
+      secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
+      biometricServiceProvider.overrideWithValue(MockBiometricService()),
       apiClientProvider.overrideWithValue(_stubApiClient()),
       fleetPositionsProvider.overrideWith((ref) async => positions),
       isOfflineProvider.overrideWith((ref) => isOffline),
@@ -128,9 +108,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
+            secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
             biometricServiceProvider
-                .overrideWithValue(_MockBiometricService()),
+                .overrideWithValue(MockBiometricService()),
             apiClientProvider.overrideWithValue(_stubApiClient()),
             fleetPositionsProvider.overrideWith(
               (ref) => Completer<List<FleetPosition>>().future,
@@ -157,9 +137,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            secureTokenStoreProvider.overrideWithValue(_MockSecureTokenStore()),
+            secureTokenStoreProvider.overrideWithValue(MockSecureTokenStore()),
             biometricServiceProvider
-                .overrideWithValue(_MockBiometricService()),
+                .overrideWithValue(MockBiometricService()),
             apiClientProvider.overrideWithValue(_stubApiClient()),
             fleetPositionsProvider.overrideWith(
               (ref) => Future.error(Exception('Failed to load fleet data')),

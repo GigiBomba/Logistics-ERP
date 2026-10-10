@@ -42,6 +42,36 @@ def _save_env(*keys):
     return _restore
 
 
+def _snapshot_config_api_state() -> dict:
+    """Snapshot the API-key-relevant Config-class attributes.
+
+    ``AuthMiddleware.__init__`` freezes ``Config.API_KEY`` at app creation,
+    so a truthy value left behind here makes EVERY app built later in the
+    same worker reject requests without an ``X-API-Key`` header — the ~68
+    test cascade of ``401 {"detail":"API key required","error_code":
+    "auth/invalid-api-key"}`` seen in the sync/settings suites.  The values
+    are read off the LIVE ``config``/``backend.middleware.auth_middleware``
+    module objects so a snapshot taken before ``importlib.reload(config)``
+    (Finding #11) still restores onto the *current* Config class.
+    """
+    import config as _cfg_mod
+    import backend.middleware.auth_middleware as _mw_mod
+    return {
+        "config.API_KEY": _cfg_mod.Config.API_KEY,
+        "config.DB_PATH": _cfg_mod.Config.DB_PATH,
+        "mw.API_KEY": _mw_mod.Config.API_KEY,
+    }
+
+
+def _restore_config_api_state(snapshot: dict) -> None:
+    """Restore a ``_snapshot_config_api_state()`` snapshot (live objects)."""
+    import config as _cfg_mod
+    import backend.middleware.auth_middleware as _mw_mod
+    _cfg_mod.Config.API_KEY = snapshot["config.API_KEY"]
+    _cfg_mod.Config.DB_PATH = snapshot["config.DB_PATH"]
+    _mw_mod.Config.API_KEY = snapshot["mw.API_KEY"]
+
+
 @pytest.fixture(scope="module")
 def client(request):
     """Create a fresh TestClient per module run.
@@ -52,6 +82,12 @@ def client(request):
     """
     restore = _save_env("OPERION_API_KEY", "OPERION_ENCRYPTION_KEY", "OPERION_RATE_LIMIT")
     request.addfinalizer(restore)
+    # Config-class snapshot + restore: the env restore above alone is not
+    # enough — Finding #11 reloads ``config`` while OPERION_API_KEY is set,
+    # baking a truthy value into Config.API_KEY which then survives the env
+    # restore and enables the API-key middleware for every later module.
+    _config_snapshot = _snapshot_config_api_state()
+    request.addfinalizer(lambda: _restore_config_api_state(_config_snapshot))
     os.environ["OPERION_API_KEY"] = "test-api-key-for-testing"
     os.environ["OPERION_ENCRYPTION_KEY"] = "test-encryption-key-32-chars-long-for-aes!!"
     # High rate limit so the full test suite doesn't trigger 429
@@ -236,7 +272,7 @@ class TestFinding5_MultiTenantIsolation:
             if not fname.endswith(".py") or fname == "__init__.py":
                 continue
             filepath = os.path.join(repo_dir, fname)
-            with open(filepath) as f:
+            with open(filepath, encoding="utf-8") as f:
                 content = f.read()
             # Every repository should reference _company_filter
             if "_company_filter" not in content and "read-only" not in content.lower():
@@ -254,7 +290,7 @@ class TestFinding5_MultiTenantIsolation:
             if not fname.endswith(".py") or fname == "__init__.py":
                 continue
             filepath = os.path.join(repo_dir, fname)
-            with open(filepath) as f:
+            with open(filepath, encoding="utf-8") as f:
                 content = f.read()
             if "COLUMNS" not in content and "analytics" not in fname:
                 violations.append(fname)
@@ -380,16 +416,34 @@ class TestFinding11_DocsDisabledInProd:
 
     def test_docs_return_404_in_production(self):
         """Set env to production, recreate app, hit docs endpoints."""
-        original_env = os.environ.get("OPERION_ENV", "")
-        original_api_key = os.environ.get("OPERION_API_KEY", "")
-        original_internal_auth = os.environ.get("OPERION_SUPPORT_INTERNAL_AUTH", "")
+        import importlib
+
+        # None-aware snapshot — the old ``os.environ.get(k, "")`` conflated
+        # "absent" with "set to empty", so the finally-block pops below could
+        # not tell them apart.  Restore now pops ONLY when the var was
+        # originally absent (same discipline as tests/test_api/test_waitlist_api.py).
+        _saved_env = {
+            k: os.environ.get(k)
+            for k in (
+                "OPERION_ENV",
+                "OPERION_API_KEY",
+                "OPERION_SUPPORT_INTERNAL_AUTH",
+            )
+        }
+        # Config-class snapshot taken BEFORE the reload below.  Reloading
+        # ``config`` re-derives Config.API_KEY from the (temporarily mutated)
+        # env; restoring only the env afterwards would leave a truthy
+        # Config.API_KEY behind — and AuthMiddleware freezes Config.API_KEY at
+        # app creation, so every app built later in this worker would reject
+        # requests without an X-API-Key header (the 401
+        # auth/invalid-api-key cascade in the sync/settings suites).
+        _saved_config = _snapshot_config_api_state()
         os.environ["OPERION_ENV"] = "production"
         os.environ["OPERION_API_KEY"] = "test-api-key-for-docs-test"
         os.environ["OPERION_SUPPORT_INTERNAL_AUTH"] = "test-internal-auth"
         try:
             # Reload modules in dependency order so Config.API_KEY etc.
             # pick up the new env var values.
-            import importlib
             import config as root_config
             import backend.desktop_config
             import backend.middleware.auth_middleware
@@ -407,18 +461,11 @@ class TestFinding11_DocsDisabledInProd:
                     f"{path} returned {resp.status_code} in production (expected 404)"
                 )
         finally:
-            if original_env:
-                os.environ["OPERION_ENV"] = original_env
-            else:
-                os.environ.pop("OPERION_ENV", None)
-            if original_api_key:
-                os.environ["OPERION_API_KEY"] = original_api_key
-            else:
-                os.environ.pop("OPERION_API_KEY", None)
-            if original_internal_auth:
-                os.environ["OPERION_SUPPORT_INTERNAL_AUTH"] = original_internal_auth
-            else:
-                os.environ.pop("OPERION_SUPPORT_INTERNAL_AUTH", None)
+            for _k, _v in _saved_env.items():
+                if _v is None:
+                    os.environ.pop(_k, None)
+                else:
+                    os.environ[_k] = _v
             import config as root_config
             import backend.desktop_config
             import backend.middleware.auth_middleware
@@ -427,6 +474,11 @@ class TestFinding11_DocsDisabledInProd:
             importlib.reload(backend.desktop_config)
             importlib.reload(backend.middleware.auth_middleware)
             importlib.reload(backend.main)
+            # The reload re-derives Config from the restored env — but the
+            # module-scoped ``client`` fixture still has OPERION_API_KEY set,
+            # so Config.API_KEY comes back truthy.  Put the pre-test
+            # Config-class attributes back explicitly.
+            _restore_config_api_state(_saved_config)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -483,7 +535,7 @@ class TestFinding13_BcryptRounds:
         from backend.security import hash_password
         from backend.config import BackendSettings
 
-        original = os.environ.get("OPERION_BCRYPT_ROUNDS", "")
+        original = os.environ.get("OPERION_BCRYPT_ROUNDS")
         try:
             os.environ["OPERION_BCRYPT_ROUNDS"] = "10"
             settings = BackendSettings()
@@ -493,10 +545,12 @@ class TestFinding13_BcryptRounds:
             # The hash should start with $2b$10$ if 10 rounds were used
             assert h.startswith("$2b$10$"), f"Expected 10-round hash, got: {h[:7]}"
         finally:
-            if original:
-                os.environ["OPERION_BCRYPT_ROUNDS"] = original
-            else:
+            # Restore (pop only when originally absent) — never conflate
+            # "absent" with "set to empty string".
+            if original is None:
                 os.environ.pop("OPERION_BCRYPT_ROUNDS", None)
+            else:
+                os.environ["OPERION_BCRYPT_ROUNDS"] = original
 
 
 # ═════════════════════════════════════════════════════════════════════════════

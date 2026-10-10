@@ -15,10 +15,6 @@ import {
 } from "@/services/queries"
 import { createMockThemeContext, createMockAuthContext } from "@/test-utils"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 vi.mock("@/contexts/theme-provider", () => ({
   useTheme: vi.fn(),
 }))

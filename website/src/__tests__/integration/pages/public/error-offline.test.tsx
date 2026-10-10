@@ -2,19 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@/test-utils"
 import ErrorOfflinePage from "@/pages/public/error-offline"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: (_target, tag) => {
-        const Tag = tag as any
-        return ({ children, ...props }: any) => <Tag {...props}>{children}</Tag>
-      },
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("ErrorOfflinePage", () => {
   beforeEach(() => {
     // Default: simulate offline

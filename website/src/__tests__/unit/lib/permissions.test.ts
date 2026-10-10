@@ -26,7 +26,7 @@ const ALL_PERMISSIONS: Permission[] = [
 
 const ROLES: UserRole[] = ["owner", "admin", "manager", "dispatcher", "driver"]
 
-describe("PERMISSION_MATRIX", () => {
+describe.concurrent("PERMISSION_MATRIX", () => {
   it("defines an entry for every role", () => {
     for (const role of ROLES) {
       expect(Array.isArray(PERMISSION_MATRIX[role])).toBe(true)
@@ -69,7 +69,7 @@ describe("PERMISSION_MATRIX", () => {
   })
 })
 
-describe("getAllPermissions()", () => {
+describe.concurrent("getAllPermissions()", () => {
   it("returns the full list for each role", () => {
     expect(getAllPermissions("owner")).toHaveLength(ALL_PERMISSIONS.length)
     expect(getAllPermissions("admin")).toEqual(PERMISSION_MATRIX.admin)
@@ -89,7 +89,7 @@ describe("getAllPermissions()", () => {
   })
 })
 
-describe("hasPermission()", () => {
+describe.concurrent("hasPermission()", () => {
   it("returns true for permissions granted to the role", () => {
     expect(hasPermission("owner", "billing.manage")).toBe(true)
     expect(hasPermission("admin", "settings.manage")).toBe(true)

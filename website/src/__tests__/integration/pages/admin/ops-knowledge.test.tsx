@@ -16,19 +16,6 @@ vi.mock("@/services/queries", () => ({
   useOpsRejectKnowledgeDoc: useOpsRejectKnowledgeDocMock,
 }))
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const draft = {
   id: 5,
   doc_id: "DOC-101",

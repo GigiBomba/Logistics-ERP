@@ -50,6 +50,16 @@ function assertRestrictiveCsp(csp: string) {
 
 test.describe("CSP / security headers", () => {
   test.describe("live response headers (preview server)", () => {
+    // These headers are applied by e2e/serve-preview.mjs (reading public/_headers)
+    // and exist only in the preview server, not the vite dev server the playwright
+    // webServer boots. Gate on E2E_PREVIEW so the suite is green against dev while
+    // still enforcing the headers end-to-end when run against the preview server
+    // (vike build + serve-preview.mjs).
+    test.skip(
+      !process.env.E2E_PREVIEW,
+      "requires preview server (vike build + serve-preview.mjs)"
+    )
+
     for (const path of PUBLIC_PAGES) {
       test(`${path} serves Content-Security-Policy + security headers`, async ({ request }) => {
         const res = await request.get(path)

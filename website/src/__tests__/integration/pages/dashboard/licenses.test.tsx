@@ -10,10 +10,6 @@ vi.mock("@/services/queries", () => ({
   useRemoveLicenseDevice: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 const MOCK_LICENSES = [
   {
     id: 1,

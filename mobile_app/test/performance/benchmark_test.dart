@@ -5,6 +5,7 @@ import 'package:operion_mobile/shared/widgets/app_button.dart';
 import 'package:operion_mobile/shared/widgets/app_card.dart';
 import 'package:operion_mobile/shared/widgets/app_text_field.dart';
 import 'package:operion_mobile/shared/widgets/empty_state.dart';
+import '../shared/test_utils.dart';
 
 /// Helper to wrap a widget in [MaterialApp] for testing.
 Widget wrapInApp(Widget child) {
@@ -22,11 +23,11 @@ Future<double> measureBuildTime(
   for (int i = 0; i < iterations; i++) {
     // Rebuild to a plain container first to clear the previous widget.
     await tester.pumpWidget(wrapInApp(const SizedBox.shrink()));
-    await tester.pumpAndSettle();
+    await settle(tester);
 
     final stopwatch = Stopwatch()..start();
     await tester.pumpWidget(wrapInApp(builder()));
-    await tester.pumpAndSettle();
+    await settle(tester);
     stopwatch.stop();
     durations.add(stopwatch.elapsedMicroseconds);
   }
@@ -106,7 +107,7 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await settle(tester);
     stopwatch.stop();
 
     print('  Composite (all 4)  .......  ${stopwatch.elapsedMicroseconds} µs');

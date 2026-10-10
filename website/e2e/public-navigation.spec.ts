@@ -56,7 +56,9 @@ test.describe("Public Navigation", () => {
   test("about page loads", async ({ page }) => {
     await page.goto("/about")
     await expect(page.getByRole("heading", { name: /about operion/i })).toBeVisible()
-    await expect(page.getByText(/our story/i)).toBeVisible()
+    // Scope to the <h2>: getByText(/our story/i) also matches <title>
+    // ("About Operion … | Our Story") → strict-mode violation.
+    await expect(page.getByRole("heading", { name: /our story/i })).toBeVisible()
     await expect(page.getByText(/our values/i).first()).toBeVisible()
   })
 
@@ -67,7 +69,15 @@ test.describe("Public Navigation", () => {
   })
 
   test("FAQ page accordion works", async ({ page }) => {
+    // The question is server-rendered: visible long before React attaches the
+    // Card onClick, so an early click is silently lost (see waitForHydration
+    // docs — vike compiles routes on demand and hydration lags several seconds
+    // under full-run load). The jsdom suite renders already-hydrated trees, so
+    // it never hit this e2e-only timing gap. The accordion itself works in a
+    // real browser once handlers are attached — no app change needed.
+    stabilizeHydration(page)
     await page.goto("/faq")
+    await waitForHydration(page)
     await expect(page.getByText(/what is operion/i)).toBeVisible()
     await page.getByText(/what is operion/i).click()
     await expect(page.getByText(/operion is an ai logistics operating system/i)).toBeVisible()

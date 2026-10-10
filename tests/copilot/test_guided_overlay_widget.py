@@ -1155,9 +1155,15 @@ class TestSignalSlotConnections:
                           target_id="driver_form_name")
         overlay.start_tour([step])
         if hasattr(overlay, "_input_filter") and overlay._input_filter is not None:
-            # PySide6 requires a signal name string, not SignalInstance
-            # The connection was made in _install_input_filter
-            assert True  # signal connection established
+            # PySide6 requires a signal name string, not SignalInstance (so
+            # receivers()/eventFilters() are not usable).  Verify the
+            # connection functionally: emitting input_detected must reach
+            # _on_input_detected, which removes the filter.
+            overlay._input_filter.input_detected.emit()
+            assert overlay._input_filter is None, (
+                "input_detected must be connected to _on_input_detected "
+                "(emitting it should remove the filter)"
+            )
         else:
             # Without a matching target widget, _install_input_filter is a no-op
             pass

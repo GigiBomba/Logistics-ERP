@@ -5,6 +5,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# xdist gate removed 2026-10-10. The native crash that killed long serial
+# sessions in the ``view_with_db`` fixture was traced (bisection over the
+# shard-8 serial prefix) to leaked, unparented ``SyncConflictDialog`` instances
+# in tests/test_sync_ui_integration.py: left to the cyclic GC, they were
+# finalized during a later test's event loop (this fixture's ``qtbot.wait``)
+# and crashed the process. Those tests now register every dialog with qtbot
+# (close + deleteLater in pytest-qt teardown); the reproducing 1,004-test
+# serial prefix (49 files + this file) runs green, and the suite-wide
+# loadscope crash-wedge fix in tests/conftest.py removes the hang risk if a
+# native crash ever recurs. Do not re-add a skip gate without a fresh
+# reproduction.
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

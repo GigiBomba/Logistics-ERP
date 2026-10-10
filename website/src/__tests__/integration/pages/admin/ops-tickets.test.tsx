@@ -12,19 +12,6 @@ vi.mock("@/services/queries", () => ({
   useOpsTicket: useOpsTicketMock,
 }))
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const ticket = {
   issue_id: "ISS-1",
   summary: "Login fails after MFA",

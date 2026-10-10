@@ -9,10 +9,6 @@ vi.mock("@/api/endpoints", () => ({
   organizationsApi: { acceptInvitation: vi.fn() },
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 describe("AcceptInvitationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()

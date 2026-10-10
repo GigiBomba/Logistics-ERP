@@ -546,7 +546,7 @@ class TestValidateCmrCoverage:
             "distance_km": "unknown",
         }
         issues = validate_cmr(data)  # should not raise
-        assert True
+        assert not any(field == "distance_km" for _, field, _ in issues)
 
     def test_payer_lowercase_mixed(self):
         """Carriage payer 'Sender' (capitalized) should be valid."""

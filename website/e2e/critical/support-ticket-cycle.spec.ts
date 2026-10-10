@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { mockAuthAs, createUser, stabilizeHydration } from "../helpers"
+import { setupAuthedContext, createUser } from "../helpers"
 
 /**
  * Support Ticket Cycle Tests
@@ -22,11 +22,13 @@ const MOCK_TICKETS = [
 
 test.describe("Support Ticket Cycle", () => {
   test.beforeEach(async ({ page }) => {
-    stabilizeHydration(page)
     // Authenticate via the app's cookie-only refresh bootstrap (see e2e/helpers.ts).
     // The routes MUST be registered before page.goto so they intercept the
     // hydration fetches (vike SSR) instead of hitting the real API proxy.
-    await mockAuthAs(page, createUser("user", { id: "2", email: "user@operionerp.xyz", name: "Regular User" }))
+    // setupAuthedContext = stabilizeHydration + mockAuthAs.
+    await setupAuthedContext(page, {
+      user: createUser("user", { id: "2", email: "user@operionerp.xyz", name: "Regular User" }),
+    })
   })
 
   test("submit a bug report, see it in my tickets", async ({ page }) => {

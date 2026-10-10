@@ -42,7 +42,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: Default DSN used when ``OPERION_TEST_POSTGRES_DSN`` is not set.
-DEFAULT_TEST_DSN = "postgresql://operion:operion_test@localhost:5432/operion_test"
+#:
+#: The password defaults to ``OPERION_TEST_POSTGRES_PASSWORD`` (fallback
+#: ``operion_test_ci``) to match BOTH docker-compose.test.yml
+#: (``${OPERION_TEST_POSTGRES_PASSWORD:-operion_test_ci}``) and CI
+#: (.github/workflows/test-python.yml sets operion_test_ci).  The old
+#: hard-coded ``operion_test`` password failed authentication against the
+#: compose-provisioned container, so ``_ensure_database`` caught the
+#: OperationalError and silently skipped the entire integration suite
+#: with a misleading "PostgreSQL is not available" reason — even on
+#: machines where PostgreSQL was up and healthy.
+_DEFAULT_PG_PASSWORD = os.environ.get("OPERION_TEST_POSTGRES_PASSWORD", "operion_test_ci")
+DEFAULT_TEST_DSN = f"postgresql://operion:{_DEFAULT_PG_PASSWORD}@localhost:5432/operion_test"
 
 #: Name of the database (parsed from the DSN).
 #: We keep it separate so we can create/drop it against the ``postgres`` DB.
@@ -226,11 +237,44 @@ def pg_db(pg_session: Any) -> Generator[Any, None, None]:
     # psycopg2 connections do not expose .execute() directly;
     # we must create a cursor first.
     cur = pg_session.cursor()
+    # Explicit BEGIN: teardown ends each test with a full ROLLBACK, and
+    # psycopg2 does not re-open a transaction before a transaction command
+    # like SAVEPOINT ("SAVEPOINT can only be used in transaction blocks").
+    # A BEGIN inside an existing transaction is only a server-side WARNING,
+    # so this is safe unconditionally.
+    cur.execute("BEGIN")
     cur.execute("SAVEPOINT test_sp")
     cur.close()
     yield pg_session
     cur = pg_session.cursor()
-    cur.execute("ROLLBACK TO SAVEPOINT test_sp")
+    # Full ROLLBACK instead of ``ROLLBACK TO SAVEPOINT test_sp``.
+    #
+    # Both end the test with every row written during the test discarded,
+    # so per-test isolation is unchanged — but a savepoint rollback does
+    # NOT release *sequence* relation locks (``RowExclusiveLock`` taken by
+    # ``nextval()`` and by ``ALTER SEQUENCE ... RESTART`` in ``test_data``),
+    # while a full ROLLBACK does (verified against PostgreSQL: the sequence
+    # locks survive ``ROLLBACK TO SAVEPOINT`` until the transaction ends).
+    #
+    # ``pg_session`` runs ONE transaction for the whole worker session, so
+    # with savepoint-only teardown each worker kept stale
+    # ``RowExclusiveLock``s on ``companies_id_seq`` & friends for its entire
+    # lifetime.  Under pytest-xdist that deadlocked deterministically:
+    # worker A executing the seed's ``ALTER SEQUENCE companies_id_seq
+    # RESTART`` (needs ``ShareRowExclusiveLock`` on the sequence) waited on
+    # worker B's stale lock, while worker B waited at
+    # ``INSERT INTO companies id=1`` on worker A's uncommitted row —
+    # ``psycopg2.errors.DeadlockDetected`` at conftest test_data seeding.
+    # Ending the transaction at every test boundary clears those locks, so
+    # the two workers can no longer form the cycle (a worker waiting at the
+    # seed INSERT holds no sequence lock, so the other worker's
+    # ``ALTER SEQUENCE`` always completes).
+    #
+    # The next test's setup re-opens the transaction with ``BEGIN`` and
+    # recreates ``SAVEPOINT test_sp``, and mid-test ``ROLLBACK TO SAVEPOINT
+    # test_sp`` semantics used by ``_Psycopg2Connection`` are unaffected —
+    # the savepoint is recreated before every test.
+    cur.execute("ROLLBACK")
     cur.close()
 
 
@@ -455,6 +499,19 @@ def test_data(
         def test_something(pg_db, test_data):
             uid = test_data["user_id"]
             # ...
+
+    Concurrency
+    -----------
+    The seed rows stay uncommitted until ``pg_db`` tears the test down.
+    Two xdist workers seeding at once used to deadlock deterministically
+    (worker A at ``ALTER SEQUENCE companies_id_seq RESTART`` waiting on
+    worker B's stale ``RowExclusiveLock`` on the sequence, worker B at
+    ``INSERT INTO companies id=1`` waiting on worker A's uncommitted row).
+    The fix lives in ``pg_db``, which now ends the worker's transaction
+    with a full ``ROLLBACK`` at every test boundary so those sequence
+    locks cannot accumulate across tests.  Isolation is unchanged: every
+    test still gets a freshly seeded savepoint that is rolled back at
+    teardown.
     """
     cur = pg_db.cursor()
     from datetime import datetime as _dt
@@ -506,6 +563,7 @@ def test_data(
     # collide with our forced ids.
     for seq_table in ("companies", "users", "clients", "trucks", "drivers"):
         cur.execute(f"ALTER SEQUENCE {seq_table}_id_seq RESTART WITH 1000")
+    cur.close()
 
     return {
         "company_id": company_id,

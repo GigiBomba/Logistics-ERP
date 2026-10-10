@@ -1,4 +1,33 @@
 import { test, expect, type Page } from "@playwright/test"
+import { stabilizeHydration, waitForHydration } from "./helpers"
+
+/**
+ * Wait for hydration AND for the lazily-loaded route component to replace the
+ * PageSuspense fallback inside <main>.
+ *
+ * waitForHydration can pass on the shell (header/footer) while the route chunk
+ * is still compiling in `vike dev` (~7s+ first hit under parallel load) —
+ * `main` then still contains only the lone [role="status"] spinner and the
+ * default 5s assertions time out. Gate on route content first.
+ */
+async function waitForRouteContent(page: Page): Promise<void> {
+  await waitForHydration(page)
+  await page.waitForFunction(
+    () => {
+      const main = document.querySelector("main")
+      if (!main) return false
+      // PageSuspense fallback renders only div > svg + sr-only span — no
+      // headings, links, forms, tables, etc.
+      return (
+        main.querySelector(
+          "h1, h2, h3, h4, a, button, input, select, textarea, table, article, section, nav, form, ul, ol",
+        ) !== null
+      )
+    },
+    undefined,
+    { timeout: 25_000 },
+  )
+}
 
 // ─── Deterministic API mocks ─────────────────────────────────────────────
 //
@@ -146,11 +175,19 @@ async function mockStatusApi(page: Page) {
 }
 
 test.describe("V2 Public Navigation", () => {
+  test.beforeEach(async ({ page }) => {
+    // Pin navigator.onLine to match SSR (avoids the offline-banner hydration
+    // mismatch churn on every page) and seed consent so the cookie dialog can
+    // never intercept clicks.
+    stabilizeHydration(page)
+  })
+
   /* ─── Blog Section ─────────────────────────────────────────────── */
 
   test("/blog page loads", async ({ page }) => {
     await mockBlogApi(page)
     await page.goto("/blog")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /blog/i })).toBeVisible()
     // The blog "All" filter button is "All (N)" — the cookie banner also has
     // "Accept All"/"Reject All" buttons, so scope to the exact count label.
@@ -162,6 +199,7 @@ test.describe("V2 Public Navigation", () => {
   test("/blog/:slug loads blog article", async ({ page }) => {
     await mockBlogApi(page)
     await page.goto("/blog/operion-ai-copilot-intelligent-logistics-automation")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /operion ai co-pilot/i })).toBeVisible()
     await expect(page.getByText(/min read/i).first()).toBeVisible()
     // The intro paragraph also mentions "design philosophy" — scope to the h2 section heading.
@@ -171,6 +209,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/blog/category/:category filters by category", async ({ page }) => {
     await page.goto("/blog/category/engineering")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /engineering/i })).toBeVisible()
     await expect(page.getByText(/all articles in the engineering/i)).toBeVisible()
   })
@@ -178,6 +217,7 @@ test.describe("V2 Public Navigation", () => {
   test("/blog/author/:id renders author page", async ({ page }) => {
     await mockBlogApi(page)
     await page.goto("/blog/author/sarah-chen")
+    await waitForRouteContent(page)
     // Author name renders in both the page header (h1) and the profile card (h2).
     await expect(page.getByRole("heading", { name: /sarah chen/i }).first()).toBeVisible()
     // Role renders in the page description ("Engineering Lead at Operion") and the profile card.
@@ -190,6 +230,7 @@ test.describe("V2 Public Navigation", () => {
   test("/changelog page loads", async ({ page }) => {
     await mockChangelogApi(page)
     await page.goto("/changelog")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /changelog/i })).toBeVisible()
     await expect(page.getByText(/1\.0\.0/i)).toBeVisible()
     await expect(page.getByText(/0\.9\.0/i)).toBeVisible()
@@ -198,6 +239,7 @@ test.describe("V2 Public Navigation", () => {
   test("/roadmap page loads", async ({ page }) => {
     await mockRoadmapApi(page)
     await page.goto("/roadmap")
+    await waitForRouteContent(page)
     // The h1 "Roadmap" and the h2 "Want to influence the roadmap?" both match — use .first().
     await expect(page.getByRole("heading", { name: /roadmap/i }).first()).toBeVisible()
     // The "All" status filter button renders "View all" — cookie banner buttons ("Accept All") also match /all/i.
@@ -211,6 +253,7 @@ test.describe("V2 Public Navigation", () => {
   test("/status page loads", async ({ page }) => {
     await mockStatusApi(page)
     await page.goto("/status")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /system status/i })).toBeVisible()
     // The footer status link also reads "All systems operational" — scope to the banner heading.
     await expect(page.getByRole("heading", { name: /all systems operational/i })).toBeVisible()
@@ -226,6 +269,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/security page loads", async ({ page }) => {
     await page.goto("/security")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /security at operion/i })).toBeVisible()
     await expect(page.getByText(/encryption in transit/i)).toBeVisible()
     await expect(page.getByText(/^access control$/i)).toBeVisible()
@@ -237,6 +281,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/developers page loads", async ({ page }) => {
     await page.goto("/developers")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /developer resources/i })).toBeVisible()
     await expect(page.getByText(/toolkit/i).first()).toBeVisible()
     await expect(page.getByText(/api reference/i)).toBeVisible()
@@ -246,6 +291,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/developers/toolkit page loads", async ({ page }) => {
     await page.goto("/developers/toolkit")
+    await waitForRouteContent(page)
     // h1 "Operion Toolkit" and the download card h2 "Operion Toolkit 1.0.0" both match — anchor the h1.
     await expect(page.getByRole("heading", { name: /^operion toolkit$/i })).toBeVisible()
     await expect(page.getByRole("link", { name: /download toolkit/i })).toBeVisible()
@@ -262,6 +308,7 @@ test.describe("V2 Public Navigation", () => {
   test("/tutorials page loads", async ({ page }) => {
     await mockTutorialsApi(page)
     await page.goto("/tutorials")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /tutorials/i })).toBeVisible()
     await expect(page.getByPlaceholder(/search tutorials/i)).toBeVisible()
     // The cookie banner also has "Accept All"/"Reject All" — match the exact "All" filter tag.
@@ -275,6 +322,7 @@ test.describe("V2 Public Navigation", () => {
   test("/tutorials/:slug loads tutorial detail", async ({ page }) => {
     await mockTutorialsApi(page)
     await page.goto("/tutorials/your-first-route-plan")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /your first route plan/i })).toBeVisible()
     // Category renders as both the header badge and the tag below the content.
     await expect(page.getByText(/beginner/i).first()).toBeVisible()
@@ -288,6 +336,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/ home page has V2 sections", async ({ page }) => {
     await page.goto("/")
+    await waitForRouteContent(page)
     await expect(page.getByText("6", { exact: true })).toBeVisible()
     await expect(page.getByText("Autonomous Workflows", { exact: true })).toBeVisible()
     await expect(page.getByText("Platform Apps", { exact: true })).toBeVisible()
@@ -303,6 +352,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/features has comparison table and FAQ", async ({ page }) => {
     await page.goto("/features")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /autonomous logistics workflows/i })).toBeVisible()
     await expect(page.getByText(/ai route optimization/i)).toBeVisible()
     await expect(page.getByText(/live fleet visibility/i)).toBeVisible()
@@ -311,6 +361,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/pricing has comparison table, FAQ and enterprise", async ({ page }) => {
     await page.goto("/pricing")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /simple, transparent pricing/i })).toBeVisible()
     await expect(page.getByText(/coming soon/i)).toBeVisible()
     await expect(page.getByText(/pricing faq/i)).toBeVisible()
@@ -319,6 +370,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/download has installation, release history, checksums, toolkit", async ({ page }) => {
     await page.goto("/download")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /download operion desktop/i })).toBeVisible()
     // "Installation Instructions" is a substring of "Uninstallation Instructions" — anchor it.
     await expect(page.getByRole("heading", { name: /^installation instructions$/i })).toBeVisible()
@@ -329,6 +381,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/about has tech stack, timeline, security philosophy", async ({ page }) => {
     await page.goto("/about")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /about operion/i })).toBeVisible()
     await expect(page.getByText(/technology stack/i)).toBeVisible()
     await expect(page.getByText(/python & pyside6/i)).toBeVisible()
@@ -339,6 +392,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/mission has vision, values, commitments", async ({ page }) => {
     await page.goto("/mission")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /our mission/i })).toBeVisible()
     await expect(page.getByText(/our vision/i)).toBeVisible()
     await expect(page.getByText(/what we believe/i)).toBeVisible()
@@ -349,6 +403,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/faq has category tabs and search", async ({ page }) => {
     await page.goto("/faq")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /frequently asked questions/i })).toBeVisible()
     await expect(page.getByPlaceholder(/search frequently asked questions/i)).toBeVisible()
     await expect(page.getByRole("tab", { name: /general/i })).toBeVisible()
@@ -359,6 +414,7 @@ test.describe("V2 Public Navigation", () => {
 
   test("/contact has contact methods and response times", async ({ page }) => {
     await page.goto("/contact")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /get in touch/i })).toBeVisible()
     await expect(page.getByLabel("Name")).toBeVisible()
     await expect(page.getByLabel("Email")).toBeVisible()

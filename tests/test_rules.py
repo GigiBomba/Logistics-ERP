@@ -254,8 +254,8 @@ class TestThreadSafety:
                 futures.append(ex.submit(worker_get))
                 futures.append(ex.submit(worker_set))
             results = [f.result() for f in futures]
-        # No crash — basic sanity
-        assert True
+        # Every submitted worker completed (10 gets + 10 sets).
+        assert len(results) == 20
 
     def test_double_checked_locking_blocks_duplicate_instance(self):
         """Verify __new__ double-checked locking prevents two instances."""

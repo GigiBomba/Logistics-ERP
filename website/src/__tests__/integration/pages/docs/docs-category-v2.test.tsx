@@ -3,11 +3,6 @@ import { render, screen } from "@/test-utils"
 import { Routes, Route } from "react-router"
 import DocsCategoryPage from "@/pages/docs/docs-category"
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
-
 describe("DocsCategoryPage", () => {
   // ── Docs Home (no category param) ────────────────────────────────
 

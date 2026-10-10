@@ -9,7 +9,9 @@ import 'package:operion_mobile/core/auth/auth_providers.dart';
 import 'package:operion_mobile/core/i18n/app_localizations.dart';
 import 'package:operion_mobile/features/driver/models/route_share_geometry.dart';
 import 'package:operion_mobile/features/driver/route_share/providers/route_share_providers.dart';
-import 'package:operion_mobile/features/driver/route_share/screens/route_share_nav_screen.dart';
+import 'package:operion_mobile/features/driver/route_share/screens/route_share_nav_screen.dart';
+import '../../../shared/test_utils.dart';
+
 
 // ── Fake geometry data ──────────────────────────────────────────────────────
 
@@ -88,7 +90,7 @@ void main() {
     testWidgets('shows error message and retry button on fetch failure',
         (tester) async {
       await tester.pumpWidget(wrapRouteShareScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Retry icon button
       expect(find.byIcon(Icons.refresh), findsOneWidget);
@@ -99,14 +101,14 @@ void main() {
 
     testWidgets('tapping retry re-triggers the provider', (tester) async {
       await tester.pumpWidget(wrapRouteShareScreen());
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Error state visible
       expect(find.text('An error occurred'), findsOneWidget);
 
       // Tap retry
       await tester.tap(find.byIcon(Icons.refresh));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Provider re-evaluates — since geometry is still null it errors again
       expect(find.text('An error occurred'), findsOneWidget);
@@ -121,7 +123,7 @@ void main() {
         (tester) async {
       final emptyGeometry = _testGeometry(pointCount: 0);
       await tester.pumpWidget(wrapRouteShareScreen(geometry: emptyGeometry));
-      await tester.pumpAndSettle();
+      await settle(tester);
 
       // Empty state text from localizations (English)
       expect(find.text('No route data'), findsOneWidget);
@@ -157,7 +159,7 @@ void main() {
       await tester.pump();
 
       // Screen rendered without crashing
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.byType(RouteShareNavScreen), findsOneWidget);
       expect(errors, isNotEmpty); // tile errors were caught
     });
   });

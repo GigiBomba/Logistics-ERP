@@ -19,10 +19,6 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 describe("ResetPasswordPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()

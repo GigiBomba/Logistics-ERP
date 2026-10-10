@@ -34,10 +34,6 @@ vi.mock("@/contexts/theme-provider", () => ({
   useTheme: vi.fn(),
 }))
 
-vi.mock("motion/react", () => ({
-  motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
-}))
-
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))

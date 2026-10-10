@@ -1,5 +1,29 @@
-import { test, expect } from "@playwright/test"
-import { mockAuthAs, createUser, stabilizeHydration } from "../helpers"
+import { test, expect, type Page } from "@playwright/test"
+import { setupAuthedContext, createUser, stabilizeHydration, waitForHydration } from "../helpers"
+
+/**
+ * Wait for hydration AND for the lazily-loaded route component to replace the
+ * PageSuspense fallback inside <main>. waitForHydration can pass on the shell
+ * while the route chunk is still compiling in `vike dev` — `main` then still
+ * contains only the lone [role="status"] spinner and the default 5s
+ * assertions time out on first hit of a cold route.
+ */
+async function waitForRouteContent(page: Page): Promise<void> {
+  await waitForHydration(page)
+  await page.waitForFunction(
+    () => {
+      const main = document.querySelector("main")
+      if (!main) return false
+      return (
+        main.querySelector(
+          "h1, h2, h3, h4, a, button, input, select, textarea, table, article, section, nav, form, ul, ol",
+        ) !== null
+      )
+    },
+    undefined,
+    { timeout: 25_000 },
+  )
+}
 
 /**
  * Public Navigation Tests
@@ -29,17 +53,16 @@ test.describe("Public Navigation", () => {
     // resource" — which this test counts as a console error. Mock the cookie
     // refresh bootstrap + /me (and all data endpoints) so the page is
     // deterministic and free of expected network errors.
-    await page.route("**/api/v1/**", async (route) => {
-      const url = route.request().url()
-      if (url.includes("/api/v1/auth/refresh") || url.includes("/api/v1/auth/me")) {
-        await route.continue()
-        return
-      }
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) })
+    // stubData: true registers the /api/v1/** catch-all BEFORE the auth mocks
+    // (reverse-match order → auth routes win); stabilize: false — beforeEach.
+    await setupAuthedContext(page, {
+      user: createUser("driver"),
+      stubData: true,
+      stabilize: false,
     })
-    await mockAuthAs(page, createUser("driver"))
 
     await page.goto("/")
+    await waitForRouteContent(page)
     await expect(page).toHaveTitle(/Operion/)
     await expect(page.getByRole("heading", { name: /The Complete Logistics Operating System/i })).toBeVisible()
     await expect(page.getByRole("link", { name: /waitlist|early access/i }).first()).toBeVisible()
@@ -51,6 +74,7 @@ test.describe("Public Navigation", () => {
 
   test("features page loads", async ({ page }) => {
     await page.goto("/features")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Autonomous Logistics Workflows/i })).toBeVisible()
     // No 500-style content
     await expect(page.getByText(/internal server error/i)).not.toBeVisible()
@@ -58,6 +82,7 @@ test.describe("Public Navigation", () => {
 
   test("pricing page loads with plan sections", async ({ page }) => {
     await page.goto("/pricing")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Simple, Transparent Pricing/i })).toBeVisible()
     await expect(page.getByText("Coming Soon")).toBeVisible()
     await expect(page.getByText("Pricing FAQ")).toBeVisible()
@@ -65,6 +90,7 @@ test.describe("Public Navigation", () => {
 
   test("download page loads", async ({ page }) => {
     await page.goto("/download")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Download Operion Desktop/i })).toBeVisible()
     // The page renders both Android and iOS CTAs — assert the first one (avoid
     // strict-mode violation from multiple matches).
@@ -73,21 +99,25 @@ test.describe("Public Navigation", () => {
 
   test("about page loads", async ({ page }) => {
     await page.goto("/about")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /About Operion/i })).toBeVisible()
   })
 
   test("mission page loads", async ({ page }) => {
     await page.goto("/mission")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Our Mission/i })).toBeVisible()
   })
 
   test("FAQ page loads with accordion", async ({ page }) => {
     await page.goto("/faq")
+    await waitForRouteContent(page)
     await expect(page.getByText(/What is Operion/i)).toBeVisible()
   })
 
   test("contact page loads with form", async ({ page }) => {
     await page.goto("/contact")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Get in Touch/i })).toBeVisible()
     await expect(page.locator("input#name, input[placeholder*='Name']").first()).toBeVisible()
     await expect(page.locator("input#email, input[type='email']").first()).toBeVisible()
@@ -96,34 +126,40 @@ test.describe("Public Navigation", () => {
 
   test("privacy page loads", async ({ page }) => {
     await page.goto("/privacy")
+    await waitForRouteContent(page)
     // TOC anchor link + section heading both contain the text — scope to heading.
     await expect(page.getByRole("heading", { name: /Information We Collect/i })).toBeVisible()
   })
 
   test("terms page loads", async ({ page }) => {
     await page.goto("/terms")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Acceptance of Terms/i })).toBeVisible()
   })
 
   test("blog page loads", async ({ page }) => {
     await page.goto("/blog")
+    await waitForRouteContent(page)
     await expect(page.getByRole("heading", { name: /Blog/i })).toBeVisible()
   })
 
   test("docs home loads", async ({ page }) => {
     await page.goto("/docs")
+    await waitForRouteContent(page)
     // Sidebar nav + page heading both contain the text — use a heading role.
     await expect(page.getByRole("heading", { name: /Getting Started/i }).first()).toBeVisible()
   })
 
   test("waitlist page loads", async ({ page }) => {
     await page.goto("/waitlist")
+    await waitForRouteContent(page)
     await expect(page.locator("#company_name")).toBeVisible()
     await expect(page.locator("#email")).toBeVisible()
   })
 
   test("404 page shows for unknown routes", async ({ page }) => {
     await page.goto("/nonexistent-page")
+    await waitForRouteContent(page)
     await expect(page.getByText("404")).toBeVisible()
     // getByText also hits the <title> — scope to the h1 heading.
     await expect(page.getByRole("heading", { name: /page not found/i })).toBeVisible()
@@ -144,6 +180,7 @@ test.describe("Public Navigation", () => {
 
     for (const { path, heading } of v3Routes) {
       await page.goto(path)
+      await waitForRouteContent(page)
       // .first() — the H1 (exact) is the page title; broader sub-headings may
       // also match the same words, so never rely on a single match.
       await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible()
@@ -161,6 +198,7 @@ test.describe("Public Navigation", () => {
     ]
     for (const path of industryPages) {
       await page.goto(path)
+      await waitForRouteContent(page)
       // Should not see 500 page or "not found" page
       await expect(page.getByText("404")).not.toBeVisible()
       await expect(page.getByText(/internal server error/i)).not.toBeVisible()

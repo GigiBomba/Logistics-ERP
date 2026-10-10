@@ -493,7 +493,7 @@ class TestRepositoryPurity:
         repo_dir = os.path.join(os.path.dirname(__file__), "..", "repositories")
         for f in sorted(glob.glob(os.path.join(repo_dir, "*.py"))):
             try:
-                ast.parse(open(f).read())
+                ast.parse(open(f, encoding="utf-8").read())
             except SyntaxError as e:
                 pytest.fail(f"Syntax error in {f}: {e}")
 
@@ -504,7 +504,7 @@ class TestRepositoryPurity:
         repo_dir = os.path.join(os.path.dirname(__file__), "..", "repositories")
         offenders = []
         for f in sorted(glob.glob(os.path.join(repo_dir, "*.py"))):
-            with open(f) as fh:
+            with open(f, encoding="utf-8") as fh:
                 try:
                     tree = ast.parse(fh.read())
                 except SyntaxError:

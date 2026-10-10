@@ -3,19 +3,6 @@ import { render, screen, fireEvent, waitFor } from "@/test-utils"
 import userEvent from "@testing-library/user-event"
 import { LiveChat } from "@/components/shared/live-chat"
 
-const { motionMock } = vi.hoisted(() => {
-  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
-  return {
-    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
-  }
-})
-
-vi.mock("motion/react", () => ({
-  motion: motionMock,
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 const { sendMessageMock } = vi.hoisted(() => ({
   sendMessageMock: vi.fn(),
 }))

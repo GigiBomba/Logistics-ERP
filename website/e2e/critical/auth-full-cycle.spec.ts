@@ -1,5 +1,12 @@
-import { test, expect, type Page } from "@playwright/test"
-import { mockAuthAs, mockLoginFlow, createUser, stabilizeHydration, waitForHydration, type MockUser } from "../helpers"
+import { test, expect } from "@playwright/test"
+import {
+  setupAuthedContext,
+  createUser,
+  loginAs,
+  stabilizeHydration,
+  waitForHydration,
+  type MockUser,
+} from "../helpers"
 
 /**
  * Auth Full Cycle
@@ -15,12 +22,6 @@ test.describe("Auth Full Cycle", () => {
     stabilizeHydration(page)
   })
 
-  async function mockLogout(page: Page) {
-    await page.route("**/api/v1/auth/logout", async (route) => {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) })
-    })
-  }
-
   test("register, login, logout, login again", async ({ page }) => {
     const email = `test-${Date.now()}@operion.dev`
     const password = "TestPass123!"
@@ -32,9 +33,9 @@ test.describe("Auth Full Cycle", () => {
 
     // Session-wide auth: cookie-refresh bootstrap + login + me + logout.
     // Registered BEFORE any goto so they intercept hydration fetches (SSR).
-    await mockAuthAs(page, user)
-    await mockLoginFlow(page, user)
-    await mockLogout(page)
+    // setupAuthedContext = mockAuthAs + mockLoginFlow + mockLogout (the
+    // beforeEach above already stabilized hydration → stabilize: false).
+    await setupAuthedContext(page, { user, login: true, logout: true, stabilize: false })
     await page.route("**/api/v1/registration/register", async (route) => {
       await route.fulfill({
         status: 201,
@@ -62,16 +63,8 @@ test.describe("Auth Full Cycle", () => {
     await expect(page.getByText(/check your email/i)).toBeVisible()
 
     // ─── Login ─────────────────────────────────────────────────
-    await page.goto("/login")
-    await waitForHydration(page)
-    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible()
-
-    await page.fill("#email", email)
-    await page.fill("#password", password)
-    await page.click('button[type="submit"]')
-
-    // Should land on dashboard
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 })
+    // goto /login → hydration gate → assert the login card copy → submit.
+    await loginAs(page, { email, password, heading: /welcome back/i })
 
     // ─── Logout ────────────────────────────────────────────────
     // Open the user menu in the dashboard header and sign out through the UI.
@@ -85,14 +78,8 @@ test.describe("Auth Full Cycle", () => {
     await expect(page).toHaveURL(/\/login\?returnUrl=/, { timeout: 15000 })
 
     // ─── Login again ───────────────────────────────────────────
-    await page.goto("/login")
-    await waitForHydration(page)
-    await page.fill("#email", email)
-    await page.fill("#password", password)
-    await page.click('button[type="submit"]')
-
-    // Should land on dashboard again
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 })
+    // Should land on dashboard again (loginAs does goto + submit + URL check).
+    await loginAs(page, { email, password })
 
     // Verify something on the dashboard rendered (the page heading — there is
     // no literal "dashboard" text on the dashboard itself).

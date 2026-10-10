@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { cn, formatDate, formatCurrency, getInitials } from "@/lib/utils"
 
-describe("cn()", () => {
+describe.concurrent("cn()", () => {
   it("merges class names", () => {
     expect(cn("px-4", "py-2")).toBe("px-4 py-2")
   })
@@ -27,7 +27,7 @@ describe("cn()", () => {
   })
 })
 
-describe("formatDate()", () => {
+describe.concurrent("formatDate()", () => {
   it("formats ISO date string", () => {
     const result = formatDate("2026-09-01T00:00:00Z")
     expect(result).toBe("September 1, 2026")
@@ -52,7 +52,7 @@ describe("formatDate()", () => {
   })
 })
 
-describe("formatCurrency()", () => {
+describe.concurrent("formatCurrency()", () => {
   it("formats EUR by default", () => {
     const result = formatCurrency(99, "EUR")
     expect(result).toContain("99")
@@ -81,7 +81,7 @@ describe("formatCurrency()", () => {
   })
 })
 
-describe("getInitials()", () => {
+describe.concurrent("getInitials()", () => {
   it("returns the first letters of the first two words", () => {
     expect(getInitials("Test User")).toBe("TU")
   })

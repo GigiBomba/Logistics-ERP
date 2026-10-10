@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from services.operations.cmr_auto_generator import AutoCMRGenerator
+from tests.test_helpers import wait_until
 
 
 @pytest.fixture
@@ -40,9 +41,8 @@ class TestOnTripInTransit:
             }
         }
         generator.on_trip_in_transit(ev)
-        # generate should be called in a thread - wait briefly
-        import time
-        time.sleep(0.1)
+        # generate is called in a thread — wait until it fires (bounded).
+        wait_until(lambda: generator.generate.called, 2.0)
         assert generator.generate.called
 
     def test_other_status_ignored(self, generator):
@@ -68,8 +68,8 @@ class TestOnTripInTransit:
         for alias in aliases:
             ev = {"data": {"new_status": alias, "trip_id": 1}}
             generator.on_trip_in_transit(ev)
-        import time
-        time.sleep(0.2)
+        # All aliases are dispatched in threads — wait until every call landed.
+        wait_until(lambda: generator.generate.call_count == len(aliases), 2.0)
         assert generator.generate.call_count == len(aliases)
 
 

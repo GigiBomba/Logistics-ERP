@@ -29,6 +29,19 @@ _WORKER_DB_PATH = os.path.join(
 )
 os.environ.setdefault("OPERION_DB_PATH", _WORKER_DB_PATH)
 os.environ.setdefault("OPERION_DB_ENGINE", "sqlite")
+
+# --- Chrome containment guard (see fixture/hook at end of file) ---------------
+# The suite must never launch or interact with the user's installed Chrome.
+# Real-browser tests (chart-export _SilentChromium / window suppressor /
+# choreographer launches) are disabled unless explicitly opted in via
+# OPERION_ALLOW_REAL_CHROME=1 (dedicated CI machines only).  BROWSER_PATH is
+# pointed at a non-existent binary so any accidental real launch fails fast
+# instead of starting system Chrome.
+_BLOCKED_CHROME_PATH = os.path.join(
+    _tempfile.gettempdir(), "operion-test-browser-blocked", "chrome.exe",
+)
+if os.environ.get("OPERION_ALLOW_REAL_CHROME") != "1":
+    os.environ["BROWSER_PATH"] = _BLOCKED_CHROME_PATH
 try:
     from config import Config as _Config
     _Config.DB_PATH = _WORKER_DB_PATH
@@ -72,6 +85,99 @@ from tests.test_api.conftest import (  # noqa: F401
     mock_fleet_service,
     mock_trip_service,
 )
+
+
+# ── pytest-xdist `--dist=loadscope` crash-deadlock workaround ─────────────
+# Vendored copy of the fix merged upstream in pytest-xdist PR #1324 (issues
+# #1323 / #1378), unreleased as of pytest-xdist 3.8.0. After a worker crash,
+# ``LoadScopeScheduling.remove_node`` re-queued the crashed worker's workload
+# *including completed scopes*; assigning such an empty work unit sends
+# ``send_runtest_some([])``, the replacement worker blocks forever in
+# ``torun.get()`` and the controller blocks in ``dsession.loop_once`` — the
+# run hangs at 98-99% and never prints a summary (observed on Windows with Qt
+# native worker crashes). The fix filters the re-queue to scopes that still
+# have pending items and guards ``_assign_work_unit`` against empty
+# assignments. Feature-detected: applies only while the buggy
+# ``self.workqueue.update(workload)`` line is present, so a future upstream
+# release supersedes it automatically. Disable with OPERION_XDIST_WEDGE_FIX=0.
+def _apply_xdist_loadscope_wedge_fix() -> None:  # pragma: no cover - infra shim
+    import inspect
+    import os as _os
+
+    if _os.environ.get("OPERION_XDIST_WEDGE_FIX", "1") == "0":
+        return
+    try:
+        from xdist.scheduler.loadscope import LoadScopeScheduling
+    except Exception:
+        return
+    try:
+        buggy_source = inspect.getsource(LoadScopeScheduling.remove_node)
+    except (OSError, TypeError):
+        return
+    if "self.workqueue.update(workload)" not in buggy_source:
+        return  # already fixed upstream
+
+    def remove_node(self, node):
+        """xdist 3.8.0 ``remove_node`` + PR #1324 pending-only re-queue."""
+        workload = self.assigned_work.pop(node)
+        if not self._pending_of(workload):
+            return None
+
+        # The node crashed, identify test that crashed
+        for work_unit in workload.values():
+            for nodeid, completed in work_unit.items():
+                if not completed:
+                    crashitem = nodeid
+                    break
+            else:
+                continue
+            break
+        else:
+            raise RuntimeError(
+                "Unable to identify crashitem on a workload with pending items"
+            )
+
+        # Make uncompleted work units available again
+        for scope, work_unit in workload.items():
+            if any(not completed for completed in work_unit.values()):
+                self.workqueue[scope] = work_unit
+
+        for other in self.assigned_work:
+            self._reschedule(other)
+
+        return crashitem
+
+    def _assign_work_unit(self, node):
+        """xdist 3.8.0 ``_assign_work_unit`` + PR #1324 empty-unit guard."""
+        assert self.workqueue
+
+        # Grab a unit of work
+        scope, work_unit = self.workqueue.popitem(last=False)
+
+        # Keep track of the assigned work
+        assigned_to_node = self.assigned_work.setdefault(node, {})
+        assigned_to_node[scope] = work_unit
+
+        # Ask the node to execute the workload
+        worker_collection = self.registered_collections[node]
+        nodeids_indexes = [
+            worker_collection.index(nodeid)
+            for nodeid, completed in work_unit.items()
+            if not completed
+        ]
+        if not nodeids_indexes:
+            # Internal error that would otherwise hang the worker (#1323/#1378)
+            raise RuntimeError(
+                "Trying to assign a work unit with no pending items to a node"
+            )
+
+        node.send_runtest_some(nodeids_indexes)
+
+    LoadScopeScheduling.remove_node = remove_node
+    LoadScopeScheduling._assign_work_unit = _assign_work_unit
+
+
+_apply_xdist_loadscope_wedge_fix()
 
 
 @pytest.fixture(autouse=True)
@@ -231,9 +337,84 @@ def reset_singletons():
         _ce._ENGINE = _saved_ce
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _session_chart_engine_mock():
+    """Session-long guard: ``utils.chart_export._ENGINE`` never reverts to
+    ``None`` (or a real engine) while the worker lives.
+
+    ``reset_singletons`` swaps a mock in per test and restores whatever was
+    there before.  Before this guard, that "before" was ``None`` after the
+    first test — so any QThreadPool render worker that outlived its test
+    (teardown drains only wait 5 s) and called ``_get_engine()`` in the gap
+    would create a REAL ``_RenderEngine`` and start headless Chrome.
+
+    That is exactly what full-run evidence shows (full_diag.err:
+    "Choreographer browser failed to start … retrying in 16s" storms +
+    mass E-at-setup blocks): Chrome cannot reliably launch here (both
+    xdist workers share the same persistent ``operion_chrome_profile``
+    user-data dir, so the second instance exits immediately), and every
+    real launch attempt costs 30–100 s of blocking waits.
+
+    With this guard, ``_ENGINE`` is a mock from the first test until the
+    worker's session ends — no test or leftover render can ever boot real
+    Chrome.  If a test still swaps in a real ``_RenderEngine`` (e.g. the
+    chart-export unit tests), it is shut down at session teardown.
+    """
+    import utils.chart_export as _ce
+
+    with _ce._ENGINE_LOCK:
+        original = _ce._ENGINE
+        mock = MagicMock(spec=_ce._RenderEngine)
+        mock.submit.return_value = b"<svg>mock</svg>"
+        _ce._ENGINE = mock
+    yield
+    with _ce._ENGINE_LOCK:
+        final = _ce._ENGINE
+        _ce._ENGINE = original
+    # A test replaced the session mock with a real engine → stop its
+    # background thread (bounded: shutdown waits ≤ 15 s + join ≤ 5 s).
+    if isinstance(final, _ce._RenderEngine):
+        try:
+            final.shutdown()
+        except Exception:
+            pass
+
+
 # ── Shared test JWT secret ────────────────────────────────────────────
 # All API tests use this secret so they agree on signed tokens.
 # Tests that intentionally test wrong-secret rejection override via
 # os.environ / monkeypatch.setenv locally.
 import os
 OPERION_TEST_JWT_SECRET = os.environ.get("OPERION_TEST_JWT_SECRET", "test-jwt-secret-change-me-in-production")
+
+
+# --- Chrome containment (guard block near top of file) -----------------------
+@pytest.fixture(autouse=True)
+def _reassert_chrome_block():
+    """Re-assert the blocked ``BROWSER_PATH`` before every test.
+
+    A few tests legitimately clear ``BROWSER_PATH`` (exercising
+    ``configure_choreographer_export(None)``); without this, later accidentals
+    could auto-detect the system Chrome.  No-op when the explicit opt-in
+    ``OPERION_ALLOW_REAL_CHROME=1`` is set.
+    """
+    if os.environ.get("OPERION_ALLOW_REAL_CHROME") != "1":
+        os.environ.setdefault("BROWSER_PATH", _BLOCKED_CHROME_PATH)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip tests that drive the real installed Chrome unless opted in.
+
+    ``tests/test_silent_chromium.py`` exercises the real _SilentChromium
+    window suppressor, which launches and manipulates chrome.exe.  It is
+    disabled by default so the user's browser session is never touched; opt
+    in with ``OPERION_ALLOW_REAL_CHROME=1`` on dedicated machines.
+    """
+    if os.environ.get("OPERION_ALLOW_REAL_CHROME") == "1":
+        return
+    skip_marker = pytest.mark.skip(
+        reason="real-Chrome test disabled by default; set OPERION_ALLOW_REAL_CHROME=1 to enable",
+    )
+    for item in items:
+        if item.nodeid.startswith("tests/test_silent_chromium.py"):
+            item.add_marker(skip_marker)

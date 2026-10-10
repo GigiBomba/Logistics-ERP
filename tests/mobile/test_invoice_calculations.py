@@ -11,6 +11,7 @@ persisted totals byte-match (plain float equality) the vector expectations.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 from decimal import Decimal
@@ -29,6 +30,7 @@ VECTORS_PATH = os.path.join(
 BASE = "/api/v1/mobile/invoices"
 
 
+@functools.lru_cache(maxsize=1)
 def _load_vectors() -> list[dict]:
     with open(VECTORS_PATH, encoding="utf-8") as fh:
         return json.load(fh)
@@ -49,38 +51,10 @@ def _vector_expected(i: int) -> dict:
 
 
 class TestCalcCrossCheck:
-    """Every committed vector must be reproduced by the REAL calculator."""
-
-    def test_vector_count(self):
-        assert len(_load_vectors()) == 29, "vector fixture count drift"
-
-    @pytest.mark.parametrize("index", range(29))
-    def test_vector_reproduced(self, index):
-        vector = _load_vectors()[index]
-        item = InvoiceLineItem(**vector["input"])
-        calc_items, subtotal_net, total_vat, total_gross = _real_calc([item])
-
-        expected = vector["expected"]
-        exp_line = expected["lines"][0]
-        line = calc_items[0]
-        # Plain float equality — the vectors were generated from THIS code path,
-        # so any drift (rounding changes, coalescing changes) fails loudly.
-        # Decimal fields require explicit normalization (Decimal == float does
-        # exact-binary comparison and rejects numerically identical values).
-        assert float(line.quantity) == exp_line["quantity"]
-        assert line.unit_of_measure == exp_line["unit_of_measure"]
-        assert float(line.unit_price) == exp_line["unit_price"]
-        assert float(line.discount_percent) == exp_line["discount_percent"]
-        assert float(line.discount_amount) == exp_line["discount_amount"]
-        assert float(line.taxable_amount) == exp_line["taxable_amount"]
-        assert float(line.vat_rate) == exp_line["vat_rate"]
-        # total_net stays None end-to-end (nullable, both sides None by contract).
-        assert line.total_net == exp_line["total_net"]
-        assert float(line.vat_amount) == exp_line["vat_amount"]
-        assert float(line.line_total) == exp_line["line_total"]
-        assert float(subtotal_net) == expected["subtotal_net"]
-        assert float(total_vat) == expected["total_vat"]
-        assert float(total_gross) == expected["total_gross"]
+    """The pure-compute vector cross-check (``test_vector_count`` and the 29
+    parametrized ``test_vector_reproduced`` cases) moved to
+    ``test_invoice_vectors_readonly.py`` — it needs no DB.  Only the
+    aggregation test stays here alongside the e2e POST tests."""
 
     def test_multi_line_aggregation(self):
         """Sums across lines use the sequential left-to-right rounding."""

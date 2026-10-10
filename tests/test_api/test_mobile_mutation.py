@@ -29,25 +29,37 @@ _TEST_DB = os.path.join(
     tempfile.gettempdir(),
     f"test_mutation_{uuid.uuid4().hex[:12]}.db",
 )
-os.environ.setdefault("OPERION_DB_PATH", _TEST_DB)
-os.environ["OPERION_JWT_SECRET_KEY"] = "mutation-test-jwt-secret"
-os.environ["OPERION_ENV"] = "test"
-os.environ["OPERION_RATE_LIMIT"] = "10000"
 
 import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 from config import Config
 
-Config.DB_PATH = _TEST_DB
 import backend.dependencies as deps
 from tests.test_api.helpers import create_test_app
 
 _ADMIN_EMAIL = f"admin-mutation-{uuid.uuid4().hex[:8]}@test.com"
 _ADMIN_PASSWORD = "admin-mutation-pw"
 _ADMIN_HASH = bcrypt.hashpw(_ADMIN_PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
-os.environ["OPERION_ADMIN_EMAIL"] = _ADMIN_EMAIL
-os.environ["OPERION_ADMIN_PASSWORD_HASH"] = _ADMIN_HASH
+
+
+@pytest.fixture(autouse=True)
+def _module_env(monkeypatch):
+    """Set this module's env/Config before every test and restore on teardown.
+
+    These were module-level assignments: they executed during *collection*
+    in every xdist worker, permanently overriding the per-worker
+    OPERION_DB_PATH / Config.DB_PATH isolation set up in tests/conftest.py
+    (``Config.DB_PATH`` was rebound to this module's temp file for the whole
+    session).  monkeypatch restores the originals after each test instead.
+    """
+    monkeypatch.setenv("OPERION_DB_PATH", _TEST_DB)
+    monkeypatch.setenv("OPERION_JWT_SECRET_KEY", "mutation-test-jwt-secret")
+    monkeypatch.setenv("OPERION_ENV", "test")
+    monkeypatch.setenv("OPERION_RATE_LIMIT", "10000")
+    monkeypatch.setenv("OPERION_ADMIN_EMAIL", _ADMIN_EMAIL)
+    monkeypatch.setenv("OPERION_ADMIN_PASSWORD_HASH", _ADMIN_HASH)
+    monkeypatch.setattr(Config, "DB_PATH", _TEST_DB)
 
 
 def _seed():

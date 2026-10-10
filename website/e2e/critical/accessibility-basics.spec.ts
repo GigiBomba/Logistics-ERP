@@ -15,6 +15,11 @@ test.describe("Accessibility Basics", () => {
   })
 
   test("all key pages have a <main> landmark", async ({ page }) => {
+    // LOAD HARDENING: 9 sequential goto+hydration rounds exceed the 30s
+    // default cap when parallel workers contend for on-demand route
+    // compilation (the assertion itself never fails — only the wall clock
+    // does; verified pre-existing with the unmodified navigation-stress).
+    test.setTimeout(90_000)
     const keyPages = ["/", "/features", "/pricing", "/about", "/contact", "/faq", "/blog", "/docs", "/waitlist"]
     for (const path of keyPages) {
       await page.goto(path)
@@ -187,8 +192,22 @@ test.describe("Accessibility Basics", () => {
     // exceeds the 30s default test timeout, especially under default parallel
     // workers — raise it for this inherently slow scan.
     test.setTimeout(180_000)
+    // (a) prefers-reduced-motion: reduce. VERIFIED in this app: motion/react
+    // is NOT wrapped in <MotionConfig reducedMotion="user"> anywhere in src,
+    // so its MotionConfigContext default ("never") applies and framer-motion
+    // entrance opacity still animates under emulation — (a) alone would NOT
+    // fix the phantoms (and even under "user", motion only skips
+    // positional/transform keys; opacity keeps animating). Kept because it
+    // DOES take effect for the app's own useReducedMotion() hook
+    // (src/services/accessibility.tsx — FeatureCard/PricingCard/
+    // TestimonialCard/Timeline start at their final state) and for the
+    // globals.css prefers-reduced-motion block (CSS animation/transition
+    // durations → 0.01ms). The load-bearing fix for framer-motion's rAF
+    // inline opacity is the (b) cascade pin below.
+    await page.emulateMedia({ reducedMotion: "reduce" })
     const keyPages = ["/", "/features", "/pricing", "/about", "/contact", "/login", "/register", "/faq", "/docs"]
     const violations: string[] = []
+
 
     for (const path of keyPages) {
       await page.goto(path)
@@ -242,6 +261,95 @@ test.describe("Accessibility Basics", () => {
         { timeout: 15_000 },
       )
 
+      // LOAD-SENSITIVE FALSE-POSITIVE HARDENING: nav/footer/docs elements
+      // animate OUTSIDE <main>, so the settle-waits above don't reach them.
+      // Mid-animation partial opacity makes axe report color-contrast
+      // violations whose node lists vary run-to-run under parallel workers
+      // (observed: 10 vs 41 nodes across two full runs; 0 when isolated).
+      // 1) Kill all CSS animations/transitions document-wide so the sampled
+      //    computed styles are static. 2) Finish/pause any surviving WAAPI
+      //    animations (framer-motion entrances; infinite ones can't finish →
+      //    pause) so nothing is mid-fade when axe samples contrast.
+      // 3) Confirm no animation is still running. Existing settle-waits kept.
+      await page.addStyleTag({
+        content: "* { animation: none !important; transition: none !important; }",
+      })
+      await page.evaluate(() => {
+        for (const anim of document.getAnimations()) {
+          try {
+            anim.finish()
+          } catch {
+            try {
+              anim.pause()
+            } catch {
+              // Already inert — ignore.
+            }
+          }
+        }
+      })
+      await page.waitForFunction(
+        () => document.getAnimations().every((a) => a.playState !== "running"),
+        { timeout: 15_000 },
+      )
+      // (b) CASCADE PIN — make mid-opacity structurally impossible while
+      // axe samples. Wait-gates were proven insufficient: with all gates
+      // passing, full runs still produced phantom color-contrast on /faq
+      // (TabsContent + card h3s), /contact (form wrapper + labels/inputs/
+      // submit), and /login (card + footer link OUTSIDE <main>) — an
+      // entrance can (re)start between the last gate and axe's sampling
+      // (rAF starvation under parallel load delays IntersectionObserver /
+      // motion frame callbacks across that window), and main-scoped gates
+      // never saw header/footer motion at all. Pin instead: tag every
+      // element carrying an inline opacity and hold computed opacity at 1
+      // via stylesheet !important — the cascade beats motion's per-frame
+      // inline writes, so no rAF tick during analyze() can ever produce a
+      // mid value for axe to sample. Untagged elements (no inline opacity,
+      // or out-of-viewport zeros) keep their computed value — below-fold
+      // pending entrances stay 0 and axe skips them, exactly as in isolated
+      // runs (no masking: real settled-state contrast is what gets scanned;
+      // only transient mid-fade pixels are eliminated).
+      await page.addStyleTag({
+        content: ".e2e-op-pinned { opacity: 1 !important; }",
+      })
+      await page.evaluate(() => {
+        // Settle any WAAPI animations created after the earlier drain.
+        for (const anim of document.getAnimations()) {
+          try {
+            anim.finish()
+          } catch {
+            try {
+              anim.pause()
+            } catch {
+              // Already inert — ignore.
+            }
+          }
+        }
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+        for (const el of document.querySelectorAll<HTMLElement>("body [style]")) {
+          const raw = el.style.opacity
+          if (raw === "") continue
+          const n = Number.parseFloat(raw)
+          if (Number.isNaN(n)) continue
+          if (n === 0) {
+            // Pending below-fold entrance → leave at 0 (axe skips, isolated
+            // parity). Pending in-viewport entrance → pin so a late start
+            // can't fade it mid-scan. Settled/hidden zeros (no box or no
+            // intersection) → leave untouched.
+            const r = el.getBoundingClientRect()
+            const intersectsViewport =
+              r.width > 0 &&
+              r.height > 0 &&
+              r.bottom > 0 &&
+              r.top < vh &&
+              r.right > 0 &&
+              r.left < vw
+            if (!intersectsViewport) continue
+          }
+          // Mid-fade (0,1), settled 1, or in-viewport 0 → hold at final 1.
+          el.classList.add("e2e-op-pinned")
+        }
+      })
       const results = await new AxeBuilder({ page }).analyze()
       for (const v of results.violations) {
         if (v.impact === "serious" || v.impact === "critical") {

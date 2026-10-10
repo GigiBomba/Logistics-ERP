@@ -9,17 +9,6 @@ vi.mock("@/api/endpoints", () => ({
   newsletterApi: { subscribe: vi.fn(), unsubscribe: vi.fn() },
 }))
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-  useInView: () => true,
-}))
-
 vi.mock("@/components/shared/turnstile-widget", () => ({
   default: () => null,
 }))

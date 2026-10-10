@@ -56,6 +56,29 @@ class FakeApiClient:
         }
 
 
+@pytest.fixture(autouse=True)
+def _main_import_env_guard():
+    """Keep the lazy ``from main import setup_sync`` import from poisoning
+    the process environment (same pattern as tests/test_scripts_backup_restore.py).
+
+    The first test of this module to execute ``from main import setup_sync``
+    imports root ``main.py``, whose module body runs ``load_dotenv(.env)``.
+    Any ``OPERION_*`` var missing at that moment (other suites legitimately
+    pop them, e.g. tests/test_api/test_waitlist_api.py) is re-created from
+    ``.env`` — including ``OPERION_ENV=production`` — after which the autouse
+    ``reset_singletons`` fixture raises ``RuntimeError`` in *every* following
+    test (``reload_settings()`` -> ``BackendSettings._check_admin_config``),
+    cascading setup errors across the rest of the suite.
+    """
+    env_before = dict(os.environ)
+    yield
+    for key in [k for k in os.environ if k not in env_before]:
+        del os.environ[key]
+    for key, value in env_before.items():
+        if os.environ.get(key) != value:
+            os.environ[key] = value
+
+
 @pytest.fixture
 def db_path():
     tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
@@ -111,7 +134,8 @@ class TestSyncEngineWiring:
         engine = _make_engine(db, fake)
         engine.start()
         engine.stop()
-        assert True
+        # Postcondition: the background thread is no longer running.
+        assert not engine._thread.isRunning()
 
     def test_engine_offline_cycle_emits_status(self, db):
         fake = FakeApiClient(online=False)
@@ -177,7 +201,7 @@ class TestStatusIndicator:
 
 
 class TestConflictDialog:
-    def test_list_unresolved_shows_recorded_conflicts(self, db, qapp):
+    def test_list_unresolved_shows_recorded_conflicts(self, db, qapp, qtbot):
         from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
 
         conflict_service = SyncConflictService(db)
@@ -187,22 +211,24 @@ class TestConflictDialog:
             server_payload={"id": 100, "name": "Server"},
         )
         dlg = SyncConflictDialog(conflict_service=conflict_service)
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         assert dlg._conflicts[0]["id"] == conflict_id
         assert dlg._table.rowCount() == 1
         assert dlg._table.item(0, 0).text() == "client"
 
-    def test_mark_resolved_removes_from_list(self, db, qapp):
+    def test_mark_resolved_removes_from_list(self, db, qapp, qtbot):
         from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
 
         conflict_service = SyncConflictService(db)
         conflict_id = conflict_service.record("client", 1, server_id=100)
         dlg = SyncConflictDialog(conflict_service=conflict_service)
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         assert dlg._table.rowCount() == 1
         dlg._keep_local(conflict_id)
         assert dlg._table.rowCount() == 0
         assert conflict_service.list_unresolved() == []
 
-    def test_take_server_applies_payload_and_marks_resolved(self, db, qapp):
+    def test_take_server_applies_payload_and_marks_resolved(self, db, qapp, qtbot):
         from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
 
         local_id = _insert_client(db, "Local Client")
@@ -225,6 +251,7 @@ class TestConflictDialog:
             pull_service=pull,
             outbox_service=outbox,
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._take_server(conflict_id)
 
         row = dict(db.conn.execute(
@@ -238,7 +265,7 @@ class TestConflictDialog:
         ).fetchone()["n"]
         assert pending == 0
 
-    def test_keep_local_requests_resync(self, db, qapp):
+    def test_keep_local_requests_resync(self, db, qapp, qtbot):
         from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
 
         conflict_service = SyncConflictService(db)
@@ -253,6 +280,7 @@ class TestConflictDialog:
             conflict_service=conflict_service,
             engine=FakeEngine(),
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._keep_local(conflict_id)
         assert requested == [True]
         assert conflict_service.list_unresolved() == []
@@ -290,7 +318,7 @@ class TestConflictDialog:
         assert c3 != c1
         assert len(conflict_service.list_unresolved()) == 2
 
-    def test_keep_local_restamps_updated_at(self, db, qapp):
+    def test_keep_local_restamps_updated_at(self, db, qapp, qtbot):
         """R3b: keep-local re-stamps the local row's updated_at so the pending
         outbox op re-pushes with a fresh base and wins (no infinite loop)."""
         from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
@@ -321,6 +349,7 @@ class TestConflictDialog:
             conflict_service=conflict_service,
             engine=FakeEngine(),
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._keep_local(conflict_id)
 
         row = dict(db.conn.execute(
@@ -330,7 +359,7 @@ class TestConflictDialog:
         assert conflict_service.list_unresolved() == []
         assert requested == [True]
 
-    def test_keep_local_hard_delete_bumps_frozen_payload(self, db, qapp):
+    def test_keep_local_hard_delete_bumps_frozen_payload(self, db, qapp, qtbot):
         """R3b residual: for a HARD-deleted row (no row to re-stamp) the
         frozen DELETE payload's updated_at is bumped so the DELETE re-pushes
         with a fresh base and wins instead of looping forever."""
@@ -386,6 +415,7 @@ class TestConflictDialog:
             outbox_service=SyncOutboxService(db),
             engine=FakeEngine(),
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._keep_local(conflict_id)
 
         updated = dict(db.conn.execute(
@@ -396,7 +426,7 @@ class TestConflictDialog:
         assert conflict_service.list_unresolved() == []
         assert requested == [True]
 
-    def test_keep_local_row_gone_no_pending_op(self, db, qapp):
+    def test_keep_local_row_gone_no_pending_op(self, db, qapp, qtbot):
         """R3b residual: row gone and no pending DELETE op → nothing to
         re-push; the conflict is simply marked resolved without crashing."""
         from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
@@ -414,12 +444,13 @@ class TestConflictDialog:
             outbox_service=SyncOutboxService(db),
             engine=FakeEngine(),
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._keep_local(conflict_id)
 
         assert conflict_service.list_unresolved() == []
         assert requested == [True]
 
-    def test_take_server_with_missing_payload_leaves_conflict(self, db, qapp, monkeypatch):
+    def test_take_server_with_missing_payload_leaves_conflict(self, db, qapp, qtbot, monkeypatch):
         """S1: no server_payload → nothing applied → conflict stays unresolved
         and the pending outbox op is NOT cleared."""
         from ui.dialogs import sync_conflict_dialog
@@ -444,6 +475,7 @@ class TestConflictDialog:
             pull_service=pull,
             outbox_service=outbox,
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._take_server(conflict_id)
 
         assert len(conflict_service.list_unresolved()) == 1
@@ -452,7 +484,7 @@ class TestConflictDialog:
         ).fetchone()["n"]
         assert pending == 1
 
-    def test_take_server_gates_on_apply_result(self, db, qapp, monkeypatch):
+    def test_take_server_gates_on_apply_result(self, db, qapp, qtbot, monkeypatch):
         """S1: when apply_server_row returns False, the conflict is NOT marked
         resolved and the outbox op is NOT cleared."""
         from ui.dialogs import sync_conflict_dialog
@@ -480,6 +512,7 @@ class TestConflictDialog:
             pull_service=FailingPull(),
             outbox_service=outbox,
         )
+        qtbot.addWidget(dlg)  # close + deleteLater at pytest-qt teardown
         dlg._take_server(conflict_id)
 
         assert len(conflict_service.list_unresolved()) == 1
